@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.common.LocalDates
+import com.rosyidputrar.taskify.core.domain.auth.homeGreeting
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
 import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.IndexTab
@@ -46,6 +47,7 @@ import kotlin.time.Clock
 @Composable
 fun HomeScreen(
     contentPadding: PaddingValues,
+    displayName: String? = null,
     onOpenModule: (TaskifyModule) -> Unit,
     onCapture: () -> Unit,
 ) {
@@ -56,7 +58,7 @@ fun HomeScreen(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { TodayHeader(today, greeting(hour)) }
+        item { TodayHeader(today, homeGreeting(greeting(hour), displayName)) }
         item { WeekRibbon(today, onSelect = { onOpenModule(TaskifyModule.Calendar) }) }
         item { FocusCard(onCapture) }
         item { SummaryBento(onOpenModule) }

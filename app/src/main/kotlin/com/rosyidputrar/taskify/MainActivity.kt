@@ -6,11 +6,27 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.designsystem.theme.isDark
+import com.rosyidputrar.taskify.data.AppPreferences
+import com.rosyidputrar.taskify.feature.auth.LockScreen
+import com.rosyidputrar.taskify.feature.auth.LoginScreen
+import com.rosyidputrar.taskify.feature.auth.MfaScreen
+import com.rosyidputrar.taskify.ui.gate.ConfigMissingScreen
+import com.rosyidputrar.taskify.ui.gate.GateUi
+import com.rosyidputrar.taskify.ui.gate.GateViewModel
+import com.rosyidputrar.taskify.ui.gate.PreparingScreen
 import com.rosyidputrar.taskify.ui.shell.AppEvent
 import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.shell.AppViewModel
@@ -20,23 +36,49 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 class MainActivity : ComponentActivity() {
 
     private val appViewModel: AppViewModel by viewModel()
+    private val gateViewModel: GateViewModel by viewModel()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        splash.setKeepOnScreenCondition { appViewModel.state.value == null }
+        // Splash tetap tampil sampai tema & status login terbaca → tidak ada kedipan layar masuk.
+        splash.setKeepOnScreenCondition {
+            appViewModel.state.value == null || gateViewModel.ui.value == GateUi.Loading
+        }
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)
 
         setContent {
             val prefs by appViewModel.state.collectAsStateWithLifecycle()
+            val gate by gateViewModel.ui.collectAsStateWithLifecycle()
             val snapshot = prefs ?: return@setContent
             TaskifyTheme(darkTheme = snapshot.themeMode.isDark()) {
-                TaskifyApp(
-                    preferences = snapshot,
-                    onThemeModeChange = appViewModel::setThemeMode,
-                    onPinnedModuleChange = appViewModel::setPinnedModule,
-                )
+                AppGate(gate, snapshot)
+            }
+        }
+    }
+
+    @Composable
+    private fun AppGate(gate: GateUi, snapshot: AppPreferences.Snapshot) {
+        var preview by rememberSaveable { mutableStateOf(false) }
+        val shell: @Composable (String?) -> Unit = { name ->
+            TaskifyApp(
+                preferences = snapshot,
+                displayName = name,
+                onThemeModeChange = appViewModel::setThemeMode,
+                onPinnedModuleChange = appViewModel::setPinnedModule,
+            )
+        }
+        val key = if (gate is GateUi.Open) "open" else gate::class.simpleName
+        AnimatedContent(targetState = key, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "gate") { _ ->
+            when (gate) {
+                GateUi.Loading -> Unit
+                GateUi.ConfigMissing -> if (preview) shell(null) else ConfigMissingScreen(onPreview = { preview = true })
+                GateUi.SignedOut -> LoginScreen()
+                is GateUi.Mfa -> MfaScreen(gate.status)
+                GateUi.Preparing -> PreparingScreen()
+                GateUi.Locked -> LockScreen()
+                is GateUi.Open -> shell(gate.displayName)
             }
         }
     }

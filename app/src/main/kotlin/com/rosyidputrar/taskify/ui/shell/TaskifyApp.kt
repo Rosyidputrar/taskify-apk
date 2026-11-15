@@ -72,6 +72,7 @@ fun TaskifyApp(
     preferences: AppPreferences.Snapshot,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    displayName: String? = null,
 ) {
     val navController = rememberNavController()
     var spotlightOpen by rememberSaveable { mutableStateOf(false) }
@@ -140,6 +141,7 @@ fun TaskifyApp(
                 navController = navController,
                 contentPadding = contentPadding,
                 preferences = preferences,
+                displayName = displayName,
                 onOpenModule = openModule,
                 onCapture = { openCapture() },
                 onThemeModeChange = onThemeModeChange,
@@ -214,6 +216,7 @@ private fun TaskifyNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
     preferences: AppPreferences.Snapshot,
+    displayName: String?,
     onOpenModule: (TaskifyModule) -> Unit,
     onCapture: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -224,6 +227,7 @@ private fun TaskifyNavHost(
         composable<HomeRoute> {
             HomeScreen(
                 contentPadding = contentPadding,
+                displayName = displayName,
                 onOpenModule = onOpenModule,
                 onCapture = onCapture,
             )

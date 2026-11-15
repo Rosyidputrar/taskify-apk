@@ -38,7 +38,7 @@ import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.ThemeMode
 import com.rosyidputrar.taskify.ui.placeholder.BackButton
-import com.rosyidputrar.taskify.ui.placeholder.ModuleRoadmap
+import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun SettingsScreen(
@@ -48,6 +48,7 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     onBack: (() -> Unit)?,
+    viewModel: SettingsViewModel = koinViewModel(),
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -62,6 +63,9 @@ fun SettingsScreen(
                 navigation = onBack?.let { { BackButton(it) } },
             )
         }
+        if (viewModel.hasAccount) item { AccountSection(viewModel) }
+        item { SecuritySection(viewModel) }
+        if (viewModel.hasAccount) item { SyncSection(viewModel) }
         item {
             SettingsSection("Tampilan") {
                 Text("Tema", style = MaterialTheme.typography.titleMedium)
@@ -95,7 +99,7 @@ fun SettingsScreen(
             SettingsSection("Server") {
                 Text(
                     if (AppConfig.isServerReady) {
-                        "Konfigurasi wajib lengkap. Login & sinkronisasi aktif setelah modul akun siap."
+                        "Konfigurasi wajib lengkap. Login & sinkronisasi aktif."
                     } else {
                         "Konfigurasi wajib belum lengkap. Isi GitHub Secrets atau local.properties lalu build ulang."
                     },
@@ -108,7 +112,11 @@ fun SettingsScreen(
         }
         item {
             SettingsSection("Segera hadir") {
-                ModuleRoadmap[TaskifyModule.Settings].orEmpty().forEach {
+                listOf(
+                    "Notifikasi pengingat",
+                    "Ekspor data & hapus data perangkat",
+                    "Kelola authenticator (tambah cadangan, hapus)",
+                ).forEach {
                     Text("• $it", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 3.dp))
                 }
             }
@@ -127,7 +135,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Text(
             title.uppercase(),

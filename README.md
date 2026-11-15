@@ -35,10 +35,25 @@ rahasia), sehingga build berikutnya bisa dipasang menimpa yang lama tanpa uninst
 ## Struktur
 
 ```
-app/                 Shell: navigasi Dok/Rail, Ruang, Spotlight, Tangkap, Pengaturan
-core/common          Logika murni: rupiah, UUIDv7, tanggal WIB
+app/                 Gerbang (konfigurasi → masuk → MFA → database → PIN), shell navigasi,
+                     Pengaturan (akun, keamanan, sinkronisasi), koordinator sesi
+core/common          Utilitas murni: rupiah, UUIDv7, tanggal WIB, timestamp ISO, batas teks, hash
+core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, gerbang MFA, PIN
+core/data            Skema PowerSync (identik webapp), Supabase client, connector upload
+core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN (Keystore)
 core/designsystem    "Kertas & Tinta": palet, tipografi, kartu indeks, Dok
+feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 build-logic/         Convention plugin Gradle
 ```
+
+### Alur saat aplikasi dibuka
+
+1. Konfigurasi server kosong → layar penjelasan (bukan crash).
+2. Belum masuk → layar Masuk (sapaan memakai nama tersimpan, bisa dimatikan).
+3. Sesi belum aal2 → verifikasi dua langkah: kode authenticator, atau daftar authenticator baru
+   (QR + tombol buka langsung di aplikasi authenticator). "Ingat perangkat ini 30 hari".
+4. Database lokal disiapkan: bila akun berbeda dari pemilik sebelumnya, isinya dikosongkan dulu,
+   lalu sinkronisasi PowerSync dimulai.
+5. PIN aktif → layar kunci (5 percobaan → jeda 30 detik; Lupa PIN = verifikasi password akun).
 
 Font: Fraunces, Instrument Sans, JetBrains Mono (SIL Open Font License, lihat `licenses/`).
