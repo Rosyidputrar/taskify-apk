@@ -31,6 +31,11 @@ import kotlinx.serialization.Serializable
 /** Editor catatan: [id] = catatan yang ada; tanpa id = catatan baru, ditempel ke [date] bila diisi. */
 @Serializable data class NoteEditRoute(val id: String? = null, val date: String? = null)
 
+@Serializable data object FinanceRoute
+
+/** Editor transaksi: [id] = transaksi yang ada; tanpa id = baru di [date] / dompet [walletId]. */
+@Serializable data class TransactionRoute(val id: String? = null, val date: String? = null, val walletId: String? = null)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -43,5 +48,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Tasks -> TasksRoute()
     TaskifyModule.Journal -> JournalRoute
     TaskifyModule.Notes -> NotesRoute
+    TaskifyModule.Finance -> FinanceRoute
     else -> ModuleRoute(name)
 }

@@ -14,6 +14,8 @@ sealed interface AppEvent {
     data class OpenJournal(val id: String? = null, val date: String? = null) : AppEvent
     /** Buka editor catatan: catatan [id], atau catatan baru (ditempel ke [date] bila diisi). */
     data class OpenNote(val id: String? = null, val date: String? = null) : AppEvent
+    /** Buka editor transaksi: transaksi [id], atau transaksi baru di [date]. */
+    data class OpenTransaction(val id: String? = null, val date: String? = null) : AppEvent
 }
 
 object AppEvents {

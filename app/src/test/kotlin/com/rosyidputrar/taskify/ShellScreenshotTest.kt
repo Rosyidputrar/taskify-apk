@@ -87,7 +87,7 @@ class ShellScreenshotTest {
         setApp(dark = true)
         compose.onNodeWithContentDescription("Ruang").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Keuangan").performClick()
+        compose.onNodeWithText("Review").performClick()
         compose.waitForIdle()
         capture("module_placeholder_dark")
     }

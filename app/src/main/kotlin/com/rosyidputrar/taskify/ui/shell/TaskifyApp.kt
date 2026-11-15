@@ -62,6 +62,11 @@ import com.rosyidputrar.taskify.navigation.JournalEntryRoute
 import com.rosyidputrar.taskify.navigation.JournalRoute
 import com.rosyidputrar.taskify.navigation.NoteEditRoute
 import com.rosyidputrar.taskify.navigation.NotesRoute
+import com.rosyidputrar.taskify.navigation.FinanceRoute
+import com.rosyidputrar.taskify.navigation.TransactionRoute
+import com.rosyidputrar.taskify.feature.finance.FinanceScreen
+import com.rosyidputrar.taskify.feature.finance.TxEditorArgs
+import com.rosyidputrar.taskify.feature.finance.TxEditorScreen
 import com.rosyidputrar.taskify.core.domain.journal.ReflectionKind
 import com.rosyidputrar.taskify.feature.journal.JournalEditorArgs
 import com.rosyidputrar.taskify.feature.journal.JournalEditorScreen
@@ -139,6 +144,10 @@ fun TaskifyApp(
                     spotlightOpen = false
                     navController.navigate(NoteEditRoute(event.id, event.date))
                 }
+                is AppEvent.OpenTransaction -> {
+                    spotlightOpen = false
+                    navController.navigate(TransactionRoute(event.id, event.date))
+                }
             }
         }
     }
@@ -154,11 +163,12 @@ fun TaskifyApp(
         destination.hasRoute<TasksRoute>() -> TaskifyModule.Tasks
         destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
         destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
+        destination.hasRoute<FinanceRoute>() || destination.hasRoute<TransactionRoute>() -> TaskifyModule.Finance
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() } == true
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -317,7 +327,21 @@ private fun TaskifyNavHost(
                 onOpenModule = onOpenModule,
                 onOpenJournal = { id, date -> navController.navigate(JournalEntryRoute(id, date)) },
                 onOpenNote = { id, date -> navController.navigate(NoteEditRoute(id, date)) },
+                onOpenTransaction = { id, date -> navController.navigate(TransactionRoute(id, date)) },
             )
+        }
+        composable<FinanceRoute> {
+            FinanceScreen(
+                contentPadding = contentPadding,
+                onOpenTx = { navController.navigate(TransactionRoute(id = it)) },
+                onNewTx = { walletId -> navController.navigate(TransactionRoute(walletId = walletId)) },
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<TransactionRoute> { entry ->
+            val route = entry.toRoute<TransactionRoute>()
+            TxEditorScreen(TxEditorArgs(route.id, route.date, route.walletId), onBack = { navController.popBackStack() })
         }
         composable<JournalRoute> {
             JournalScreen(

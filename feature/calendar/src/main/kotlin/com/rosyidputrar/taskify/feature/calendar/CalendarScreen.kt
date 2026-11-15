@@ -104,6 +104,7 @@ fun CalendarScreen(
     onOpenModule: (TaskifyModule) -> Unit,
     onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
     onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
+    onOpenTransaction: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Finance) },
 ) {
     val viewModel: CalendarViewModel = koinViewModel(key = "calendar-$initialDate") { parametersOf(initialDate) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -117,7 +118,7 @@ fun CalendarScreen(
             override fun toggle(task: Task) = viewModel.toggle(task)
         }
     }
-    CalendarContent(state, actions, contentPadding, onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote)
+    CalendarContent(state, actions, contentPadding, onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction)
 }
 
 @Composable
@@ -129,6 +130,7 @@ fun CalendarContent(
     detailEnabled: Boolean = true,
     onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
     onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
+    onOpenTransaction: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Finance) },
 ) {
     val listState = rememberLazyListState()
     // Grid bulan adalah item ke-2; setelah tergulir keluar, strip minggu muncul di atas.
@@ -167,7 +169,7 @@ fun CalendarContent(
                 }
             }
             item { DayHeading(state) }
-            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote)
+            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction)
         }
 
         AnimatedVisibility(
@@ -240,6 +242,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
     onOpenModule: (TaskifyModule) -> Unit,
     onOpenJournal: (String?, String) -> Unit,
     onOpenNote: (String?, String) -> Unit,
+    onOpenTransaction: (String?, String) -> Unit,
 ) {
     val a = state.selectedActivity
     val day = state.selected
@@ -275,7 +278,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
             if (a.income > 0) add("masuk ${Rupiah.compact(a.income)}")
         }.joinToString(" · ").ifEmpty { null }
         section("Keuangan", TaskifyModule.Finance, trailing = totals)
-        if (state.agenda.transactions.isEmpty()) emptyLine("finance", "Tidak ada transaksi.", "Catat transaksi") { onOpenModule(TaskifyModule.Finance) }
+        if (state.agenda.transactions.isEmpty()) emptyLine("finance", "Tidak ada transaksi.", "Catat transaksi") { onOpenTransaction(null, day) }
         items(state.agenda.transactions, key = { "x-${it.id}" }) { t ->
             val sign = when (t.kind) { "income" -> "+"; "expense" -> "−"; else -> "" }
             AgendaRow(
@@ -285,9 +288,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
                 icon = when (t.kind) { "income" -> Icons.Outlined.ArrowDownward; "expense" -> Icons.Outlined.ArrowUpward; else -> Icons.Outlined.SwapHoriz },
                 trailing = sign + Rupiah.format(t.amount),
                 trailingColor = if (t.kind == "income") TaskifyTheme.modules.accent(TaskifyModule.Finance) else null,
-                onClick = { onOpenModule(TaskifyModule.Finance) },
+                onClick = { onOpenTransaction(t.id, day) },
             )
         }
+        if (state.agenda.transactions.isNotEmpty()) emptyLine("finance-more", "", "Catat transaksi") { onOpenTransaction(null, day) }
     }
     if (CalendarKind.Vault in visible) {
         section("Vault", TaskifyModule.Vault)

@@ -41,7 +41,7 @@ core/common          Utilitas murni: rupiah, UUIDv7, tanggal WIB, timestamp ISO,
 core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, gerbang MFA, PIN,
                      RRULE, Markdown, simpan otomatis, insight mood
 core/store           Skema PowerSync (identik webapp) + repository Tugas, Tag, Beranda, Kalender,
-                     Jurnal, Catatan — diuji di JVM
+                     Jurnal, Catatan, Keuangan — diuji di JVM
                      terhadap PowerSync sungguhan (SQLite + ekstensi PowerSync)
 core/data            Database Android, Supabase client, connector upload
 core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN (Keystore)
@@ -53,6 +53,8 @@ feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, d
 feature/calendar     Kalender: grid bulan + strip minggu, agenda gabungan semua modul, kejadian virtual
 feature/journal      Jurnal: rak entri, editor + penggeser mood, insight (grafik, sebaran, streak), templat
 feature/notes        Catatan: grid staggered, catatan bebas / ditempel ke tanggal, sematkan, Sampah
+feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
+                     Hutang, Kelola), editor transaksi, grafik, ekspor CSV, transaksi berulang otomatis
 build-logic/         Convention plugin Gradle
 ```
 

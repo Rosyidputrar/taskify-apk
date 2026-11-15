@@ -37,8 +37,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
-import com.rosyidputrar.taskify.core.domain.capture.CaptureTarget
-import com.rosyidputrar.taskify.core.domain.capture.parseCapturePrefix
+import com.rosyidputrar.taskify.core.common.Rupiah
+import com.rosyidputrar.taskify.core.domain.capture.CaptureType
+import com.rosyidputrar.taskify.core.domain.capture.parseCapture
+import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import org.koin.compose.viewmodel.koinViewModel
@@ -54,7 +56,7 @@ enum class CaptureKind(val label: String, val module: TaskifyModule?) {
 
 /**
  * Sheet Tangkap: satu kotak teks untuk semua jenis catatan cepat.
- * Otomatis: "j: …" → jurnal, "c: …" → catatan, selain itu tugas (parser bahasa natural).
+ * Otomatis: "j: …" → jurnal, "c: …" → catatan, ada nominal → transaksi, selain itu tugas.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,7 +115,6 @@ fun CaptureSheet(
             )
             Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val saves = kind != CaptureKind.Transaction
                 Text(
                     kind.hint(text),
                     style = MaterialTheme.typography.bodySmall,
@@ -121,7 +122,7 @@ fun CaptureSheet(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onDismiss) { Text("Tutup") }
-                Button(onClick = { viewModel.save(kind, text, onDismiss) }, enabled = saves && text.isNotBlank()) { Text("Simpan") }
+                Button(onClick = { viewModel.save(kind, text, onDismiss) }, enabled = text.isNotBlank()) { Text("Simpan") }
             }
         }
     }
@@ -137,15 +138,20 @@ private fun CaptureKind.placeholder(): String = when (this) {
     CaptureKind.Transaction -> "kopi 25rb"
 }
 
-/** Keterangan tujuan simpan di bawah kotak teks. */
-private fun CaptureKind.hint(text: String): String = when (this) {
-    CaptureKind.Auto -> when (parseCapturePrefix(text)?.target) {
-        CaptureTarget.Journal -> "Disimpan ke jurnal hari ini."
-        CaptureTarget.Note -> "Disimpan sebagai catatan bebas."
-        null -> "Disimpan sebagai tugas. Awali \"j:\" untuk jurnal, \"c:\" untuk catatan."
+/** Keterangan tujuan simpan di bawah kotak teks (pratinjau hasil parser). */
+private fun CaptureKind.hint(text: String): String {
+    val c = parseCapture(text, Dates.today())
+    return when (this) {
+        CaptureKind.Auto -> when (c.type) {
+            CaptureType.Journal -> "Disimpan ke jurnal hari ini."
+            CaptureType.Note -> "Disimpan sebagai catatan bebas."
+            CaptureType.Expense -> "Pengeluaran ${Rupiah.format(c.amount ?: 0)}" + (c.categoryHint?.let { " · kategori $it" } ?: "") + "."
+            CaptureType.Income -> "Pemasukan ${Rupiah.format(c.amount ?: 0)}."
+            CaptureType.Task -> if (text.isBlank()) "Awali \"j:\" untuk jurnal, \"c:\" untuk catatan; nominal jadi transaksi." else "Disimpan sebagai tugas."
+        }
+        CaptureKind.Task -> "Disimpan sebagai tugas."
+        CaptureKind.Journal -> "Disimpan ke jurnal hari ini."
+        CaptureKind.Note -> "Disimpan sebagai catatan bebas."
+        CaptureKind.Transaction -> c.amount?.let { "${if (c.type == CaptureType.Income) "Pemasukan" else "Pengeluaran"} ${Rupiah.format(it)} ke dompet pertama." } ?: "Sertakan nominal, mis. \"kopi 25rb\"."
     }
-    CaptureKind.Task -> "Disimpan sebagai tugas."
-    CaptureKind.Journal -> "Disimpan ke jurnal hari ini."
-    CaptureKind.Note -> "Disimpan sebagai catatan bebas."
-    CaptureKind.Transaction -> "Transaksi menyusul bersama modul Keuangan."
 }

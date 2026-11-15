@@ -109,7 +109,7 @@ fun HomeContent(
                     ActivityKind.Task -> onOpenTask(item.id)
                     ActivityKind.Journal -> AppEvents.send(AppEvent.OpenJournal(id = item.id))
                     ActivityKind.Note -> AppEvents.send(AppEvent.OpenNote(id = item.id))
-                    ActivityKind.Transaction -> onOpenModule(TaskifyModule.Finance)
+                    ActivityKind.Transaction -> AppEvents.send(AppEvent.OpenTransaction(id = item.id))
                 }
             })
         }
