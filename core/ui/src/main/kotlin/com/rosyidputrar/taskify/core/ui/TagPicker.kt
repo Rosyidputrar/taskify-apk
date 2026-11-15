@@ -1,4 +1,4 @@
-package com.rosyidputrar.taskify.feature.tasks.component
+package com.rosyidputrar.taskify.core.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

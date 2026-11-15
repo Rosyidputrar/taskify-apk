@@ -10,6 +10,7 @@ android {
 dependencies {
     api(projects.core.data)
     implementation(projects.core.designsystem)
+    implementation(projects.core.ui)
     implementation(projects.core.reminders)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

@@ -76,12 +76,12 @@ import com.rosyidputrar.taskify.core.domain.tasks.detectPreset
 import com.rosyidputrar.taskify.core.domain.tasks.presetsFor
 import com.rosyidputrar.taskify.core.domain.tasks.priorityLabel
 import com.rosyidputrar.taskify.core.domain.time.Dates
-import com.rosyidputrar.taskify.feature.tasks.component.DatePickerSheet
+import com.rosyidputrar.taskify.core.ui.DatePickerSheet
 import com.rosyidputrar.taskify.feature.tasks.component.ProgressRing
 import com.rosyidputrar.taskify.feature.tasks.component.RecurrenceDialog
-import com.rosyidputrar.taskify.feature.tasks.component.TagPicker
+import com.rosyidputrar.taskify.core.ui.TagPicker
 import com.rosyidputrar.taskify.feature.tasks.component.TaskCheck
-import com.rosyidputrar.taskify.feature.tasks.component.TimePickerDialog
+import com.rosyidputrar.taskify.core.ui.TimePickerDialog
 import com.rosyidputrar.taskify.feature.tasks.component.priorityColor
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
