@@ -36,6 +36,16 @@ import kotlinx.serialization.Serializable
 /** Editor transaksi: [id] = transaksi yang ada; tanpa id = baru di [date] / dompet [walletId]. */
 @Serializable data class TransactionRoute(val id: String? = null, val date: String? = null, val walletId: String? = null)
 
+@Serializable data object VaultRoute
+
+/** Editor snippet: [id] null = snippet baru. */
+@Serializable data class SnippetRoute(val id: String? = null)
+
+@Serializable data class ProjectRoute(val id: String)
+
+/** Isi arsip ZIP satu versi project. */
+@Serializable data class ZipRoute(val attachmentId: String)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -49,5 +59,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Journal -> JournalRoute
     TaskifyModule.Notes -> NotesRoute
     TaskifyModule.Finance -> FinanceRoute
+    TaskifyModule.Vault -> VaultRoute
     else -> ModuleRoute(name)
 }

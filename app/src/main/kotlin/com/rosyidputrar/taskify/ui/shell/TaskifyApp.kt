@@ -64,6 +64,14 @@ import com.rosyidputrar.taskify.navigation.NoteEditRoute
 import com.rosyidputrar.taskify.navigation.NotesRoute
 import com.rosyidputrar.taskify.navigation.FinanceRoute
 import com.rosyidputrar.taskify.navigation.TransactionRoute
+import com.rosyidputrar.taskify.navigation.VaultRoute
+import com.rosyidputrar.taskify.navigation.SnippetRoute
+import com.rosyidputrar.taskify.navigation.ProjectRoute
+import com.rosyidputrar.taskify.navigation.ZipRoute
+import com.rosyidputrar.taskify.feature.vault.VaultScreen
+import com.rosyidputrar.taskify.feature.vault.SnippetEditorScreen
+import com.rosyidputrar.taskify.feature.vault.ProjectScreen
+import com.rosyidputrar.taskify.feature.vault.ZipViewerScreen
 import com.rosyidputrar.taskify.feature.finance.FinanceScreen
 import com.rosyidputrar.taskify.feature.finance.TxEditorArgs
 import com.rosyidputrar.taskify.feature.finance.TxEditorScreen
@@ -164,11 +172,12 @@ fun TaskifyApp(
         destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
         destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
         destination.hasRoute<FinanceRoute>() || destination.hasRoute<TransactionRoute>() -> TaskifyModule.Finance
+        destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() -> TaskifyModule.Vault
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() } == true
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -328,8 +337,29 @@ private fun TaskifyNavHost(
                 onOpenJournal = { id, date -> navController.navigate(JournalEntryRoute(id, date)) },
                 onOpenNote = { id, date -> navController.navigate(NoteEditRoute(id, date)) },
                 onOpenTransaction = { id, date -> navController.navigate(TransactionRoute(id, date)) },
+                onOpenVault = { kind, id -> navController.navigate(if (kind == "snippet") SnippetRoute(id) else ProjectRoute(id)) },
             )
         }
+        composable<VaultRoute> {
+            VaultScreen(
+                contentPadding = contentPadding,
+                onOpenSnippet = { navController.navigate(SnippetRoute(it)) },
+                onOpenProject = { navController.navigate(ProjectRoute(it)) },
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<SnippetRoute> { entry -> SnippetEditorScreen(entry.toRoute<SnippetRoute>().id, onBack = { navController.popBackStack() }) }
+        composable<ProjectRoute> { entry ->
+            ProjectScreen(
+                entry.toRoute<ProjectRoute>().id,
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+                onViewZip = { navController.navigate(ZipRoute(it)) },
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<ZipRoute> { entry -> ZipViewerScreen(entry.toRoute<ZipRoute>().attachmentId, onBack = { navController.popBackStack() }) }
         composable<FinanceRoute> {
             FinanceScreen(
                 contentPadding = contentPadding,

@@ -96,6 +96,9 @@ dependencies {
     implementation(projects.feature.journal)
     implementation(projects.feature.notes)
     implementation(projects.feature.finance)
+    implementation(projects.feature.vault)
+    implementation(projects.feature.attachments)
+    implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)
 

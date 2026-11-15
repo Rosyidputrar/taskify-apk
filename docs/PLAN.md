@@ -276,7 +276,7 @@ Biometric · Glance (widget) · DataStore.
 | **3. Kalender** | Query gabungan + kejadian virtual, grid bulan/strip minggu, agenda hari | Pusat aktivitas |
 | **4. Jurnal + Catatan** | Editor Markdown bersama, mood & insight, cari/filter, templat | Menulis jurnal & catatan offline, muncul di Kalender |
 | **5. Keuangan** | 6 tab, multi dompet, kategori ikon, grafik, input rupiah, berulang, anggaran, hutang, CSV | Catat & pantau uang offline, "kopi 25rb" dari Tangkap |
-| **6. Lampiran + Vault Kode** | Presign R2, outbox, snippet, project ZIP + viewer + versi | |
+| **6. Lampiran + Vault Kode** | Presign R2, outbox, snippet, project ZIP + viewer + versi | Foto struk/jurnal, arsip project & snippet |
 | **7. Sandi + Konfigurasi** | Kripto kompatibel webapp (uji vektor), brankas, generator, TOTP + riwayat, recovery, rotasi, device trust | Brankas dari laptop terbuka di HP |
 | **8. Berkas** | Tempfile upload, kedaluwarsa, link token, App Link unduh publik | |
 | **9. Review** | Statistik per modul, heatmap 26 minggu, tulis refleksi | |

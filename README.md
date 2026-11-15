@@ -41,18 +41,22 @@ core/common          Utilitas murni: rupiah, UUIDv7, tanggal WIB, timestamp ISO,
 core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, gerbang MFA, PIN,
                      RRULE, Markdown, simpan otomatis, insight mood
 core/store           Skema PowerSync (identik webapp) + repository Tugas, Tag, Beranda, Kalender,
-                     Jurnal, Catatan, Keuangan — diuji di JVM
+                     Jurnal, Catatan, Keuangan, Vault, Lampiran — diuji di JVM
                      terhadap PowerSync sungguhan (SQLite + ekstensi PowerSync)
 core/data            Database Android, Supabase client, connector upload
 core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN (Keystore)
 core/designsystem    "Kertas & Tinta": palet, tipografi, kartu indeks, Dok
 core/ui              Editor Markdown kertas bergaris + pratinjau native, indikator simpan, tag & tanggal
+core/files           Lampiran: presign Edge Function `files`, unggah R2 via WorkManager (outbox),
+                     salinan offline, kompres foto, baca ZIP
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
 feature/calendar     Kalender: grid bulan + strip minggu, agenda gabungan semua modul, kejadian virtual
 feature/journal      Jurnal: rak entri, editor + penggeser mood, insight (grafik, sebaran, streak), templat
 feature/notes        Catatan: grid staggered, catatan bebas / ditempel ke tanggal, sematkan, Sampah
+feature/attachments  Bagian lampiran (foto/file) di Tugas, Jurnal, dan Transaksi
+feature/vault        Vault Kode: snippet ber-template, project dengan versi ZIP, penampil isi ZIP
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
                      Hutang, Kelola), editor transaksi, grafik, ekspor CSV, transaksi berulang otomatis
 build-logic/         Convention plugin Gradle

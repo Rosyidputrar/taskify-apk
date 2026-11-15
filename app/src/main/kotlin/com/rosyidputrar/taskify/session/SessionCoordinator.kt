@@ -39,6 +39,7 @@ class SessionCoordinator(
     private val loginNames: LoginNameStore,
     private val reminders: ReminderScheduler,
     private val scope: CoroutineScope,
+    private val attachments: com.rosyidputrar.taskify.core.files.AttachmentManager,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -92,6 +93,8 @@ class SessionCoordinator(
         _readyUser.value = null
         // Pengingat akun ini tidak boleh berbunyi lagi setelah keluar.
         reminders.cancelAll()
+        // Salinan lampiran & unggahan tertunda milik akun ini juga dihapus dari perangkat.
+        attachments.wipe()
         database.wipe()
         auth.signOut()
     }

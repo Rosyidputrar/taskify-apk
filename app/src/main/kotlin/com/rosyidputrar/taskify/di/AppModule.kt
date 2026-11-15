@@ -19,6 +19,15 @@ import com.rosyidputrar.taskify.feature.calendar.calendarFeatureModule
 import com.rosyidputrar.taskify.feature.journal.journalFeatureModule
 import com.rosyidputrar.taskify.feature.notes.notesFeatureModule
 import com.rosyidputrar.taskify.feature.finance.financeFeatureModule
+import com.rosyidputrar.taskify.feature.vault.vaultFeatureModule
+import com.rosyidputrar.taskify.feature.attachments.attachmentsFeatureModule
+import com.rosyidputrar.taskify.core.store.files.AttachmentRepository
+import com.rosyidputrar.taskify.core.store.vault.VaultRepository
+import com.rosyidputrar.taskify.core.files.AttachmentManager
+import com.rosyidputrar.taskify.core.files.FileStore
+import com.rosyidputrar.taskify.core.files.FilesApi
+import com.rosyidputrar.taskify.core.files.Transfers
+import com.rosyidputrar.taskify.session.AttachmentOutbox
 import com.rosyidputrar.taskify.core.store.finance.FinanceRepository
 import com.rosyidputrar.taskify.session.RecurringProcessor
 import com.rosyidputrar.taskify.core.store.journal.JournalRepository
@@ -74,6 +83,10 @@ private val deviceModule = module {
     single { JournalRepository(get(), get()) }
     single { NoteRepository(get(), get()) }
     single { FinanceRepository(get(), get()) }
+    single { AttachmentRepository(get(), get()) }
+    single { VaultRepository(get(), get()) }
+    single { FileStore(androidContext()) }
+    single { Transfers() }
     single { ReminderPrefs(get()) }
     single { ReminderNotifier(androidContext(), get()) }
     single { ReminderScheduler(androidContext(), get(), get()) }
@@ -89,9 +102,12 @@ private val serverModule = module {
     single { createTaskifySupabase(serverConfig) }
     single { SupabaseConnector(get(), serverConfig.powerSyncUrl) }
     single { AuthRepository(get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE)) }
+    single { FilesApi(get()) }
+    single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get()) }
+    single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
