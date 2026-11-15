@@ -54,10 +54,27 @@ import com.rosyidputrar.taskify.navigation.SettingsRoute
 import com.rosyidputrar.taskify.navigation.route
 import com.rosyidputrar.taskify.ui.capture.CaptureSheet
 import com.rosyidputrar.taskify.ui.home.HomeScreen
+import com.rosyidputrar.taskify.core.designsystem.component.UiMessage
+import com.rosyidputrar.taskify.feature.tasks.TasksScreen
+import com.rosyidputrar.taskify.navigation.TasksRoute
+import com.rosyidputrar.taskify.ui.placeholder.BackButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.PaddingValues as Padding
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 import com.rosyidputrar.taskify.ui.placeholder.ModulePlaceholderScreen
 import com.rosyidputrar.taskify.ui.room.RoomScreen
 import com.rosyidputrar.taskify.ui.settings.SettingsScreen
 import com.rosyidputrar.taskify.ui.spotlight.Spotlight
+
+/** Slot layar Beranda (bisa diganti di tes tangkapan layar yang tidak memakai database). */
+typealias HomeSlot = @Composable (Padding, String?, (TaskifyModule) -> Unit, (String) -> Unit) -> Unit
 
 private const val KEY_HOME = "home"
 private const val KEY_CALENDAR = "calendar"
@@ -73,6 +90,8 @@ fun TaskifyApp(
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     displayName: String? = null,
+    messages: Flow<UiMessage> = emptyFlow(),
+    home: HomeSlot = { padding, name, openModule, openTask -> HomeScreen(padding, name, openModule, openTask) },
 ) {
     val navController = rememberNavController()
     var spotlightOpen by rememberSaveable { mutableStateOf(false) }
@@ -93,6 +112,10 @@ fun TaskifyApp(
                 AppEvent.OpenSpotlight -> spotlightOpen = true
                 is AppEvent.OpenCapture -> openCapture(event.text)
                 AppEvent.OpenCalendar -> navController.navigateTopLevel(CalendarRoute)
+                is AppEvent.OpenTask -> {
+                    spotlightOpen = false
+                    navController.navigate(TasksRoute(event.taskId)) { launchSingleTop = true }
+                }
             }
         }
     }
@@ -105,6 +128,7 @@ fun TaskifyApp(
         destination.hasRoute<HomeRoute>() -> TaskifyModule.Home
         destination.hasRoute<CalendarRoute>() -> TaskifyModule.Calendar
         destination.hasRoute<SettingsRoute>() -> TaskifyModule.Settings
+        destination.hasRoute<TasksRoute>() -> TaskifyModule.Tasks
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
@@ -142,6 +166,7 @@ fun TaskifyApp(
                 contentPadding = contentPadding,
                 preferences = preferences,
                 displayName = displayName,
+                home = home,
                 onOpenModule = openModule,
                 onCapture = { openCapture() },
                 onThemeModeChange = onThemeModeChange,
@@ -191,6 +216,25 @@ fun TaskifyApp(
             )
         }
 
+        val snackbar = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(messages) {
+            messages.collect { message ->
+                snackbar.currentSnackbarData?.dismiss()
+                scope.launch {
+                    val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel, withDismissAction = message.action == null, duration = SnackbarDuration.Short)
+                    if (result == SnackbarResult.ActionPerformed) message.action?.invoke()
+                }
+            }
+        }
+        SnackbarHost(
+            snackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (expanded) 16.dp else 96.dp, start = 16.dp, end = 16.dp),
+        )
+
         Spotlight(
             visible = spotlightOpen,
             onDismiss = { spotlightOpen = false },
@@ -217,6 +261,7 @@ private fun TaskifyNavHost(
     contentPadding: PaddingValues,
     preferences: AppPreferences.Snapshot,
     displayName: String?,
+    home: HomeSlot,
     onOpenModule: (TaskifyModule) -> Unit,
     onCapture: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -225,11 +270,15 @@ private fun TaskifyNavHost(
 ) {
     NavHost(navController = navController, startDestination = HomeRoute, modifier = modifier) {
         composable<HomeRoute> {
-            HomeScreen(
+            home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } }
+        }
+        composable<TasksRoute> { entry ->
+            val route = entry.toRoute<TasksRoute>()
+            TasksScreen(
                 contentPadding = contentPadding,
-                displayName = displayName,
-                onOpenModule = onOpenModule,
-                onCapture = onCapture,
+                openTaskId = route.taskId,
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
             )
         }
         composable<CalendarRoute> {

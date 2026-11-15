@@ -9,6 +9,7 @@ sealed interface AppEvent {
     data object OpenSpotlight : AppEvent
     data class OpenCapture(val text: String = "") : AppEvent
     data object OpenCalendar : AppEvent
+    data class OpenTask(val taskId: String) : AppEvent
 }
 
 object AppEvents {

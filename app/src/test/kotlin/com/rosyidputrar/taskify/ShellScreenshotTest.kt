@@ -13,7 +13,9 @@ import com.rosyidputrar.taskify.data.AppPreferences
 import com.rosyidputrar.taskify.ui.shell.AppEvent
 import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.shell.TaskifyApp
+import com.rosyidputrar.taskify.ui.home.HomeContent
 import org.junit.Rule
+import androidx.compose.ui.unit.dp
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -37,6 +39,10 @@ class ShellScreenshotTest {
                     preferences = AppPreferences.Snapshot(if (dark) ThemeMode.Dark else ThemeMode.Light, pinned),
                     onThemeModeChange = {},
                     onPinnedModuleChange = {},
+                    displayName = "Rosyid",
+                    home = { padding, name, openModule, openTask ->
+                        HomeContent(SampleData.homeState(), name, padding, openModule, openTask, {}, {})
+                    },
                 )
             }
         }
@@ -88,4 +94,31 @@ class ShellScreenshotTest {
         setApp(dark = false)
         capture("home_tablet_light")
     }
+}
+
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w393dp-h852dp-xxhdpi")
+class TasksScreenshotTest {
+    @get:Rule val compose = createComposeRule()
+
+    private fun shot(name: String, dark: Boolean) {
+        compose.setContent {
+            TaskifyTheme(darkTheme = dark) {
+                androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                    com.rosyidputrar.taskify.feature.tasks.TasksContent(
+                        SampleData.tasksState(),
+                        SampleData.NoActions,
+                        androidx.compose.foundation.layout.PaddingValues(top = 24.dp, bottom = 24.dp),
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("screenshots/$name.png")
+    }
+
+    @Test fun tasksLight() = shot("tasks_light", dark = false)
+
+    @Test fun tasksDark() = shot("tasks_dark", dark = true)
 }

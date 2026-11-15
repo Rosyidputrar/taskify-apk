@@ -8,6 +8,7 @@ import com.rosyidputrar.taskify.core.common.Limits
 import com.rosyidputrar.taskify.core.common.Timestamps
 import com.rosyidputrar.taskify.core.data.SupabaseConnector
 import com.rosyidputrar.taskify.core.data.TaskifyDatabase
+import com.rosyidputrar.taskify.core.reminders.ReminderScheduler
 import com.rosyidputrar.taskify.core.domain.auth.GateStatus
 import com.rosyidputrar.taskify.core.domain.auth.cleanDisplayName
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,7 @@ class SessionCoordinator(
     private val connector: SupabaseConnector,
     private val trustStore: MfaTrustStore,
     private val loginNames: LoginNameStore,
+    private val reminders: ReminderScheduler,
     private val scope: CoroutineScope,
 ) {
     private val mutex = Mutex()
@@ -88,6 +90,8 @@ class SessionCoordinator(
     suspend fun logout() = mutex.withLock {
         trustStore.clear()
         _readyUser.value = null
+        // Pengingat akun ini tidak boleh berbunyi lagi setelah keluar.
+        reminders.cancelAll()
         database.wipe()
         auth.signOut()
     }

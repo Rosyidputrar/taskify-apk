@@ -65,6 +65,7 @@ fun SettingsScreen(
         }
         if (viewModel.hasAccount) item { AccountSection(viewModel) }
         item { SecuritySection(viewModel) }
+        item { NotificationSection(viewModel) }
         if (viewModel.hasAccount) item { SyncSection(viewModel) }
         item {
             SettingsSection("Tampilan") {
@@ -113,7 +114,6 @@ fun SettingsScreen(
         item {
             SettingsSection("Segera hadir") {
                 listOf(
-                    "Notifikasi pengingat",
                     "Ekspor data & hapus data perangkat",
                     "Kelola authenticator (tambah cadangan, hapus)",
                 ).forEach {

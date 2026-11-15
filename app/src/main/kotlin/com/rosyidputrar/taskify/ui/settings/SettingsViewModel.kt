@@ -11,6 +11,9 @@ import com.rosyidputrar.taskify.core.auth.NetworkMonitor
 import com.rosyidputrar.taskify.core.data.TaskifyDatabase
 import com.rosyidputrar.taskify.core.data.UploadErrorRow
 import com.rosyidputrar.taskify.session.SessionCoordinator
+import com.rosyidputrar.taskify.core.reminders.ReminderNotifier
+import com.rosyidputrar.taskify.core.reminders.ReminderPrefs
+import com.rosyidputrar.taskify.core.reminders.ReminderScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +41,27 @@ class SettingsViewModel(
     private val loginNames: LoginNameStore,
     private val database: TaskifyDatabase,
     private val network: NetworkMonitor,
+    private val notifier: ReminderNotifier,
+    private val scheduler: ReminderScheduler,
+    private val reminderPrefs: ReminderPrefs,
 ) : ViewModel() {
+
+    data class NotificationUi(val canPost: Boolean = false, val exactAlarms: Boolean = false, val hideContent: Boolean = false)
+
+    private val _notifications = MutableStateFlow(NotificationUi())
+    val notifications: StateFlow<NotificationUi> = _notifications.asStateFlow()
+
+    /** Dipanggil saat layar tampil / kembali dari pengaturan sistem. */
+    fun refreshNotifications() {
+        _notifications.value = NotificationUi(notifier.canPost(), scheduler.canExact(), reminderPrefs.hideContent)
+        viewModelScope.launch { scheduler.rescheduleNow() }
+    }
+
+    fun setHideContent(hide: Boolean) {
+        reminderPrefs.hideContent = hide
+        refreshNotifications()
+    }
+
     val hasAccount: Boolean = coordinator != null && auth != null
 
     private val _account = MutableStateFlow(AccountUi(email = auth?.currentEmail(), loginNameEnabled = loginNames.enabled))

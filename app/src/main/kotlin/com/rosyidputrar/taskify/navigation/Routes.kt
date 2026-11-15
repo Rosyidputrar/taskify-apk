@@ -8,6 +8,9 @@ import kotlinx.serialization.Serializable
 @Serializable data object RoomRoute
 @Serializable data object SettingsRoute
 
+/** Tugas; [taskId] membuka detail tugas itu (dari notifikasi, Beranda, dsb.). */
+@Serializable data class TasksRoute(val taskId: String? = null)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -17,5 +20,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Home -> HomeRoute
     TaskifyModule.Calendar -> CalendarRoute
     TaskifyModule.Settings -> SettingsRoute
+    TaskifyModule.Tasks -> TasksRoute()
     else -> ModuleRoute(name)
 }

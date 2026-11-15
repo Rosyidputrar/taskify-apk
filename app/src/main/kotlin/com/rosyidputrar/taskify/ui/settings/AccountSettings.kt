@@ -263,3 +263,70 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boo
         Switch(checked = checked, onCheckedChange = null)
     }
 }
+
+@Composable
+fun NotificationSection(viewModel: SettingsViewModel) {
+    val ui by viewModel.notifications.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val permission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { viewModel.refreshNotifications() }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.refreshNotifications()
+        onPauseOrDispose { }
+    }
+    SettingsSection("Notifikasi pengingat") {
+        Text(
+            "Pengingat tugas berbunyi sebagai alarm di HP ini, tetap jalan tanpa internet. Pengingat yang dibuat di laptop ikut terpasang setelah tersinkron.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(10.dp))
+        StatusRow(
+            ok = ui.canPost,
+            title = if (ui.canPost) "Notifikasi diizinkan" else "Notifikasi belum diizinkan",
+            action = if (ui.canPost) null else "Izinkan",
+            onAction = {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName),
+                    )
+                }
+            },
+        )
+        StatusRow(
+            ok = ui.exactAlarms,
+            title = if (ui.exactAlarms) "Alarm tepat waktu aktif" else "Alarm bisa terlambat beberapa menit",
+            action = if (ui.exactAlarms || android.os.Build.VERSION.SDK_INT < 31) null else "Aktifkan",
+            onAction = {
+                context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:${context.packageName}")),
+                )
+            },
+        )
+        SwitchRow(
+            title = "Sembunyikan isi notifikasi",
+            subtitle = "Hanya tertulis \"Ada pengingat tugas\" tanpa judulnya.",
+            checked = ui.hideContent,
+            onChange = viewModel::setHideContent,
+        )
+    }
+}
+
+@Composable
+private fun StatusRow(ok: Boolean, title: String, action: String?, onAction: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            if (ok) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff,
+            contentDescription = null,
+            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (action != null) TextButton(onClick = onAction) { Text(action) }
+    }
+}

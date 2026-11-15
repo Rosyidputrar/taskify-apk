@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
+import org.koin.compose.viewmodel.koinViewModel
 
 /** Jenis hasil tangkapan. [Auto] = ditebak dari teks (nominal → transaksi, "j:" → jurnal, …). */
 enum class CaptureKind(val label: String, val module: TaskifyModule?) {
@@ -59,6 +60,7 @@ fun CaptureSheet(
     initialText: String,
     startWithTypePicker: Boolean,
     onDismiss: () -> Unit,
+    viewModel: CaptureViewModel = koinViewModel(),
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var text by rememberSaveable { mutableStateOf(initialText) }
@@ -109,14 +111,15 @@ fun CaptureSheet(
             )
             Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val savesTask = kind == CaptureKind.Auto || kind == CaptureKind.Task
                 Text(
-                    "Penyimpanan aktif setelah akun & sinkronisasi terhubung.",
+                    if (savesTask) "Disimpan sebagai tugas." else "${kind.label} menyusul bersama modulnya.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onDismiss) { Text("Tutup") }
-                Button(onClick = {}, enabled = false) { Text("Simpan") }
+                Button(onClick = { viewModel.saveTask(text, onDismiss) }, enabled = savesTask && text.isNotBlank()) { Text("Simpan") }
             }
         }
     }

@@ -91,6 +91,8 @@ dependencies {
     implementation(projects.core.designsystem)
     implementation(projects.core.auth)
     implementation(projects.feature.auth)
+    implementation(projects.feature.tasks)
+    implementation(projects.core.reminders)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)

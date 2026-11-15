@@ -1,34 +1,47 @@
 package com.rosyidputrar.taskify.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.outlined.SentimentDissatisfied
+import androidx.compose.material.icons.outlined.SentimentNeutral
+import androidx.compose.material.icons.outlined.SentimentSatisfied
+import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
+import androidx.compose.material.icons.outlined.SentimentVerySatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.rosyidputrar.taskify.core.common.LocalDates
-import com.rosyidputrar.taskify.core.domain.auth.homeGreeting
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rosyidputrar.taskify.core.common.Rupiah
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
 import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.IndexTab
@@ -36,64 +49,84 @@ import com.rosyidputrar.taskify.core.designsystem.component.RuledLine
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
-import kotlinx.datetime.DatePeriod
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.minus
-import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
+import com.rosyidputrar.taskify.core.domain.auth.homeGreeting
+import com.rosyidputrar.taskify.core.domain.tasks.Task
+import com.rosyidputrar.taskify.core.domain.tasks.dueLabel
+import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.core.store.home.ActivityItem
+import com.rosyidputrar.taskify.core.store.home.ActivityKind
+import com.rosyidputrar.taskify.feature.tasks.component.ProgressRing
+import com.rosyidputrar.taskify.feature.tasks.component.QuickAddBar
+import com.rosyidputrar.taskify.feature.tasks.component.TaskCheck
+import org.koin.compose.viewmodel.koinViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(
     contentPadding: PaddingValues,
-    displayName: String? = null,
+    displayName: String?,
     onOpenModule: (TaskifyModule) -> Unit,
-    onCapture: () -> Unit,
+    onOpenTask: (String) -> Unit,
+    viewModel: HomeViewModel = koinViewModel(),
 ) {
-    val today = remember { LocalDates.today() }
-    val hour = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour }
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item { TodayHeader(today, homeGreeting(greeting(hour), displayName)) }
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    HomeContent(state, displayName, contentPadding, onOpenModule, onOpenTask, viewModel::toggle, viewModel::quickAdd)
+}
+
+@Composable
+fun HomeContent(
+    state: HomeUiState,
+    displayName: String?,
+    contentPadding: PaddingValues,
+    onOpenModule: (TaskifyModule) -> Unit,
+    onOpenTask: (String) -> Unit,
+    onToggle: (Task) -> Unit,
+    onQuickAdd: (String) -> Unit,
+) {
+    val today = state.today
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { TodayHeader(today, homeGreeting(Dates.greeting(), displayName)) }
         item { WeekRibbon(today, onSelect = { onOpenModule(TaskifyModule.Calendar) }) }
-        item { FocusCard(onCapture) }
-        item { SummaryBento(onOpenModule) }
+        item { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
+        item { SummaryBento(state, onOpenModule) }
         item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                Text(
-                    "Aktivitas hari ini",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.semantics { heading() },
-                )
+            Text(
+                "Aktivitas hari ini",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 20.dp).semantics { heading() },
+            )
+        }
+        if (state.loaded && state.activity.isEmpty()) {
+            item {
                 EmptyState(
-                    module = TaskifyModule.Calendar,
+                    TaskifyModule.Calendar,
                     title = "Lini waktu masih kosong",
                     message = "Tugas, jurnal, catatan, dan transaksi hari ini akan tersusun di sini menurut jamnya.",
                 )
             }
         }
+        items(state.activity, key = { "${it.kind}-${it.id}" }) { item ->
+            TimelineRow(item, onClick = {
+                when (item.kind) {
+                    ActivityKind.Task -> onOpenTask(item.id)
+                    ActivityKind.Journal -> onOpenModule(TaskifyModule.Journal)
+                    ActivityKind.Note -> onOpenModule(TaskifyModule.Notes)
+                    ActivityKind.Transaction -> onOpenModule(TaskifyModule.Finance)
+                }
+            })
+        }
     }
 }
 
-private fun greeting(hour: Int): String = when (hour) {
-    in 4..10 -> "Selamat pagi"
-    in 11..14 -> "Selamat siang"
-    in 15..17 -> "Selamat sore"
-    else -> "Selamat malam"
-}
-
 @Composable
-private fun TodayHeader(today: LocalDate, greeting: String) {
+private fun TodayHeader(today: String, greeting: String) {
+    val date = Dates.parse(today)
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) {
         IndexTab(TaskifyModule.Home, text = greeting)
         Spacer(Modifier.height(12.dp))
-        Text(LocalDates.dayName(today), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(Dates.format(today, "EEEE"), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            "${today.day} ${LocalDates.monthName(today.month.ordinal + 1)}",
+            "${date.dayOfMonth} ${Dates.format(today, "MMMM")}",
             style = MaterialTheme.typography.displayMedium,
             modifier = Modifier.semantics { heading() },
         )
@@ -104,13 +137,10 @@ private fun TodayHeader(today: LocalDate, greeting: String) {
 
 /** Strip 7 hari (3 hari lalu → 3 hari depan). Ketuk hari → Kalender. */
 @Composable
-private fun WeekRibbon(today: LocalDate, onSelect: (LocalDate) -> Unit) {
-    val days = remember(today) { (-3..3).map { offset -> if (offset < 0) today.minus(DatePeriod(days = -offset)) else today.plus(DatePeriod(days = offset)) } }
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(days, key = { it.toString() }) { day ->
+private fun WeekRibbon(today: String, onSelect: (String) -> Unit) {
+    val days = (-3L..3L).map { Dates.addDays(today, it) }
+    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(days, key = { it }) { day ->
             val isToday = day == today
             Surface(
                 onClick = { onSelect(day) },
@@ -118,12 +148,9 @@ private fun WeekRibbon(today: LocalDate, onSelect: (LocalDate) -> Unit) {
                 color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             ) {
-                Column(
-                    Modifier.width(52.dp).padding(vertical = 10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(LocalDates.dayName(day).take(3), style = MaterialTheme.typography.labelMedium)
-                    Text(day.day.toString(), style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.width(52.dp).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(Dates.format(day, "EEE"), style = MaterialTheme.typography.labelMedium)
+                    Text(Dates.parse(day).dayOfMonth.toString(), style = MaterialTheme.typography.titleLarge)
                 }
             }
         }
@@ -131,54 +158,97 @@ private fun WeekRibbon(today: LocalDate, onSelect: (LocalDate) -> Unit) {
 }
 
 @Composable
-private fun FocusCard(onCapture: () -> Unit) {
-    IndexCard(
-        TaskifyModule.Tasks,
-        tinted = true,
-        tabWidth = 8.dp,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-    ) {
-        Text("FOKUS SEKARANG", style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Tasks))
-        Spacer(Modifier.height(6.dp))
-        Text("Belum ada tugas fokus", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Tugas terpenting hari ini akan muncul di sini, lengkap dengan progres subtask-nya.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
-        FilledTonalButton(onClick = onCapture) {
-            Icon(Icons.Rounded.Add, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Tangkap tugas")
+private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: (String) -> Unit, onQuickAdd: (String) -> Unit, onSeeAll: () -> Unit) {
+    val accent = TaskifyTheme.modules.accent(TaskifyModule.Tasks)
+    val top = state.focus.firstOrNull()
+    IndexCard(TaskifyModule.Tasks, tinted = true, tabWidth = 8.dp, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("FOKUS SEKARANG", style = TaskifyTextStyles.indexLabel, color = accent, modifier = Modifier.weight(1f))
+            Text("Semua tugas", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(onClick = onSeeAll).padding(4.dp))
         }
+        Spacer(Modifier.height(8.dp))
+        if (top == null) {
+            Text(if (state.loaded) "Semua beres untuk hari ini" else "Memuat…", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Tugas yang jatuh tempo hari ini dan yang terlambat muncul di sini.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.clickable { onOpenTask(top.id) }) {
+                TaskCheck(top, { onToggle(top) }, Modifier.padding(top = 4.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(top.title, style = MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    dueLabel(top, state.today)?.let {
+                        val overdue = top.dueDate != null && top.dueDate!! < state.today
+                        Text(it, style = MaterialTheme.typography.labelLarge, color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                state.progress[top.id]?.takeIf { it.total > 0 }?.let { ProgressRing(it.done, it.total, accent, size = 40.dp, stroke = 4.dp, showLabel = true) }
+            }
+            val rest = state.focus.drop(1).take(4)
+            if (rest.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("LALU", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                rest.forEach { task ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpenTask(task.id) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TaskCheck(task, { onToggle(task) })
+                        Spacer(Modifier.width(12.dp))
+                        Text(task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        dueLabel(task, state.today)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        QuickAddBar(state.today, onSubmit = onQuickAdd, placeholder = "Tambah tugas hari ini…")
     }
 }
 
-private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String)
+private val moodIcons: List<ImageVector> = listOf(
+    Icons.Outlined.SentimentVeryDissatisfied,
+    Icons.Outlined.SentimentDissatisfied,
+    Icons.Outlined.SentimentNeutral,
+    Icons.Outlined.SentimentSatisfied,
+    Icons.Outlined.SentimentVerySatisfied,
+)
+private val moodLabels = listOf("Buruk", "Kurang", "Biasa", "Baik", "Sangat baik")
+
+private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String, val icon: ImageVector? = null)
 
 @Composable
-private fun SummaryBento(onOpenModule: (TaskifyModule) -> Unit) {
+private fun SummaryBento(state: HomeUiState, onOpenModule: (TaskifyModule) -> Unit) {
+    val s = state.summary
+    val mood = s.moodToday?.roundToInt()?.coerceIn(1, 5)
     val tiles = listOf(
-        Tile(TaskifyModule.Tasks, "Tugas tersisa", "—", "0 terlambat"),
-        Tile(TaskifyModule.Journal, "Mood hari ini", "—", "Belum menulis"),
-        Tile(TaskifyModule.Finance, "Keluar hari ini", "Rp 0", "dari anggaran"),
-        Tile(TaskifyModule.Review, "Streak jurnal", "0", "hari berturut"),
+        Tile(TaskifyModule.Tasks, "Tugas hari ini", "${s.tasksTodayDone}/${s.tasksToday}", if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat"),
+        Tile(TaskifyModule.Journal, "Mood hari ini", mood?.let { moodLabels[it - 1] } ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", mood?.let { moodIcons[it - 1] }),
+        Tile(TaskifyModule.Finance, "Keluar hari ini", Rupiah.compact(s.expenseToday).let { if (s.expenseToday == 0L) "Rp 0" else "Rp $it" }, "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}"),
+        Tile(TaskifyModule.Review, "Streak jurnal", "${state.streak}", "hari berturut-turut"),
     )
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Max)) {
                 row.forEach { tile ->
                     IndexCard(
                         tile.module,
                         onClick = { onOpenModule(tile.module) },
                         onClickLabel = "Buka ${tile.module.label}",
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         contentPadding = 14.dp,
                     ) {
                         Text(tile.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(tile.value, style = TaskifyTextStyles.numeric, color = MaterialTheme.colorScheme.onSurface)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            tile.icon?.let {
+                                Icon(it, contentDescription = null, tint = TaskifyTheme.modules.accent(tile.module), modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(tile.value, style = if (tile.value.length > 8) MaterialTheme.typography.titleLarge else TaskifyTextStyles.numeric, maxLines = 1)
+                        }
                         Text(tile.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -187,3 +257,42 @@ private fun SummaryBento(onOpenModule: (TaskifyModule) -> Unit) {
     }
 }
 
+/** Baris lini waktu: kolom jam (monospace), rel warna modul, judul. */
+@Composable
+private fun TimelineRow(item: ActivityItem, onClick: () -> Unit) {
+    val module = when (item.kind) {
+        ActivityKind.Task -> TaskifyModule.Tasks
+        ActivityKind.Journal -> TaskifyModule.Journal
+        ActivityKind.Note -> TaskifyModule.Notes
+        ActivityKind.Transaction -> TaskifyModule.Finance
+    }
+    val accent = TaskifyTheme.modules.accent(module)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp).height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(item.time.ifEmpty { "—" }, style = TaskifyTextStyles.code, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(52.dp))
+        Box(Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant)) {
+            Box(Modifier.size(10.dp).align(Alignment.Center).background(accent, CircleShape))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Text(module.label.uppercase(), style = TaskifyTextStyles.indexLabel, color = accent)
+            Text(
+                item.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (item.done) TextDecoration.LineThrough else null,
+                color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        item.amount?.let {
+            Text(
+                (if (item.isIncome) "+" else "−") + Rupiah.format(it),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (item.isIncome) TaskifyTheme.modules.accent(TaskifyModule.Finance) else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}

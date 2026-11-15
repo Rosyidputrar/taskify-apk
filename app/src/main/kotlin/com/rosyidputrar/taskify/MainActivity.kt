@@ -19,6 +19,9 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.designsystem.theme.isDark
+import com.rosyidputrar.taskify.core.designsystem.component.Messenger
+import com.rosyidputrar.taskify.core.reminders.ReminderNotifier
+import org.koin.android.ext.android.inject
 import com.rosyidputrar.taskify.data.AppPreferences
 import com.rosyidputrar.taskify.feature.auth.LockScreen
 import com.rosyidputrar.taskify.feature.auth.LoginScreen
@@ -37,6 +40,7 @@ class MainActivity : ComponentActivity() {
 
     private val appViewModel: AppViewModel by viewModel()
     private val gateViewModel: GateViewModel by viewModel()
+    private val messenger: Messenger by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -65,6 +69,7 @@ class MainActivity : ComponentActivity() {
             TaskifyApp(
                 preferences = snapshot,
                 displayName = name,
+                messages = messenger.messages,
                 onThemeModeChange = appViewModel::setThemeMode,
                 onPinnedModuleChange = appViewModel::setPinnedModule,
             )
@@ -93,6 +98,7 @@ class MainActivity : ComponentActivity() {
             ACTION_CAPTURE -> AppEvents.send(AppEvent.OpenCapture())
             ACTION_SEARCH -> AppEvents.send(AppEvent.OpenSpotlight)
             ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar)
+            ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
         }
     }
 
