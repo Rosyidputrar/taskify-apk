@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -84,9 +85,11 @@ class ShellScreenshotTest {
 
     @Test fun moduleDark() {
         setApp(dark = true)
-        compose.onNodeWithContentDescription("Kalender").performClick()
+        compose.onNodeWithContentDescription("Ruang").performClick()
         compose.waitForIdle()
-        capture("calendar_placeholder_dark")
+        compose.onNodeWithText("Jurnal").performClick()
+        compose.waitForIdle()
+        capture("module_placeholder_dark")
     }
 
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")
@@ -121,4 +124,34 @@ class TasksScreenshotTest {
     @Test fun tasksLight() = shot("tasks_light", dark = false)
 
     @Test fun tasksDark() = shot("tasks_dark", dark = true)
+}
+
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w393dp-h852dp-xxhdpi")
+class CalendarScreenshotTest {
+    @get:Rule val compose = createComposeRule()
+
+    private fun shot(name: String, dark: Boolean) {
+        compose.setContent {
+            TaskifyTheme(darkTheme = dark) {
+                androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                    com.rosyidputrar.taskify.feature.calendar.CalendarContent(
+                        SampleData.calendarState(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 24.dp, bottom = 24.dp),
+                        detailEnabled = false,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("screenshots/$name.png")
+    }
+
+    @Test fun calendarLight() = shot("calendar_light", dark = false)
+
+    @Test fun calendarDark() = shot("calendar_dark", dark = true)
+
+    @Config(qualifiers = "w393dp-h1900dp-xxhdpi")
+    @Test fun calendarAgenda() = shot("calendar_agenda_tall_light", dark = false)
 }

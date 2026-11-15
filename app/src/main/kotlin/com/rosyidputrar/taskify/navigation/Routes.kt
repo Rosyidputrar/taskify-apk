@@ -4,7 +4,8 @@ import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import kotlinx.serialization.Serializable
 
 @Serializable data object HomeRoute
-@Serializable data object CalendarRoute
+/** Kalender; [date] memilih tanggal tertentu (dari strip minggu Beranda, shortcut, dsb.). */
+@Serializable data class CalendarRoute(val date: String? = null)
 @Serializable data object RoomRoute
 @Serializable data object SettingsRoute
 
@@ -18,7 +19,7 @@ import kotlinx.serialization.Serializable
 
 fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Home -> HomeRoute
-    TaskifyModule.Calendar -> CalendarRoute
+    TaskifyModule.Calendar -> CalendarRoute()
     TaskifyModule.Settings -> SettingsRoute
     TaskifyModule.Tasks -> TasksRoute()
     else -> ModuleRoute(name)

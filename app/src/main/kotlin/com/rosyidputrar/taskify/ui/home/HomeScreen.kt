@@ -20,12 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SentimentDissatisfied
-import androidx.compose.material.icons.outlined.SentimentNeutral
-import androidx.compose.material.icons.outlined.SentimentSatisfied
-import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
-import androidx.compose.material.icons.outlined.SentimentVerySatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.common.Rupiah
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
+import com.rosyidputrar.taskify.core.designsystem.component.moodIcon
+import com.rosyidputrar.taskify.core.domain.journal.moodLabel
 import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.IndexTab
 import com.rosyidputrar.taskify.core.designsystem.component.RuledLine
@@ -58,6 +54,8 @@ import com.rosyidputrar.taskify.core.store.home.ActivityKind
 import com.rosyidputrar.taskify.feature.tasks.component.ProgressRing
 import com.rosyidputrar.taskify.feature.tasks.component.QuickAddBar
 import com.rosyidputrar.taskify.feature.tasks.component.TaskCheck
+import com.rosyidputrar.taskify.ui.shell.AppEvent
+import com.rosyidputrar.taskify.ui.shell.AppEvents
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.roundToInt
 
@@ -86,7 +84,7 @@ fun HomeContent(
     val today = state.today
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { TodayHeader(today, homeGreeting(Dates.greeting(), displayName)) }
-        item { WeekRibbon(today, onSelect = { onOpenModule(TaskifyModule.Calendar) }) }
+        item { WeekRibbon(today, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
         item { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
         item { SummaryBento(state, onOpenModule) }
         item {
@@ -209,14 +207,6 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
     }
 }
 
-private val moodIcons: List<ImageVector> = listOf(
-    Icons.Outlined.SentimentVeryDissatisfied,
-    Icons.Outlined.SentimentDissatisfied,
-    Icons.Outlined.SentimentNeutral,
-    Icons.Outlined.SentimentSatisfied,
-    Icons.Outlined.SentimentVerySatisfied,
-)
-private val moodLabels = listOf("Buruk", "Kurang", "Biasa", "Baik", "Sangat baik")
 
 private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String, val icon: ImageVector? = null)
 
@@ -226,7 +216,7 @@ private fun SummaryBento(state: HomeUiState, onOpenModule: (TaskifyModule) -> Un
     val mood = s.moodToday?.roundToInt()?.coerceIn(1, 5)
     val tiles = listOf(
         Tile(TaskifyModule.Tasks, "Tugas hari ini", "${s.tasksTodayDone}/${s.tasksToday}", if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat"),
-        Tile(TaskifyModule.Journal, "Mood hari ini", mood?.let { moodLabels[it - 1] } ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", mood?.let { moodIcons[it - 1] }),
+        Tile(TaskifyModule.Journal, "Mood hari ini", moodLabel(mood) ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", moodIcon(mood)),
         Tile(TaskifyModule.Finance, "Keluar hari ini", Rupiah.compact(s.expenseToday).let { if (s.expenseToday == 0L) "Rp 0" else "Rp $it" }, "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}"),
         Tile(TaskifyModule.Review, "Streak jurnal", "${state.streak}", "hari berturut-turut"),
     )

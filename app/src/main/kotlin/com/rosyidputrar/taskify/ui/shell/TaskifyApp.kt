@@ -56,6 +56,7 @@ import com.rosyidputrar.taskify.ui.capture.CaptureSheet
 import com.rosyidputrar.taskify.ui.home.HomeScreen
 import com.rosyidputrar.taskify.core.designsystem.component.UiMessage
 import com.rosyidputrar.taskify.feature.tasks.TasksScreen
+import com.rosyidputrar.taskify.feature.calendar.CalendarScreen
 import com.rosyidputrar.taskify.navigation.TasksRoute
 import com.rosyidputrar.taskify.ui.placeholder.BackButton
 import androidx.compose.material3.SnackbarDuration
@@ -111,7 +112,10 @@ fun TaskifyApp(
             when (event) {
                 AppEvent.OpenSpotlight -> spotlightOpen = true
                 is AppEvent.OpenCapture -> openCapture(event.text)
-                AppEvent.OpenCalendar -> navController.navigateTopLevel(CalendarRoute)
+                is AppEvent.OpenCalendar -> {
+                    spotlightOpen = false
+                    navController.navigateTopLevel(CalendarRoute(event.date), restore = event.date == null)
+                }
                 is AppEvent.OpenTask -> {
                     spotlightOpen = false
                     navController.navigate(TasksRoute(event.taskId)) { launchSingleTop = true }
@@ -182,7 +186,7 @@ fun TaskifyApp(
                     onCapture = { openCapture() },
                     onSearch = { spotlightOpen = true },
                     onHome = { navController.navigateTopLevel(HomeRoute) },
-                    onCalendar = { navController.navigateTopLevel(CalendarRoute) },
+                    onCalendar = { navController.navigateTopLevel(CalendarRoute()) },
                     onRoom = { navController.navigateTopLevel(RoomRoute) },
                 )
                 host(Modifier.weight(1f))
@@ -201,7 +205,7 @@ fun TaskifyApp(
                 onSelect = { item ->
                     when (item.key) {
                         KEY_HOME -> navController.navigateTopLevel(HomeRoute)
-                        KEY_CALENDAR -> navController.navigateTopLevel(CalendarRoute)
+                        KEY_CALENDAR -> navController.navigateTopLevel(CalendarRoute())
                         KEY_ROOM -> navController.navigateTopLevel(RoomRoute)
                         KEY_PIN -> pinned?.let { navController.navigateTopLevel(it.route()) }
                     }
@@ -281,8 +285,8 @@ private fun TaskifyNavHost(
                 backButton = { BackButton(it) },
             )
         }
-        composable<CalendarRoute> {
-            ModulePlaceholderScreen(TaskifyModule.Calendar, contentPadding, onBack = null)
+        composable<CalendarRoute> { entry ->
+            CalendarScreen(contentPadding = contentPadding, initialDate = entry.toRoute<CalendarRoute>().date, onOpenModule = onOpenModule)
         }
         composable<RoomRoute> {
             RoomScreen(
@@ -313,11 +317,12 @@ private fun TaskifyNavHost(
 private fun NavHostController.backIfPossible(): (() -> Unit)? =
     if (previousBackStackEntry != null) ({ popBackStack() }) else null
 
-private fun NavHostController.navigateTopLevel(route: Any) {
+/** [restore] = false untuk tujuan dengan argumen baru (mis. tanggal Kalender) agar tidak memulihkan argumen lama. */
+private fun NavHostController.navigateTopLevel(route: Any, restore: Boolean = true) {
     navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        popUpTo(graph.findStartDestination().id) { saveState = restore }
         launchSingleTop = true
-        restoreState = true
+        restoreState = restore
     }
 }
 

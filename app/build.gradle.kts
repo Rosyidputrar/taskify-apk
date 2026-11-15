@@ -92,6 +92,7 @@ dependencies {
     implementation(projects.core.auth)
     implementation(projects.feature.auth)
     implementation(projects.feature.tasks)
+    implementation(projects.feature.calendar)
     implementation(projects.core.reminders)
 
     implementation(libs.androidx.core.ktx)

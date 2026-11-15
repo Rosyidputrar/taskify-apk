@@ -15,6 +15,8 @@ import com.rosyidputrar.taskify.core.data.createTaskifySupabase
 import com.rosyidputrar.taskify.data.AppPreferences
 import com.rosyidputrar.taskify.feature.auth.authFeatureModule
 import com.rosyidputrar.taskify.feature.tasks.tasksFeatureModule
+import com.rosyidputrar.taskify.feature.calendar.calendarFeatureModule
+import com.rosyidputrar.taskify.core.store.calendar.CalendarRepository
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.reminders.ReminderNotifier
 import com.rosyidputrar.taskify.core.reminders.ReminderPrefs
@@ -60,6 +62,7 @@ private val deviceModule = module {
     single { TaskRepository(get(), get()) }
     single { TagRepository(get(), get()) }
     single { HomeRepository(get()) }
+    single { CalendarRepository(get()) }
     single { ReminderPrefs(get()) }
     single { ReminderNotifier(androidContext(), get()) }
     single { ReminderScheduler(androidContext(), get(), get()) }
@@ -79,4 +82,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

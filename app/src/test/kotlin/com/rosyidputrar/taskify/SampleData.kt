@@ -70,6 +70,38 @@ object SampleData {
         loaded = true,
     )
 
+    fun calendarState(): com.rosyidputrar.taskify.feature.calendar.CalendarUiState {
+        val month = "2026-10-01"
+        val grid = com.rosyidputrar.taskify.core.domain.calendar.buildMonthGrid(month)
+        val weekly = task("w", "Futsal", "2026-10-07", "19:00:00", rrule = "FREQ=WEEKLY;INTERVAL=1;BYDAY=WE", priority = 1)
+        val real = tasks.filter { it.dueDate != null } + weekly
+        val byDay = com.rosyidputrar.taskify.core.domain.calendar.calendarTasks(real, listOf(weekly), grid.first().date, grid.last().date, TODAY)
+        val other = mapOf(
+            "2026-10-01" to com.rosyidputrar.taskify.core.domain.calendar.DayActivity(journal = 1, mood = 3),
+            "2026-10-03" to com.rosyidputrar.taskify.core.domain.calendar.DayActivity(transactions = 2, expense = 120_000),
+            "2026-10-06" to com.rosyidputrar.taskify.core.domain.calendar.DayActivity(journal = 1, mood = 5, notes = 1, vault = 1),
+            TODAY to com.rosyidputrar.taskify.core.domain.calendar.DayActivity(journal = 1, mood = 4, notes = 1, transactions = 2, expense = 35_000, income = 5_000_000),
+            "2026-10-12" to com.rosyidputrar.taskify.core.domain.calendar.DayActivity(notes = 2),
+        )
+        return com.rosyidputrar.taskify.feature.calendar.CalendarUiState(
+            today = TODAY,
+            month = month,
+            selected = TODAY,
+            grid = grid,
+            activity = com.rosyidputrar.taskify.core.domain.calendar.mergeActivity(other, byDay),
+            tasksByDay = byDay,
+            agenda = com.rosyidputrar.taskify.core.store.calendar.DayAgenda(
+                journal = listOf(com.rosyidputrar.taskify.core.store.calendar.JournalItem("j", "Pagi yang tenang, sempat jalan kaki", 4, "06:40")),
+                notes = listOf(com.rosyidputrar.taskify.core.store.calendar.NoteItem("n", "Ide fitur ekspor PDF", true)),
+                transactions = listOf(
+                    com.rosyidputrar.taskify.core.store.calendar.TransactionItem("x1", "Gaji Oktober", 5_000_000, "income", "Gaji", "BCA", "08:00"),
+                    com.rosyidputrar.taskify.core.store.calendar.TransactionItem("x2", "Makan siang", 35_000, "expense", "Makan", "Tunai", "12:15"),
+                ),
+            ),
+            loaded = true,
+        )
+    }
+
     object NoActions : TasksActions {
         override fun quickAdd(text: String) = Unit
         override fun setSegment(segment: com.rosyidputrar.taskify.feature.tasks.Segment) = Unit

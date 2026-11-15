@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
         when (intent?.action) {
             ACTION_CAPTURE -> AppEvents.send(AppEvent.OpenCapture())
             ACTION_SEARCH -> AppEvents.send(AppEvent.OpenSpotlight)
-            ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar)
+            ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar())
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
         }
     }
