@@ -5,6 +5,7 @@ plugins {
 dependencies {
     api(projects.core.common)
     api(libs.kotlinx.serialization.json)
+    implementation(libs.zxcvbn)
 }
 
 dependencies {

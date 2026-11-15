@@ -1,0 +1,16 @@
+import { readFileSync } from 'node:fs';
+import { unlockWithPassword, unlockWithRecoveryKey, decryptItem, decryptTotpLog, decryptConfig, keyRef, splitEnc, type KeyRecord } from './crypto.ts';
+import { totpWindow } from './totp.ts';
+const k = JSON.parse(readFileSync('kotlin-vectors.json', 'utf8'));
+const rec = k.record as KeyRecord;
+const dek = await unlockWithPassword(rec, k.password, k.user);
+if (!dek) throw new Error('password gagal');
+const rdek = await unlockWithRecoveryKey(rec, k.recoveryKey, k.user);
+if (!rdek) throw new Error('recovery gagal');
+const item = await decryptItem(dek, k.user, 'k-item', k.itemEnc);
+const log = await decryptTotpLog(rdek, k.user, 'k-log', k.logEnc);
+const cfg = await decryptConfig(dek, k.user, 'k-file', 'k-ver', k.configEnc);
+const ref = await keyRef(rec.wrapped_key);
+if (splitEnc(k.itemEnc).ref !== ref) throw new Error('label kunci beda');
+const w = await totpWindow(item.totp!, 59_000);
+console.log(JSON.stringify({ item, log, cfg, ref, totpAt59s: w?.code }, null, 1));
