@@ -1,0 +1,272 @@
+package com.rosyidputrar.taskify.feature.sandi
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.rosyidputrar.taskify.core.designsystem.component.Messenger
+import com.rosyidputrar.taskify.core.domain.sandi.Generator
+import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
+import com.rosyidputrar.taskify.core.domain.sandi.MasterPassword
+import com.rosyidputrar.taskify.core.domain.sandi.Strength
+import com.rosyidputrar.taskify.core.domain.sandi.TotpConfig
+import com.rosyidputrar.taskify.core.domain.sandi.skippedMessage
+import com.rosyidputrar.taskify.core.domain.sandi.trustDaysLeft
+import com.rosyidputrar.taskify.core.sandi.DecryptedItems
+import com.rosyidputrar.taskify.core.sandi.SandiItem
+import com.rosyidputrar.taskify.core.sandi.SandiService
+import com.rosyidputrar.taskify.core.sandi.SandiUserException
+import com.rosyidputrar.taskify.core.sandi.SecureClipboard
+import com.rosyidputrar.taskify.core.sandi.SandiPrefs
+import com.rosyidputrar.taskify.core.sandi.TotpLogItem
+import com.rosyidputrar.taskify.core.sandi.VaultStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class SandiTab(val label: String) { Vault("Brankas"), Codes("Kode"), Generator("Generator") }
+
+/** Email akun (untuk menolak master password yang memuat nama/email). */
+fun interface AccountEmail {
+    fun get(): String?
+}
+
+data class SandiUiState(
+    val status: VaultStatus = VaultStatus.Loading,
+    val tab: SandiTab = SandiTab.Vault,
+    val search: String = "",
+    val items: DecryptedItems = DecryptedItems(),
+    val log: List<TotpLogItem> = emptyList(),
+    val now: Long = System.currentTimeMillis(),
+    val busy: String? = null,
+    val error: String? = null,
+    /** Kunci pemulihan BARU yang wajib ditampilkan sekali (setelah buat brankas / ganti kunci). */
+    val recoveryToShow: String? = null,
+    val rejectedKeyCreation: Boolean = false,
+    val rejectedRotation: String? = null,
+    val staleWrites: Int = 0,
+    val trustDaysLeft: Int? = null,
+    val autoLock: Int = 5,
+    val clockOffsetMs: Long = 0,
+    val generator: Generator.Prefs = Generator.Prefs(),
+    val generated: String = "",
+    val email: String? = null,
+) {
+    val filtered: List<SandiItem> get() {
+        val q = search.trim().lowercase()
+        val list = items.items.filter { q.isEmpty() || listOf(it.payload.title, it.payload.username, it.payload.url, it.payload.notes).any { f -> f.lowercase().contains(q) } }
+        return list.sortedWith(compareByDescending<SandiItem> { it.payload.favorite }.thenBy { it.payload.title.lowercase() })
+    }
+    val withTotp: List<SandiItem> get() = filtered.filter { it.payload.totp != null }
+}
+
+interface SandiActions {
+    fun setTab(tab: SandiTab)
+    fun setSearch(text: String)
+    fun clearError()
+    fun touch()
+    fun tryTrusted()
+    fun unlock(password: String, remember: Boolean)
+    suspend fun evaluateMaster(password: String): Pair<Strength?, String?>
+    fun createVault(password: String)
+    fun recover(recoveryKey: String, newPassword: String)
+    fun changePassword(old: String, new: String)
+    fun rotateRecovery(password: String)
+    fun acknowledgeRecovery()
+    fun lock()
+    fun setAutoLock(minutes: Int)
+    fun forgetDevice()
+    fun dismissRejectedKey()
+    fun dismissRejectedRotation()
+    fun dismissStaleWrites()
+    fun save(payload: ItemPayload, id: String?, onDone: () -> Unit)
+    fun remove(item: SandiItem)
+    fun copy(what: String, text: String, secret: Boolean = true)
+    fun copyCode(item: SandiItem, code: String)
+    fun saveQuickTotp(title: String, config: TotpConfig, username: String, onDone: () -> Unit)
+    fun deleteLog(id: String)
+    fun clearLog()
+    fun setGenerator(p: Generator.Prefs)
+    fun regenerate()
+}
+
+class SandiViewModel(
+    private val service: SandiService,
+    private val clipboard: SecureClipboard,
+    private val prefs: SandiPrefs,
+    private val messenger: Messenger,
+    private val email: AccountEmail,
+) : ViewModel(), SandiActions {
+    private val local = MutableStateFlow(
+        SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get()),
+    )
+
+    /** Detak 1 dtk untuk kode TOTP. */
+    private val ticker = flow { while (true) { emit(service.totpNow()); delay(1_000) } }
+
+    val state: StateFlow<SandiUiState> = combine(
+        local,
+        service.status,
+        combine(service.items, service.totpLog) { i, l -> i to l },
+        combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
+        ticker,
+    ) { l, status, (items, log), (rk, rr, sw), now ->
+        l.copy(
+            status = status, items = items, log = log, now = now, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
+            trustDaysLeft = service.trustMeta()?.let { trustDaysLeft(it, System.currentTimeMillis()) }?.takeIf { it > 0 },
+            clockOffsetMs = service.clockOffsetMs,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
+
+    init {
+        if (local.value.generated.isEmpty()) regenerate()
+        viewModelScope.launch { runCatching { withContext(Dispatchers.Default) { MasterPassword.warmUp() } } }
+    }
+
+    private fun run(busy: String, block: suspend () -> Unit) {
+        local.update { it.copy(busy = busy, error = null) }
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: SandiUserException) {
+                local.update { it.copy(error = e.message) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                local.update { it.copy(error = e.message ?: "Terjadi kesalahan") }
+            } finally {
+                local.update { it.copy(busy = null) }
+            }
+        }
+    }
+
+    override fun setTab(tab: SandiTab) { local.update { it.copy(tab = tab) } }
+    override fun setSearch(text: String) { local.update { it.copy(search = text) } }
+    override fun clearError() { local.update { it.copy(error = null) } }
+    override fun touch() { service.session.touch() }
+
+    // ---------------------------------------------------------------- buka & buat
+
+    override fun tryTrusted() {
+        if (service.trustMeta() == null) return
+        viewModelScope.launch { runCatching { service.unlockTrusted() } }
+    }
+
+    override fun unlock(password: String, remember: Boolean) = run("Membuka brankas…") {
+        if (!service.unlock(password, remember)) throw SandiUserException("Master password salah.")
+    }
+
+    /** Penilaian master password (async karena kamus zxcvbn dimuat sekali). */
+    override suspend fun evaluateMaster(password: String): Pair<Strength?, String?> = withContext(Dispatchers.Default) {
+        val inputs = MasterPassword.userInputsFromEmail(email.get())
+        val problem = MasterPassword.problem(password, inputs)
+        val strength = if (MasterPassword.isReady && password.isNotEmpty()) MasterPassword.evaluate(password, inputs) else null
+        strength to problem
+    }
+
+    override fun createVault(password: String) = run("Membuat brankas… (menurunkan kunci, beberapa detik)") {
+        evaluateMaster(password).second?.let { throw SandiUserException(it) }
+        val recovery = service.createVault(password)
+        local.update { it.copy(recoveryToShow = recovery) }
+    }
+
+    override fun recover(recoveryKey: String, newPassword: String) = run("Memulihkan brankas…") {
+        evaluateMaster(newPassword).second?.let { throw SandiUserException(it) }
+        val done = service.recover(recoveryKey, newPassword)
+        afterRotation(done.recoveryKey, done.confirmed, "Brankas dipulihkan", skippedMessage(done.result))
+    }
+
+    override fun changePassword(old: String, new: String) = run("Mengganti master password…") {
+        evaluateMaster(new).second?.let { throw SandiUserException(it) }
+        val done = service.changePassword(old, new)
+        afterRotation(done.recoveryKey, done.confirmed, "Master password diganti", skippedMessage(done.result))
+    }
+
+    override fun rotateRecovery(password: String) = run("Membuat kunci pemulihan baru…") {
+        val done = service.rotateRecoveryKey(password)
+        afterRotation(done.recoveryKey, done.confirmed, "Kunci pemulihan baru dibuat", skippedMessage(done.result))
+    }
+
+    private fun afterRotation(recovery: String, confirmed: Boolean, what: String, skipped: String?) {
+        local.update { it.copy(recoveryToShow = recovery) }
+        messenger.show(if (confirmed) "$what." else "$what di perangkat ini; konfirmasi server belum diterima, akan dicek otomatis.")
+        skipped?.let { messenger.show(it) }
+    }
+
+    override fun acknowledgeRecovery() { local.update { it.copy(recoveryToShow = null) } }
+    override fun lock() { service.lock() }
+
+    override fun setAutoLock(minutes: Int) {
+        service.session.setAutoLock(minutes)
+        local.update { it.copy(autoLock = minutes) }
+    }
+
+    override fun forgetDevice() {
+        service.forgetDevice()
+        messenger.show("Perangkat ini tidak lagi diingat")
+        local.update { it.copy() }
+    }
+
+    override fun dismissRejectedKey() { viewModelScope.launch { service.dismissRejectedKeyCreation() } }
+    override fun dismissRejectedRotation() { viewModelScope.launch { service.dismissRejectedRotation() } }
+    override fun dismissStaleWrites() { viewModelScope.launch { service.dismissStaleWrites() } }
+
+    // ---------------------------------------------------------------- item
+
+    override fun save(payload: ItemPayload, id: String?, onDone: () -> Unit) = run("Menyimpan…") {
+        service.saveItem(payload, id)
+        messenger.show(if (id == null) "Sandi ditambahkan" else "Sandi disimpan")
+        onDone()
+    }
+
+    override fun remove(item: SandiItem) {
+        viewModelScope.launch {
+            service.removeItem(item.id)
+            messenger.undoable("\"${item.payload.title.ifBlank { "Sandi" }}\" dihapus") { service.restoreItem(item.id) }
+        }
+    }
+
+    override fun copy(what: String, text: String, secret: Boolean) {
+        if (clipboard.copy(what, text, secret)) messenger.show(if (secret) "$what disalin · dihapus dari papan klip dalam 30 dtk" else "$what disalin")
+        service.session.touch()
+    }
+
+    /** Salin kode TOTP + catat ke riwayat (terenkripsi). */
+    override fun copyCode(item: SandiItem, code: String) {
+        copy("Kode ${item.payload.title}", code)
+        viewModelScope.launch { runCatching { service.recordTotpUse(item.id, item.payload.title, code) } }
+    }
+
+    /** Cek cepat → simpan kunci TOTP sebagai item baru. */
+    override fun saveQuickTotp(title: String, config: TotpConfig, username: String, onDone: () -> Unit) = run("Menyimpan…") {
+        service.saveItem(ItemPayload(title = title.trim(), username = username, totp = config))
+        messenger.show("\"${title.trim()}\" disimpan ke brankas")
+        onDone()
+    }
+
+    override fun deleteLog(id: String) { viewModelScope.launch { service.deleteTotpLog(id) } }
+    override fun clearLog() { viewModelScope.launch { service.clearTotpLog() } }
+
+    // ---------------------------------------------------------------- generator
+
+    override fun setGenerator(p: Generator.Prefs) {
+        val clean = Generator.sanitize(p)
+        prefs.generator = clean
+        local.update { it.copy(generator = clean) }
+        regenerate()
+    }
+
+    override fun regenerate() {
+        val g = local.value.generator
+        val text = runCatching {
+            if (g.mode == Generator.Mode.Password) Generator.password(g.password) else Generator.passphrase(g.passphrase)
+        }.getOrDefault("")
+        local.update { it.copy(generated = text) }
+    }
+}

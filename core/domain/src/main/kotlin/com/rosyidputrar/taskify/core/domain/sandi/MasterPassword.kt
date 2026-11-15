@@ -43,6 +43,9 @@ object MasterPassword {
         return ZxcvbnBuilder().dictionaries(dictionaries).keyboards(StandardKeyboards.loadAllKeyboards()).build().also { engine = it }
     }
 
+    /** Muat mesin di latar tanpa membocorkan tipe zxcvbn ke modul lain. */
+    fun warmUp() { ensureEngine() }
+
     val isReady: Boolean get() = engine != null
 
     /** Potongan email yang tidak boleh menjadi bagian sandi. */
