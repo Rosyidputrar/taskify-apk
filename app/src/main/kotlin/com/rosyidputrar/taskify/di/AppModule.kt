@@ -16,6 +16,10 @@ import com.rosyidputrar.taskify.data.AppPreferences
 import com.rosyidputrar.taskify.feature.auth.authFeatureModule
 import com.rosyidputrar.taskify.feature.tasks.tasksFeatureModule
 import com.rosyidputrar.taskify.feature.calendar.calendarFeatureModule
+import com.rosyidputrar.taskify.feature.journal.journalFeatureModule
+import com.rosyidputrar.taskify.feature.notes.notesFeatureModule
+import com.rosyidputrar.taskify.core.store.journal.JournalRepository
+import com.rosyidputrar.taskify.core.store.notes.NoteRepository
 import com.rosyidputrar.taskify.core.store.calendar.CalendarRepository
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.reminders.ReminderNotifier
@@ -40,6 +44,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
+/** Juga dipakai modul fitur lewat `named("appScope")` (simpan otomatis editor). */
 private val APP_SCOPE = named("appScope")
 
 internal val APP_SCOPE_QUALIFIER = APP_SCOPE
@@ -63,11 +68,13 @@ private val deviceModule = module {
     single { TagRepository(get(), get()) }
     single { HomeRepository(get()) }
     single { CalendarRepository(get()) }
+    single { JournalRepository(get(), get()) }
+    single { NoteRepository(get(), get()) }
     single { ReminderPrefs(get()) }
     single { ReminderNotifier(androidContext(), get()) }
     single { ReminderScheduler(androidContext(), get(), get()) }
     viewModel { HomeViewModel(get(), get(), get(), get()) }
-    viewModel { CaptureViewModel(get(), get(), get()) }
+    viewModel { CaptureViewModel(get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { GateViewModel(getOrNull(), getOrNull(), get()) }
     viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get()) }
@@ -82,4 +89,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

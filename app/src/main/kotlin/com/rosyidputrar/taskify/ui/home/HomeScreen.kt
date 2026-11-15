@@ -107,8 +107,8 @@ fun HomeContent(
             TimelineRow(item, onClick = {
                 when (item.kind) {
                     ActivityKind.Task -> onOpenTask(item.id)
-                    ActivityKind.Journal -> onOpenModule(TaskifyModule.Journal)
-                    ActivityKind.Note -> onOpenModule(TaskifyModule.Notes)
+                    ActivityKind.Journal -> AppEvents.send(AppEvent.OpenJournal(id = item.id))
+                    ActivityKind.Note -> AppEvents.send(AppEvent.OpenNote(id = item.id))
                     ActivityKind.Transaction -> onOpenModule(TaskifyModule.Finance)
                 }
             })

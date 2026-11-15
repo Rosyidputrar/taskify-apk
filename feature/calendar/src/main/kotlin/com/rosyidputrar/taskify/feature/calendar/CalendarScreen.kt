@@ -102,6 +102,8 @@ fun CalendarScreen(
     contentPadding: PaddingValues,
     initialDate: String? = null,
     onOpenModule: (TaskifyModule) -> Unit,
+    onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
+    onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
 ) {
     val viewModel: CalendarViewModel = koinViewModel(key = "calendar-$initialDate") { parametersOf(initialDate) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -115,7 +117,7 @@ fun CalendarScreen(
             override fun toggle(task: Task) = viewModel.toggle(task)
         }
     }
-    CalendarContent(state, actions, contentPadding, onOpenModule)
+    CalendarContent(state, actions, contentPadding, onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote)
 }
 
 @Composable
@@ -125,6 +127,8 @@ fun CalendarContent(
     contentPadding: PaddingValues,
     onOpenModule: (TaskifyModule) -> Unit = {},
     detailEnabled: Boolean = true,
+    onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
+    onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
 ) {
     val listState = rememberLazyListState()
     // Grid bulan adalah item ke-2; setelah tergulir keluar, strip minggu muncul di atas.
@@ -163,7 +167,7 @@ fun CalendarContent(
                 }
             }
             item { DayHeading(state) }
-            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule)
+            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote)
         }
 
         AnimatedVisibility(
@@ -234,8 +238,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
     actions: CalendarActions,
     onOpenTask: (String) -> Unit,
     onOpenModule: (TaskifyModule) -> Unit,
+    onOpenJournal: (String?, String) -> Unit,
+    onOpenNote: (String?, String) -> Unit,
 ) {
     val a = state.selectedActivity
+    val day = state.selected
     val visible = state.visible
 
     if (CalendarKind.Tasks in visible) {
@@ -248,17 +255,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
     }
     if (CalendarKind.Journal in visible) {
         section("Jurnal", TaskifyModule.Journal, trailing = moodLabel(a.mood)?.let { "mood $it" })
-        if (state.agenda.journal.isEmpty()) emptyLine("journal", "Belum ada catatan jurnal.", "Tulis jurnal") { onOpenModule(TaskifyModule.Journal) }
         items(state.agenda.journal, key = { "j-${it.id}" }) { j ->
-            AgendaRow(module = TaskifyModule.Journal, title = j.title.ifEmpty { "Tanpa judul" }, meta = j.time, icon = moodIcon(j.mood), onClick = { onOpenModule(TaskifyModule.Journal) })
+            AgendaRow(module = TaskifyModule.Journal, title = j.title.ifEmpty { "Tanpa judul" }, meta = j.time, icon = moodIcon(j.mood), onClick = { onOpenJournal(j.id, day) })
         }
+        if (state.agenda.journal.isEmpty()) emptyLine("journal", "Belum ada catatan jurnal.", "Tulis jurnal") { onOpenJournal(null, day) }
+        else emptyLine("journal-more", "", "Tulis entri lagi") { onOpenJournal(null, day) }
     }
     if (CalendarKind.Notes in visible) {
         section("Catatan", TaskifyModule.Notes)
-        if (state.agenda.notes.isEmpty()) emptyLine("notes", "Belum ada catatan di tanggal ini.", "Buat catatan") { onOpenModule(TaskifyModule.Notes) }
         items(state.agenda.notes, key = { "n-${it.id}" }) { n ->
-            AgendaRow(module = TaskifyModule.Notes, title = n.title.ifEmpty { "Tanpa judul" }, icon = if (n.pinned) Icons.Outlined.PushPin else null, onClick = { onOpenModule(TaskifyModule.Notes) })
+            AgendaRow(module = TaskifyModule.Notes, title = n.title.ifEmpty { "Tanpa judul" }, icon = if (n.pinned) Icons.Outlined.PushPin else null, onClick = { onOpenNote(n.id, day) })
         }
+        if (state.agenda.notes.isEmpty()) emptyLine("notes", "Belum ada catatan di tanggal ini.", "Buat catatan") { onOpenNote(null, day) }
+        else emptyLine("notes-more", "", "Catatan baru") { onOpenNote(null, day) }
     }
     if (CalendarKind.Finance in visible) {
         val totals = buildList {

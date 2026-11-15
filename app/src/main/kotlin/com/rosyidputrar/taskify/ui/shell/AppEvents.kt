@@ -10,6 +10,10 @@ sealed interface AppEvent {
     data class OpenCapture(val text: String = "") : AppEvent
     data class OpenCalendar(val date: String? = null) : AppEvent
     data class OpenTask(val taskId: String) : AppEvent
+    /** Buka editor jurnal: entri [id], atau draf baru di [date]. */
+    data class OpenJournal(val id: String? = null, val date: String? = null) : AppEvent
+    /** Buka editor catatan: catatan [id], atau catatan baru (ditempel ke [date] bila diisi). */
+    data class OpenNote(val id: String? = null, val date: String? = null) : AppEvent
 }
 
 object AppEvents {

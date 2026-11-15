@@ -37,6 +37,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.domain.capture.CaptureTarget
+import com.rosyidputrar.taskify.core.domain.capture.parseCapturePrefix
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import org.koin.compose.viewmodel.koinViewModel
@@ -52,7 +54,7 @@ enum class CaptureKind(val label: String, val module: TaskifyModule?) {
 
 /**
  * Sheet Tangkap: satu kotak teks untuk semua jenis catatan cepat.
- * Penguraian bahasa natural & penyimpanan dihubungkan saat modul data siap.
+ * Otomatis: "j: …" → jurnal, "c: …" → catatan, selain itu tugas (parser bahasa natural).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,15 +113,15 @@ fun CaptureSheet(
             )
             Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val savesTask = kind == CaptureKind.Auto || kind == CaptureKind.Task
+                val saves = kind != CaptureKind.Transaction
                 Text(
-                    if (savesTask) "Disimpan sebagai tugas." else "${kind.label} menyusul bersama modulnya.",
+                    kind.hint(text),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onDismiss) { Text("Tutup") }
-                Button(onClick = { viewModel.saveTask(text, onDismiss) }, enabled = savesTask && text.isNotBlank()) { Text("Simpan") }
+                Button(onClick = { viewModel.save(kind, text, onDismiss) }, enabled = saves && text.isNotBlank()) { Text("Simpan") }
             }
         }
     }
@@ -133,4 +135,17 @@ private fun CaptureKind.placeholder(): String = when (this) {
     CaptureKind.Note -> "ide: fitur ekspor ke PDF"
     CaptureKind.Journal -> "hari ini terasa ringan…"
     CaptureKind.Transaction -> "kopi 25rb"
+}
+
+/** Keterangan tujuan simpan di bawah kotak teks. */
+private fun CaptureKind.hint(text: String): String = when (this) {
+    CaptureKind.Auto -> when (parseCapturePrefix(text)?.target) {
+        CaptureTarget.Journal -> "Disimpan ke jurnal hari ini."
+        CaptureTarget.Note -> "Disimpan sebagai catatan bebas."
+        null -> "Disimpan sebagai tugas. Awali \"j:\" untuk jurnal, \"c:\" untuk catatan."
+    }
+    CaptureKind.Task -> "Disimpan sebagai tugas."
+    CaptureKind.Journal -> "Disimpan ke jurnal hari ini."
+    CaptureKind.Note -> "Disimpan sebagai catatan bebas."
+    CaptureKind.Transaction -> "Transaksi menyusul bersama modul Keuangan."
 }

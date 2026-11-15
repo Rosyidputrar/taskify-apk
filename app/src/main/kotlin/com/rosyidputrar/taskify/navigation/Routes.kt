@@ -12,6 +12,25 @@ import kotlinx.serialization.Serializable
 /** Tugas; [taskId] membuka detail tugas itu (dari notifikasi, Beranda, dsb.). */
 @Serializable data class TasksRoute(val taskId: String? = null)
 
+@Serializable data object JournalRoute
+
+/**
+ * Editor jurnal: [id] = entri yang ada; tanpa id = draf baru di [date] (default hari ini).
+ * [template] "week"/"month" + [from]/[to] = templat refleksi dari Review.
+ */
+@Serializable data class JournalEntryRoute(
+    val id: String? = null,
+    val date: String? = null,
+    val template: String? = null,
+    val from: String? = null,
+    val to: String? = null,
+)
+
+@Serializable data object NotesRoute
+
+/** Editor catatan: [id] = catatan yang ada; tanpa id = catatan baru, ditempel ke [date] bila diisi. */
+@Serializable data class NoteEditRoute(val id: String? = null, val date: String? = null)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -22,5 +41,7 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Calendar -> CalendarRoute()
     TaskifyModule.Settings -> SettingsRoute
     TaskifyModule.Tasks -> TasksRoute()
+    TaskifyModule.Journal -> JournalRoute
+    TaskifyModule.Notes -> NotesRoute
     else -> ModuleRoute(name)
 }

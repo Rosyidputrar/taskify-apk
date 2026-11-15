@@ -58,6 +58,17 @@ import com.rosyidputrar.taskify.core.designsystem.component.UiMessage
 import com.rosyidputrar.taskify.feature.tasks.TasksScreen
 import com.rosyidputrar.taskify.feature.calendar.CalendarScreen
 import com.rosyidputrar.taskify.navigation.TasksRoute
+import com.rosyidputrar.taskify.navigation.JournalEntryRoute
+import com.rosyidputrar.taskify.navigation.JournalRoute
+import com.rosyidputrar.taskify.navigation.NoteEditRoute
+import com.rosyidputrar.taskify.navigation.NotesRoute
+import com.rosyidputrar.taskify.core.domain.journal.ReflectionKind
+import com.rosyidputrar.taskify.feature.journal.JournalEditorArgs
+import com.rosyidputrar.taskify.feature.journal.JournalEditorScreen
+import com.rosyidputrar.taskify.feature.journal.JournalScreen
+import com.rosyidputrar.taskify.feature.notes.NoteEditorArgs
+import com.rosyidputrar.taskify.feature.notes.NoteEditorScreen
+import com.rosyidputrar.taskify.feature.notes.NotesScreen
 import com.rosyidputrar.taskify.ui.placeholder.BackButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -120,6 +131,14 @@ fun TaskifyApp(
                     spotlightOpen = false
                     navController.navigate(TasksRoute(event.taskId)) { launchSingleTop = true }
                 }
+                is AppEvent.OpenJournal -> {
+                    spotlightOpen = false
+                    navController.navigate(JournalEntryRoute(event.id, event.date))
+                }
+                is AppEvent.OpenNote -> {
+                    spotlightOpen = false
+                    navController.navigate(NoteEditRoute(event.id, event.date))
+                }
             }
         }
     }
@@ -133,9 +152,13 @@ fun TaskifyApp(
         destination.hasRoute<CalendarRoute>() -> TaskifyModule.Calendar
         destination.hasRoute<SettingsRoute>() -> TaskifyModule.Settings
         destination.hasRoute<TasksRoute>() -> TaskifyModule.Tasks
+        destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
+        destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
+    // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -193,6 +216,8 @@ fun TaskifyApp(
             }
         } else {
             host(Modifier.fillMaxSize())
+        }
+        if (!expanded && !immersive) {
             val modules = TaskifyTheme.modules
             val home = DockDestination(KEY_HOME, "Hari Ini", TaskifyModule.Home.icon, modules.accent(TaskifyModule.Home))
             val calendar = DockDestination(KEY_CALENDAR, "Kalender", TaskifyModule.Calendar.icon, modules.accent(TaskifyModule.Calendar))
@@ -236,7 +261,7 @@ fun TaskifyApp(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = if (expanded) 16.dp else 96.dp, start = 16.dp, end = 16.dp),
+                .padding(bottom = if (expanded) 16.dp else if (immersive) 64.dp else 96.dp, start = 16.dp, end = 16.dp),
         )
 
         Spotlight(
@@ -286,7 +311,40 @@ private fun TaskifyNavHost(
             )
         }
         composable<CalendarRoute> { entry ->
-            CalendarScreen(contentPadding = contentPadding, initialDate = entry.toRoute<CalendarRoute>().date, onOpenModule = onOpenModule)
+            CalendarScreen(
+                contentPadding = contentPadding,
+                initialDate = entry.toRoute<CalendarRoute>().date,
+                onOpenModule = onOpenModule,
+                onOpenJournal = { id, date -> navController.navigate(JournalEntryRoute(id, date)) },
+                onOpenNote = { id, date -> navController.navigate(NoteEditRoute(id, date)) },
+            )
+        }
+        composable<JournalRoute> {
+            JournalScreen(
+                contentPadding = contentPadding,
+                onOpenEntry = { navController.navigate(JournalEntryRoute(id = it)) },
+                onNewEntry = { navController.navigate(JournalEntryRoute(date = it)) },
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<JournalEntryRoute> { entry ->
+            val route = entry.toRoute<JournalEntryRoute>()
+            val template = when (route.template) { "week" -> ReflectionKind.Week; "month" -> ReflectionKind.Month; else -> null }
+            JournalEditorScreen(JournalEditorArgs(route.id, route.date, template, route.from, route.to), onBack = { navController.popBackStack() })
+        }
+        composable<NotesRoute> {
+            NotesScreen(
+                contentPadding = contentPadding,
+                onOpenNote = { navController.navigate(NoteEditRoute(id = it)) },
+                onNewNote = { navController.navigate(NoteEditRoute()) },
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<NoteEditRoute> { entry ->
+            val route = entry.toRoute<NoteEditRoute>()
+            NoteEditorScreen(NoteEditorArgs(route.id, route.date), onBack = { navController.popBackStack() })
         }
         composable<RoomRoute> {
             RoomScreen(

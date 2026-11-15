@@ -93,6 +93,9 @@ dependencies {
     implementation(projects.feature.auth)
     implementation(projects.feature.tasks)
     implementation(projects.feature.calendar)
+    implementation(projects.feature.journal)
+    implementation(projects.feature.notes)
+    implementation(projects.core.ui)
     implementation(projects.core.reminders)
 
     implementation(libs.androidx.core.ktx)
