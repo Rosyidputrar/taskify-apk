@@ -51,9 +51,9 @@ import com.rosyidputrar.taskify.core.domain.text.Markdown
 fun NoteCard(note: Note, today: String, onOpen: () -> Unit, onTogglePin: () -> Unit, modifier: Modifier = Modifier, onRestore: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
-    val excerpt = Markdown.plainExcerpt(note.content, 320)
-    val title = note.title ?: excerpt.take(60).substringBefore(". ").ifEmpty { "Tanpa judul" }
-    val body = if (note.title != null) excerpt else excerpt.removePrefix(title).trimStart('.', ' ')
+    val lines = Markdown.plainLines(note.content)
+    val title = note.title ?: lines.substringBefore('\n').take(80).ifEmpty { "Tanpa judul" }
+    val body = if (note.title != null) lines else lines.substringAfter('\n', "")
     val (done, total) = Markdown.checklistProgress(note.content)
     val dateLabel = noteDateLabel(note.noteDate, today)
     val description = listOfNotNull(title, if (note.noteDate != null) "ditempel $dateLabel" else "catatan bebas", if (total > 0) "checklist $done dari $total" else null, if (note.pinned) "disematkan" else null).joinToString(", ")

@@ -102,6 +102,7 @@ fun NoteEditorContent(
     allTags: List<TagRef>,
     actions: NoteEditorActions,
     initialPreview: Boolean = false,
+    today: String = Dates.today(),
 ) {
     if (!ui.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -118,7 +119,6 @@ fun NoteEditorContent(
     var picking by rememberSaveable { mutableStateOf(false) }
     var menu by rememberSaveable { mutableStateOf(false) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
-    val today = Dates.today()
 
     PaperEditor(
         module = TaskifyModule.Notes,

@@ -39,6 +39,33 @@ object Markdown {
         return out
     }
 
+    /**
+     * Cuplikan per baris untuk kartu catatan: sintaks dibuang tapi baris tetap terpisah, jadi
+     * daftar tidak menyatu jadi satu kalimat. Baris kosong & blok kode dilewati.
+     */
+    fun plainLines(markdown: String, maxLines: Int = 8, maxChars: Int = 320): String {
+        val out = mutableListOf<String>()
+        var total = 0
+        for (raw in markdown.take(EXCERPT_SCAN).replace(FENCE, "\n").lines()) {
+            val line = raw
+                .replace(INLINE_CODE, "$1")
+                .replace(IMAGE, " ")
+                .replace(LINK, "$1")
+                .replace(LINE_MARK, "")
+                .replace(EMPHASIS, "")
+                .replace(SPACES, " ")
+                .trim()
+            if (line.isEmpty()) continue
+            if (out.size == maxLines || total + line.length > maxChars) {
+                if (out.isNotEmpty()) out[out.lastIndex] = out.last().trimEnd() + "…"
+                break
+            }
+            out += line
+            total += line.length
+        }
+        return out.joinToString("\n")
+    }
+
     fun wordCount(text: String): Int = text.trim().let { if (it.isEmpty()) 0 else it.split(SPACES).size }
 
     private val CHECK = Regex("^(\\s*(?:[-*+]|\\d+\\.)\\s+)\\[( |x|X)]")

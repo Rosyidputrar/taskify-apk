@@ -103,6 +103,7 @@ fun JournalEditorContent(
     allTags: List<TagRef>,
     actions: JournalEditorActions,
     initialPreview: Boolean = false,
+    today: String = Dates.today(),
 ) {
     if (!ui.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -134,7 +135,12 @@ fun JournalEditorContent(
                 onBack = actions::back,
                 saveState = saveState,
                 onRetry = actions::retry,
-                leading = { DateChip(Dates.format(ui.date, "EEE, d MMM yyyy"), onClick = { picking = true }, module = TaskifyModule.Journal) },
+                leading = { DateChip(
+                        Dates.format(ui.date, if (ui.date.take(4) == today.take(4)) "EEE, d MMM" else "d MMM yyyy"),
+                        onClick = { picking = true },
+                        module = TaskifyModule.Journal,
+                        contentDescription = "Tanggal ${Dates.format(ui.date, "EEEE, d MMMM yyyy")}, ubah",
+                    ) },
                 actions = {
                     IconButton(onClick = actions::togglePin) {
                         Icon(
@@ -185,6 +191,6 @@ fun JournalEditorContent(
     )
 
     if (picking) {
-        DatePickerSheet(ui.date, Dates.today(), allowClear = false, onPick = { picked -> picked?.let(actions::date); picking = false }, onDismiss = { picking = false })
+        DatePickerSheet(ui.date, today, allowClear = false, onPick = { picked -> picked?.let(actions::date); picking = false }, onDismiss = { picking = false })
     }
 }

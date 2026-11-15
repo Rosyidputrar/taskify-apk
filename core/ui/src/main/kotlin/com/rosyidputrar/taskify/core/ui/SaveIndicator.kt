@@ -26,17 +26,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.domain.editor.SaveState
 
-/** Status simpan otomatis: Draf · Belum tersimpan · Menyimpan… · Tersimpan · Gagal (ketuk = coba lagi). */
+/**
+ * Status simpan otomatis, sengaja ringkas agar muat di bilah atas HP:
+ * Draf · Mengetik… · Menyimpan… · Tersimpan · Gagal (ketuk = coba lagi).
+ */
 @Composable
 fun SaveIndicator(state: SaveState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     AnimatedContent(state, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "save", modifier = modifier) { s ->
         val (icon, text) = when (s) {
             SaveState.Idle -> Icons.Outlined.EditNote to "Draf"
-            SaveState.Pending -> Icons.Outlined.EditNote to "Belum tersimpan"
+            SaveState.Pending -> Icons.Outlined.EditNote to "Mengetik…"
             SaveState.Saving -> Icons.Outlined.Sync to "Menyimpan…"
             SaveState.Saved -> Icons.Outlined.CloudDone to "Tersimpan"
-            SaveState.Error -> Icons.Outlined.ErrorOutline to "Gagal · coba lagi"
+            SaveState.Error -> Icons.Outlined.ErrorOutline to "Gagal"
         }
         val tint = if (s == SaveState.Error) colors.error else colors.onSurfaceVariant
         Row(
@@ -48,7 +51,7 @@ fun SaveIndicator(state: SaveState, onRetry: () -> Unit, modifier: Modifier = Mo
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
-            Text(text, style = MaterialTheme.typography.labelMedium, color = tint)
+            Text(text, style = MaterialTheme.typography.labelMedium, color = tint, maxLines = 1)
         }
     }
 }

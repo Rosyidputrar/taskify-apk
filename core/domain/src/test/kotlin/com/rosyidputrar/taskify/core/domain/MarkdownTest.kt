@@ -24,6 +24,12 @@ class MarkdownTest {
         assertEquals("", Markdown.plainExcerpt("   "))
     }
 
+    @Test fun plainLinesKeepsLineBreaks() {
+        assertEquals("Belanja\nsusu\ntelur", Markdown.plainLines("## Belanja\n\n- [ ] susu\n- **telur**"))
+        assertEquals("a\nb…", Markdown.plainLines("a\nb\nc", maxLines = 2))
+        assertEquals("teks", Markdown.plainLines("```\nkode\n```\nteks"))
+    }
+
     @Test fun wordCount() {
         assertEquals(3, Markdown.wordCount("  satu   dua\ntiga "))
         assertEquals(0, Markdown.wordCount(""))
