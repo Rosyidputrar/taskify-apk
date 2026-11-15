@@ -16,7 +16,7 @@ navigasi, maupun gaya visual webapp.
 | Auth | **supabase-kt** (Auth + Functions + Postgrest) | MFA TOTP, wajib sesi `aal2`, ingat perangkat 30 hari |
 | Kriptografi Sandi | `javax.crypto` + Android Keystore | Format **harus identik** dengan webapp (PBKDF2-SHA256 600rb, AES-256-GCM, AAD, label kunci, padding 256 byte) agar brankas bisa dibuka di HP & laptop |
 | Pengingat | **Alarm lokal** (AlarmManager exact + WorkManager) dari `tasks.remind_at` | Jalan offline, tanpa mengubah server. FCM bisa ditambah nanti (butuh ubah `send-reminders`) |
-| Min/target SDK | minSdk 26 · target/compile 36 | API kripto & notifikasi modern, mencakup ±97% perangkat |
+| Min/target SDK | minSdk 26 · target 36 · compile 37 | API kripto & notifikasi modern, mencakup ±97% perangkat |
 | Build | Gradle (Kotlin DSL) + version catalog, GitHub Actions menghasilkan APK | Kredensial dari GitHub Secrets / `local.properties`, tidak pernah di-commit |
 
 ### Aturan kompatibilitas data (wajib, karena satu database dengan webapp)
