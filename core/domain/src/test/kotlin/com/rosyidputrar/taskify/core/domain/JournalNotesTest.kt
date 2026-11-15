@@ -73,3 +73,18 @@ class JournalNotesTest {
         assertEquals("## 2026-10-07 — Hari\n\n_Mood: Baik_\n\nisi\n\n---\n\n## 2026-10-06\n\ndua\n", md)
     }
 }
+
+class CapturePrefixTest {
+    @Test fun prefixes() {
+        val j = com.rosyidputrar.taskify.core.domain.capture.parseCapturePrefix("j: hari ini capek tapi puas #refleksi")!!
+        assertEquals(com.rosyidputrar.taskify.core.domain.capture.CaptureTarget.Journal, j.target)
+        assertEquals("hari ini capek tapi puas", j.body)
+        assertEquals(listOf("refleksi"), j.tags)
+        val c = com.rosyidputrar.taskify.core.domain.capture.parseCapturePrefix("Catatan:  ide fitur   export #App")!!
+        assertEquals(com.rosyidputrar.taskify.core.domain.capture.CaptureTarget.Note, c.target)
+        assertEquals("ide fitur export", c.body)
+        assertEquals(listOf("app"), c.tags)
+        assertNull(com.rosyidputrar.taskify.core.domain.capture.parseCapturePrefix("besok rapat jam 9"))
+        assertEquals("baris satu\nbaris dua" to listOf("x"), com.rosyidputrar.taskify.core.domain.capture.extractTags("baris satu #x\nbaris dua"))
+    }
+}
