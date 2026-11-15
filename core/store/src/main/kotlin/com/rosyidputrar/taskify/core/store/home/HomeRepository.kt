@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify.core.store.home
 
 import com.powersync.PowerSyncDatabase
 import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.core.domain.journal.journalStreak
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -105,15 +106,4 @@ class HomeRepository(private val db: PowerSyncDatabase) {
         "SELECT DISTINCT entry_date FROM journal_entries WHERE deleted_at IS NULL AND entry_date <= ? ORDER BY entry_date DESC LIMIT 400",
         listOf(today),
     ) { it.getString(0)!! }.map { dates -> journalStreak(dates.toSet(), today) }
-}
-
-/** Hitung streak dari kumpulan tanggal. Mulai hari ini; bila hari ini belum menulis, mulai kemarin. */
-fun journalStreak(dates: Set<String>, today: String): Int {
-    var day = if (today in dates) today else Dates.addDays(today, -1)
-    var count = 0
-    while (day in dates) {
-        count++
-        day = Dates.addDays(day, -1)
-    }
-    return count
 }

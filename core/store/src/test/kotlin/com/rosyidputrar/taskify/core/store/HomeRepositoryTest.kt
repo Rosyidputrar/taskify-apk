@@ -4,7 +4,7 @@ import com.powersync.PowerSyncDatabase
 import com.powersync.inMemory
 import com.rosyidputrar.taskify.core.store.home.ActivityKind
 import com.rosyidputrar.taskify.core.store.home.HomeRepository
-import com.rosyidputrar.taskify.core.store.home.journalStreak
+import com.rosyidputrar.taskify.core.domain.journal.journalStreak
 import com.rosyidputrar.taskify.core.store.tasks.NewTask
 import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
 import kotlinx.coroutines.CoroutineScope
