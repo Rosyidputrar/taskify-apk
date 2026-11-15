@@ -46,6 +46,14 @@ import kotlinx.serialization.Serializable
 /** Isi arsip ZIP satu versi project. */
 @Serializable data class ZipRoute(val attachmentId: String)
 
+/** Berkas konfigurasi terenkripsi (Vault › Konfig). */
+@Serializable data class ConfigFileRoute(val id: String)
+
+/** Editor konfigurasi: [fileId] null = berkas baru (opsional tertaut [projectId]); selain itu versi baru. */
+@Serializable data class ConfigEditRoute(val fileId: String? = null, val projectId: String? = null)
+
+@Serializable data object SandiRoute
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -60,5 +68,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Notes -> NotesRoute
     TaskifyModule.Finance -> FinanceRoute
     TaskifyModule.Vault -> VaultRoute
+    TaskifyModule.Sandi -> SandiRoute
     else -> ModuleRoute(name)
 }

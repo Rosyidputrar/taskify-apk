@@ -9,6 +9,7 @@ android {
 
 dependencies {
     api(projects.core.files)
+    api(projects.core.sandi)
     implementation(projects.feature.attachments)
     implementation(projects.core.designsystem)
     implementation(projects.core.ui)

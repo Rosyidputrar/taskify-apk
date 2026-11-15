@@ -40,6 +40,7 @@ class SessionCoordinator(
     private val reminders: ReminderScheduler,
     private val scope: CoroutineScope,
     private val attachments: com.rosyidputrar.taskify.core.files.AttachmentManager,
+    private val sandi: com.rosyidputrar.taskify.core.sandi.SandiService,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -95,6 +96,8 @@ class SessionCoordinator(
         reminders.cancelAll()
         // Salinan lampiran & unggahan tertunda milik akun ini juga dihapus dari perangkat.
         attachments.wipe()
+        // Brankas Sandi dikunci (DEK dihapus dari memori) dan kunci perangkat tepercaya dilupakan.
+        sandi.wipe()
         database.wipe()
         auth.signOut()
     }

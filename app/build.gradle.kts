@@ -98,6 +98,7 @@ dependencies {
     implementation(projects.feature.finance)
     implementation(projects.feature.vault)
     implementation(projects.feature.attachments)
+    implementation(projects.feature.sandi)
     implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)

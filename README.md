@@ -39,7 +39,8 @@ app/                 Gerbang (konfigurasi → masuk → MFA → database → PIN
                      Pengaturan (akun, keamanan, sinkronisasi), koordinator sesi
 core/common          Utilitas murni: rupiah, UUIDv7, tanggal WIB, timestamp ISO, batas teks, hash
 core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, gerbang MFA, PIN,
-                     RRULE, Markdown, simpan otomatis, insight mood
+                     RRULE, Markdown, simpan otomatis, insight mood, kripto Sandi (PBKDF2/HKDF/AES-GCM,
+                     diuji dua arah melawan crypto.ts webapp), TOTP RFC 6238, generator, parser .env/JSON
 core/store           Skema PowerSync (identik webapp) + repository Tugas, Tag, Beranda, Kalender,
                      Jurnal, Catatan, Keuangan, Vault, Lampiran — diuji di JVM
                      terhadap PowerSync sungguhan (SQLite + ekstensi PowerSync)
@@ -49,6 +50,8 @@ core/designsystem    "Kertas & Tinta": palet, tipografi, kartu indeks, Dok
 core/ui              Editor Markdown kertas bergaris + pratinjau native, indikator simpan, tag & tanggal
 core/files           Lampiran: presign Edge Function `files`, unggah R2 via WorkManager (outbox),
                      salinan offline, kompres foto, baca ZIP
+core/sandi           Sesi brankas (DEK hanya di memori, kunci otomatis), ingat perangkat 30 hari
+                     (Android Keystore), papan klip yang dibersihkan sendiri, rotasi kunci atomik
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
@@ -56,10 +59,14 @@ feature/calendar     Kalender: grid bulan + strip minggu, agenda gabungan semua 
 feature/journal      Jurnal: rak entri, editor + penggeser mood, insight (grafik, sebaran, streak), templat
 feature/notes        Catatan: grid staggered, catatan bebas / ditempel ke tanggal, sematkan, Sampah
 feature/attachments  Bagian lampiran (foto/file) di Tugas, Jurnal, dan Transaksi
-feature/vault        Vault Kode: snippet ber-template, project dengan versi ZIP, penampil isi ZIP
+feature/vault        Vault Kode: snippet ber-template, project dengan versi ZIP, penampil isi ZIP,
+                     berkas konfigurasi .env/JSON terenkripsi berversi (nilai tersamar, banding, pulihkan)
+feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, daftar sandi, kode 2FA dengan
+                     cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
                      Hutang, Kelola), editor transaksi, grafik, ekspor CSV, transaksi berulang otomatis
 build-logic/         Convention plugin Gradle
+tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji kripto Sandi
 ```
 
 ### Alur saat aplikasi dibuka

@@ -68,6 +68,12 @@ import com.rosyidputrar.taskify.navigation.VaultRoute
 import com.rosyidputrar.taskify.navigation.SnippetRoute
 import com.rosyidputrar.taskify.navigation.ProjectRoute
 import com.rosyidputrar.taskify.navigation.ZipRoute
+import com.rosyidputrar.taskify.navigation.ConfigFileRoute
+import com.rosyidputrar.taskify.navigation.ConfigEditRoute
+import com.rosyidputrar.taskify.navigation.SandiRoute
+import com.rosyidputrar.taskify.feature.sandi.SandiScreen
+import com.rosyidputrar.taskify.feature.vault.config.ConfigEditorScreen
+import com.rosyidputrar.taskify.feature.vault.config.ConfigFileScreen
 import com.rosyidputrar.taskify.feature.vault.VaultScreen
 import com.rosyidputrar.taskify.feature.vault.SnippetEditorScreen
 import com.rosyidputrar.taskify.feature.vault.ProjectScreen
@@ -172,12 +178,14 @@ fun TaskifyApp(
         destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
         destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
         destination.hasRoute<FinanceRoute>() || destination.hasRoute<TransactionRoute>() -> TaskifyModule.Finance
-        destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() -> TaskifyModule.Vault
+        destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() ||
+            destination.hasRoute<ConfigFileRoute>() || destination.hasRoute<ConfigEditRoute>() -> TaskifyModule.Vault
+        destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() } == true
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -345,9 +353,37 @@ private fun TaskifyNavHost(
                 contentPadding = contentPadding,
                 onOpenSnippet = { navController.navigate(SnippetRoute(it)) },
                 onOpenProject = { navController.navigate(ProjectRoute(it)) },
+                onOpenConfig = { id -> navController.navigate(if (id == null) ConfigEditRoute() else ConfigFileRoute(id)) },
                 onBack = navController.backIfPossible(),
                 backButton = { BackButton(it) },
             )
+        }
+        composable<ConfigFileRoute> { entry ->
+            ConfigFileScreen(
+                entry.toRoute<ConfigFileRoute>().id,
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+                onEdit = { navController.navigate(ConfigEditRoute(fileId = it)) },
+                onOpenSandi = { navController.navigate(SandiRoute) },
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<ConfigEditRoute> { entry ->
+            val route = entry.toRoute<ConfigEditRoute>()
+            ConfigEditorScreen(
+                route.fileId, route.projectId,
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+                onSaved = { id ->
+                    navController.popBackStack()
+                    if (route.fileId == null) navController.navigate(ConfigFileRoute(id))
+                },
+                onOpenSandi = { navController.navigate(SandiRoute) },
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<SandiRoute> {
+            SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
         }
         composable<SnippetRoute> { entry -> SnippetEditorScreen(entry.toRoute<SnippetRoute>().id, onBack = { navController.popBackStack() }) }
         composable<ProjectRoute> { entry ->

@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.rounded.Add
@@ -76,12 +77,13 @@ fun VaultScreen(
     contentPadding: PaddingValues,
     onOpenSnippet: (String?) -> Unit,
     onOpenProject: (String) -> Unit,
+    onOpenConfig: (String?) -> Unit = {},
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: VaultViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    VaultContent(state, viewModel, contentPadding, onOpenSnippet, onOpenProject, onBack, backButton)
+    VaultContent(state, viewModel, contentPadding, onOpenSnippet, onOpenProject, onBack, backButton, onOpenConfig)
 }
 
 @Composable
@@ -93,6 +95,7 @@ fun VaultContent(
     onOpenProject: (String) -> Unit,
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
+    onOpenConfig: (String?) -> Unit = {},
 ) {
     var newProject by rememberSaveable { mutableStateOf(false) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Vault)
@@ -104,12 +107,10 @@ fun VaultContent(
                 subtitle = "${state.snippets.size} snippet · ${state.projects.size} project",
                 navigation = onBack?.let { { backButton(it) } },
                 actions = {
-                    if (state.tab != VaultTab.Config) {
-                        FilledTonalIconButton(
-                            onClick = { if (state.tab == VaultTab.Snippets) onOpenSnippet(null) else newProject = true },
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = accent, contentColor = TaskifyTheme.modules.onAccent(TaskifyModule.Vault)),
-                        ) { Icon(Icons.Rounded.Add, contentDescription = if (state.tab == VaultTab.Snippets) "Snippet baru" else "Project baru") }
-                    }
+                    FilledTonalIconButton(
+                        onClick = { when (state.tab) { VaultTab.Snippets -> onOpenSnippet(null); VaultTab.Projects -> newProject = true; VaultTab.Config -> onOpenConfig(null) } },
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = accent, contentColor = TaskifyTheme.modules.onAccent(TaskifyModule.Vault)),
+                    ) { Icon(Icons.Rounded.Add, contentDescription = when (state.tab) { VaultTab.Snippets -> "Snippet baru"; VaultTab.Projects -> "Project baru"; VaultTab.Config -> "Konfigurasi baru" }) }
                 },
             )
         }
@@ -123,18 +124,51 @@ fun VaultContent(
         when (state.tab) {
             VaultTab.Snippets -> snippets(state, actions, onOpenSnippet)
             VaultTab.Projects -> projects(state, actions, onOpenProject)
-            VaultTab.Config -> item(key = "config") {
-                EmptyState(
-                    TaskifyModule.Vault,
-                    "Konfigurasi terenkripsi menyusul",
-                    "File .env & konfigurasi disimpan terenkripsi dengan kunci brankas Sandi — dibangun bersama modul Sandi (Tahap 7).",
-                )
-            }
+            VaultTab.Config -> configs(state, actions, onOpenConfig)
         }
         item(key = "usage") { UsageBar(state) }
     }
     if (newProject) ProjectDialog(null, onDismiss = { newProject = false }) { name, desc, repo ->
         actions.createProject(name, desc, repo) { id -> newProject = false; onOpenProject(id) }
+    }
+}
+
+private fun LazyListScope.configs(state: VaultUiState, actions: VaultActions, onOpen: (String?) -> Unit) {
+    item(key = "c-search") {
+        OutlinedTextField(
+            state.configSearch, actions::setConfigSearch,
+            placeholder = { Text("Cari nama berkas atau lingkungan…") },
+            leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            trailingIcon = if (state.configSearch.isNotEmpty()) ({ IconButton(onClick = { actions.setConfigSearch("") }) { Icon(Icons.Rounded.Close, contentDescription = "Hapus pencarian") } }) else null,
+            singleLine = true, shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+    }
+    if (state.environments.isNotEmpty()) item(key = "c-envs") {
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(state.environments, key = { it.first }) { (env, n) ->
+                FilterChip(selected = state.configEnv == env, onClick = { actions.setConfigEnv(if (state.configEnv == env) null else env) }, label = { Text("$env $n") })
+            }
+        }
+    }
+    if (state.loaded && state.configs.isEmpty()) item(key = "c-empty") {
+        EmptyState(
+            TaskifyModule.Vault,
+            if (state.configSearch.isNotBlank() || state.configEnv != null) "Tidak ada yang cocok" else "Belum ada berkas konfigurasi",
+            "Simpan .env dan konfigurasi JSON per lingkungan. Isinya dienkripsi dengan kunci brankas Sandi; setiap simpan menjadi versi baru.",
+        )
+    }
+    items(state.configs, key = { "c-" + it.id }) { f ->
+        IndexCard(TaskifyModule.Vault, onClick = { onOpen(f.id) }, onClickLabel = "Buka konfigurasi", modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).animateItem(), contentPadding = 14.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(f.name, style = MaterialTheme.typography.titleMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(listOfNotNull(f.environment, f.format.label, f.projectName, "${f.versions} versi").joinToString(" · "),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Outlined.Lock, contentDescription = "Terenkripsi", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            }
+        }
     }
 }
 

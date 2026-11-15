@@ -21,6 +21,18 @@ import com.rosyidputrar.taskify.feature.notes.notesFeatureModule
 import com.rosyidputrar.taskify.feature.finance.financeFeatureModule
 import com.rosyidputrar.taskify.feature.vault.vaultFeatureModule
 import com.rosyidputrar.taskify.feature.attachments.attachmentsFeatureModule
+import com.rosyidputrar.taskify.feature.sandi.AccountEmail
+import com.rosyidputrar.taskify.feature.sandi.sandiFeatureModule
+import com.rosyidputrar.taskify.core.sandi.KeystoreTrustStore
+import com.rosyidputrar.taskify.core.sandi.SandiPrefs
+import com.rosyidputrar.taskify.core.sandi.SandiService
+import com.rosyidputrar.taskify.core.sandi.SandiSession
+import com.rosyidputrar.taskify.core.sandi.SecureClipboard
+import com.rosyidputrar.taskify.core.sandi.SupabaseVaultServer
+import com.rosyidputrar.taskify.core.sandi.TrustStore
+import com.rosyidputrar.taskify.core.sandi.VaultServer
+import com.rosyidputrar.taskify.core.store.sandi.ConfigRepository
+import com.rosyidputrar.taskify.core.store.sandi.SandiRepository
 import com.rosyidputrar.taskify.core.store.files.AttachmentRepository
 import com.rosyidputrar.taskify.core.store.vault.VaultRepository
 import com.rosyidputrar.taskify.core.files.AttachmentManager
@@ -85,6 +97,14 @@ private val deviceModule = module {
     single { FinanceRepository(get(), get()) }
     single { AttachmentRepository(get(), get()) }
     single { VaultRepository(get(), get()) }
+    single { SandiRepository(get(), get()) }
+    single { ConfigRepository(get(), get()) }
+    single { SandiPrefs(androidContext()) }
+    single { SecureClipboard(androidContext(), get(APP_SCOPE)) }
+    single<TrustStore> { KeystoreTrustStore(androidContext()) }
+    single { SandiSession(get(), get(), get(APP_SCOPE)) }
+    single { SandiService(get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
+    single { AccountEmail { getOrNull<AuthRepository>()?.currentEmail() } }
     single { FileStore(androidContext()) }
     single { Transfers() }
     single { ReminderPrefs(get()) }
@@ -103,11 +123,12 @@ private val serverModule = module {
     single { SupabaseConnector(get(), serverConfig.powerSyncUrl) }
     single { AuthRepository(get(), get(), get(), get(APP_SCOPE)) }
     single { FilesApi(get()) }
+    single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get()) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get()) }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

@@ -85,6 +85,8 @@ object SampleVault {
         override fun setTab(tab: VaultTab) = Unit
         override fun setFilter(filter: SnippetFilter) = Unit
         override fun setProjectSearch(text: String) = Unit
+        override fun setConfigSearch(text: String) = Unit
+        override fun setConfigEnv(env: String?) = Unit
         override fun toggleFavorite(snippet: Snippet) = Unit
         override fun toggleFavorite(project: CodeProject) = Unit
         override fun copied(snippet: Snippet) = Unit

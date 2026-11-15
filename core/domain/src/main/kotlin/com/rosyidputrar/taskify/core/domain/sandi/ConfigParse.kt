@@ -12,8 +12,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * Parser & pembanding berkas konfigurasi (.env / JSON) — port `config-parse.ts`. Teks mentah tetap
  * sumber kebenaran; parser hanya untuk menampilkan nilai per kunci, validasi, dan membandingkan.
  */
-enum class ConfigFormat(val value: String) {
-    Env("env"), Json("json");
+enum class ConfigFormat(val value: String, val label: String) {
+    Env("env", ".env"), Json("json", "JSON");
 
     companion object {
         fun from(v: String?) = if (v == "json") Json else Env
