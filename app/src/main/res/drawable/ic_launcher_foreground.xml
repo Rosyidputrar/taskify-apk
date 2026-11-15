@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kartu indeks bertinta dengan tab merah dan centang: identitas "Kertas & Tinta". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#A8341A"
+        android:pathData="M60,24h12a4,4 0,0 1,4 4v10h-20v-10a4,4 0,0 1,4 -4z" />
+    <path
+        android:fillColor="#1D5867"
+        android:pathData="M36,32h36a6,6 0,0 1,6 6v38a6,6 0,0 1,-6 6h-36a6,6 0,0 1,-6 -6v-38a6,6 0,0 1,6 -6z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FAF7F1"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M41,58l9,9l17,-19" />
+</vector>

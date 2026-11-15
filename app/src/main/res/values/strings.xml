@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Taskify</string>
+    <string name="shortcut_capture_short">Tangkap</string>
+    <string name="shortcut_capture_long">Tangkap cepat</string>
+    <string name="shortcut_search_short">Cari</string>
+    <string name="shortcut_search_long">Cari di Taskify</string>
+    <string name="shortcut_calendar_short">Kalender</string>
+    <string name="shortcut_calendar_long">Buka Kalender</string>
+</resources>
