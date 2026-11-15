@@ -25,34 +25,42 @@ object Rupiah {
         }
     }
 
+    private val SUFFIX = mapOf(
+        "rb" to 1_000L, "ribu" to 1_000L, "k" to 1_000L,
+        "jt" to 1_000_000L, "juta" to 1_000_000L, "m" to 1_000_000L,
+        "mil" to 1_000_000_000L, "miliar" to 1_000_000_000L,
+    )
+
     /**
-     * Membaca input pengguna: `25rb`, `1,5jt`, `Rp 50.000`, `2.5 juta`, `75000`.
-     * Mengembalikan null bila tidak ada angka yang valid.
+     * Membaca input bebas ala Indonesia → integer rupiah (port 1:1 `parseIDR` webapp):
+     * `25000`, `25.000`, `Rp 25.000`, `25rb`, `25k`, `1,5jt`, `1.5 juta`, `2m` (= 2 juta).
+     * Tanpa sufiks, titik/koma = pemisah ribuan; dengan sufiks, titik/koma TERAKHIR = desimal.
      */
     fun parse(input: String): Long? {
-        val text = input.trim().lowercase().removePrefix("rp").trim()
-        val match = Regex("""^([0-9][0-9.,]*)\s*(rb|ribu|k|jt|juta|m|miliar)?$""").find(text) ?: return null
-        val (numberPart, unit) = match.destructured
-        val multiplier = when (unit) {
-            "rb", "ribu", "k" -> 1_000L
-            "jt", "juta" -> 1_000_000L
-            "m", "miliar" -> 1_000_000_000L
-            else -> 1L
-        }
-        return if (multiplier == 1L) {
-            // Tanpa satuan: titik & koma dianggap pemisah ribuan (gaya Indonesia).
-            numberPart.replace(".", "").replace(",", "").toLongOrNull()
+        val raw = input.trim().lowercase().replace(Regex("^rp\\.?\\s*"), "")
+        val match = Regex("^([\\d.,\\s]+)\\s*([a-z]*)$").find(raw) ?: return null
+        val numPart = match.groupValues[1]
+        val suffix = match.groupValues[2]
+        val multiplier = if (suffix.isEmpty()) 1L else SUFFIX[suffix] ?: return null
+        var normalized = numPart.replace(Regex("\\s"), "")
+        if (multiplier == 1L) {
+            normalized = normalized.replace(".", "").replace(",", "")
         } else {
-            // Dengan satuan: 1–2 digit setelah koma/titik = desimal ("1,5jt"); 3 digit = ribuan ("1.250 rb").
-            val normalized = numberPart.replace(",", ".")
-            val parts = normalized.split(".")
-            val value = if (parts.size == 2 && parts[1].length <= 2) {
-                normalized.toBigDecimalOrNull()
-            } else {
-                normalized.replace(".", "").toBigDecimalOrNull()
-            } ?: return null
-            value.multiply(multiplier.toBigDecimal()).toLong()
+            normalized = normalized.replace(',', '.').let { n ->
+                val last = n.lastIndexOf('.')
+                if (last == -1) n else n.substring(0, last).replace(".", "") + "." + n.substring(last + 1)
+            }
         }
+        val value = normalized.toBigDecimalOrNull() ?: return null
+        if (value.signum() < 0) return null
+        return value.multiply(multiplier.toBigDecimal()).setScale(0, java.math.RoundingMode.HALF_UP).toLong()
+    }
+
+    /** True bila input tampak sedang diketik menuju sufiks valid ("25r" → "25rb"): jangan tampilkan error dulu. */
+    fun isIncomplete(input: String): Boolean {
+        val raw = input.trim().lowercase().replace(Regex("^rp\\.?\\s*"), "")
+        val typed = Regex("^[\\d.,\\s]*\\d[\\d.,\\s]*\\s*([a-z]+)$").find(raw)?.groupValues?.get(1) ?: return false
+        return SUFFIX.keys.any { it != typed && it.startsWith(typed) }
     }
 
     private fun groupThousands(value: Long): String =
