@@ -8,7 +8,7 @@ android {
 }
 
 dependencies {
-    api(projects.core.domain)
+    api(projects.core.store)
     api(libs.powersync.core)
     api(platform(libs.supabase.bom))
     api(libs.supabase.auth)

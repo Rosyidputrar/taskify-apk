@@ -1,4 +1,4 @@
-package com.rosyidputrar.taskify.core.data
+package com.rosyidputrar.taskify.core.store
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

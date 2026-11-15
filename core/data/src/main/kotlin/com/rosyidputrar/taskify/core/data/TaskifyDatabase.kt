@@ -4,6 +4,7 @@ import android.content.Context
 import com.powersync.DatabaseDriverFactory
 import com.powersync.PowerSyncDatabase
 import com.powersync.sync.SyncStatusData
+import com.rosyidputrar.taskify.core.store.TaskifySchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow

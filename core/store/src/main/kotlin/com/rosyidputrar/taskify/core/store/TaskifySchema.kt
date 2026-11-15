@@ -1,4 +1,4 @@
-package com.rosyidputrar.taskify.core.data
+package com.rosyidputrar.taskify.core.store
 
 import com.powersync.db.schema.Column
 import com.powersync.db.schema.Index
