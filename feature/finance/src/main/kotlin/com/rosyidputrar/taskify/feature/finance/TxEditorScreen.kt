@@ -65,6 +65,8 @@ import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.ui.DatePickerSheet
 import com.rosyidputrar.taskify.core.ui.TimePickerDialog
+import com.rosyidputrar.taskify.core.domain.files.EntityType
+import com.rosyidputrar.taskify.feature.attachments.AttachmentsSection
 import com.rosyidputrar.taskify.feature.finance.component.CategoryBadge
 import com.rosyidputrar.taskify.feature.finance.component.ChoiceRow
 import com.rosyidputrar.taskify.feature.finance.component.FieldLabel
@@ -89,6 +91,7 @@ fun TxEditorScreen(args: TxEditorArgs, onBack: () -> Unit) {
             override fun save() = vm.save(onBack)
             override fun remove() = vm.remove(onBack)
         },
+        attachments = { id -> AttachmentsSection(EntityType.Transaction, id) },
     )
 }
 
@@ -105,7 +108,7 @@ private val QUICK = listOf(5_000L, 10_000L, 50_000L, 100_000L)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TxEditorContent(state: TxEditorState, today: String, actions: TxEditorActions) {
+fun TxEditorContent(state: TxEditorState, today: String, actions: TxEditorActions, attachments: @Composable (txId: String) -> Unit = {}) {
     val d = state.draft
     if (!d.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -155,6 +158,7 @@ fun TxEditorContent(state: TxEditorState, today: String, actions: TxEditorAction
             OutlinedTextField(d.title, { v -> actions.update { it.copy(title = v) } }, label = { Text("Keterangan (opsional)") }, placeholder = { Text("mis. Makan siang bareng tim") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(d.note, { v -> actions.update { it.copy(note = v) } }, label = { Text("Catatan (opsional)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
             d.linked?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
+            d.id?.let { attachments(it) }
             Spacer(Modifier.size(8.dp))
         }
         Surface(color = colors.surfaceContainer, modifier = Modifier.fillMaxWidth().imePadding()) {

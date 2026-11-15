@@ -12,7 +12,8 @@ import kotlin.math.roundToInt
 data class JournalItem(val id: String, val title: String, val mood: Int?, val time: String)
 data class NoteItem(val id: String, val title: String, val pinned: Boolean)
 data class TransactionItem(val id: String, val title: String, val amount: Long, val kind: String, val category: String?, val wallet: String?, val time: String)
-data class VaultItem(val id: String, val title: String, val kind: String)
+/** [target] = id yang dibuka: snippet/project itu sendiri, atau project pemilik versi. */
+data class VaultItem(val id: String, val title: String, val kind: String, val target: String = id)
 
 /** Isi panel satu hari (selain tugas). */
 data class DayAgenda(
@@ -105,11 +106,12 @@ class CalendarRepository(private val db: PowerSyncDatabase) {
     ) { c -> TransactionItem(c.getString(0)!!, clean(c.getString(1)), c.getLong(2) ?: 0, c.getString(3) ?: "expense", c.getString(4), c.getString(5), c.getString(6) ?: "") }
 
     fun watchVault(date: String): Flow<List<VaultItem>> = db.watch(
-        """SELECT id, title, 'snippet' FROM snippets WHERE deleted_at IS NULL AND date(created_at, ?2) = ?1
-           UNION ALL SELECT id, name, 'project' FROM code_projects WHERE deleted_at IS NULL AND date(created_at, ?2) = ?1
-           UNION ALL SELECT id, file_name, 'version' FROM attachments WHERE deleted_at IS NULL AND entity_type = 'code_project' AND date(created_at, ?2) = ?1""",
+        """SELECT id, title, 'snippet', id FROM snippets WHERE deleted_at IS NULL AND date(created_at, ?2) = ?1
+           UNION ALL SELECT id, name, 'project', id FROM code_projects WHERE deleted_at IS NULL AND date(created_at, ?2) = ?1
+           UNION ALL SELECT id, COALESCE(version_label || ' · ', '') || file_name, 'version', entity_id FROM attachments
+                      WHERE deleted_at IS NULL AND entity_type = 'code_project' AND date(created_at, ?2) = ?1""",
         listOf(date, WIB),
-    ) { c -> VaultItem(c.getString(0)!!, clean(c.getString(1)), c.getString(2) ?: "snippet") }
+    ) { c -> VaultItem(c.getString(0)!!, clean(c.getString(1)), c.getString(2) ?: "snippet", c.getString(3) ?: c.getString(0)!!) }
 
     private fun clean(text: String?) = (text ?: "").replace(Regex("[#*_>`]+"), "").replace(Regex("\\s+"), " ").trim()
 }

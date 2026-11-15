@@ -44,6 +44,8 @@ import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.store.tasks.TagRef
 import com.rosyidputrar.taskify.core.ui.DatePickerSheet
 import com.rosyidputrar.taskify.core.ui.TagPicker
+import com.rosyidputrar.taskify.core.domain.files.EntityType
+import com.rosyidputrar.taskify.feature.attachments.AttachmentsSection
 import com.rosyidputrar.taskify.core.ui.markdown.DateChip
 import com.rosyidputrar.taskify.core.ui.markdown.EditorTopBar
 import com.rosyidputrar.taskify.core.ui.markdown.PaperEditor
@@ -78,6 +80,7 @@ fun JournalEditorScreen(args: JournalEditorArgs, onBack: () -> Unit) {
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
         },
+        attachments = { id -> AttachmentsSection(EntityType.JournalEntry, id) },
     )
 }
 
@@ -104,6 +107,7 @@ fun JournalEditorContent(
     actions: JournalEditorActions,
     initialPreview: Boolean = false,
     today: String = Dates.today(),
+    attachments: @Composable (entryId: String) -> Unit = {},
 ) {
     if (!ui.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -184,8 +188,9 @@ fun JournalEditorContent(
                 if (ui.id != null) {
                     TagPicker(tags, allTags, actions::addTag, actions::removeTag)
                 } else {
-                    Text("Tag bisa ditambahkan setelah entri tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Tag & foto bisa ditambahkan setelah entri tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                ui.id?.let { attachments(it) }
             }
         },
     )

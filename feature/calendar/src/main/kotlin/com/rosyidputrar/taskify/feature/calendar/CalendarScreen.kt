@@ -105,6 +105,7 @@ fun CalendarScreen(
     onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
     onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
     onOpenTransaction: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Finance) },
+    onOpenVault: (kind: String, id: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Vault) },
 ) {
     val viewModel: CalendarViewModel = koinViewModel(key = "calendar-$initialDate") { parametersOf(initialDate) }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -118,7 +119,7 @@ fun CalendarScreen(
             override fun toggle(task: Task) = viewModel.toggle(task)
         }
     }
-    CalendarContent(state, actions, contentPadding, onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction)
+    CalendarContent(state, actions, contentPadding, onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction, onOpenVault = onOpenVault)
 }
 
 @Composable
@@ -131,6 +132,7 @@ fun CalendarContent(
     onOpenJournal: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Journal) },
     onOpenNote: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Notes) },
     onOpenTransaction: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Finance) },
+    onOpenVault: (kind: String, id: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Vault) },
 ) {
     val listState = rememberLazyListState()
     // Grid bulan adalah item ke-2; setelah tergulir keluar, strip minggu muncul di atas.
@@ -169,7 +171,7 @@ fun CalendarContent(
                 }
             }
             item { DayHeading(state) }
-            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction)
+            dayAgenda(state, actions, onOpenTask = { detailTaskId = it }, onOpenModule = onOpenModule, onOpenJournal = onOpenJournal, onOpenNote = onOpenNote, onOpenTransaction = onOpenTransaction, onOpenVault = onOpenVault)
         }
 
         AnimatedVisibility(
@@ -243,6 +245,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
     onOpenJournal: (String?, String) -> Unit,
     onOpenNote: (String?, String) -> Unit,
     onOpenTransaction: (String?, String) -> Unit,
+    onOpenVault: (String, String) -> Unit,
 ) {
     val a = state.selectedActivity
     val day = state.selected
@@ -302,7 +305,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
                 title = v.title,
                 meta = when (v.kind) { "snippet" -> "Snippet baru"; "project" -> "Project baru"; else -> "Versi file baru" },
                 icon = if (v.kind == "snippet") Icons.Outlined.Code else Icons.Outlined.Folder,
-                onClick = { onOpenModule(TaskifyModule.Vault) },
+                onClick = { onOpenVault(v.kind, v.target) },
             )
         }
     }
