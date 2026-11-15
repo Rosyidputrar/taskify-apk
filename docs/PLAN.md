@@ -274,7 +274,7 @@ Biometric · Glance (widget) · DataStore.
 | **1. Data & Auth** | supabase-kt login, MFA aal2 + ingat 30 hari, skema PowerSync lengkap, connector + upload policy + `upload_errors`, PIN lock, logout menghapus data lokal | Login & sinkron data dari webapp tampil |
 | **2. Tugas + Beranda** | Quick add parser, subtask, prioritas, tag picker, filter, RRULE bergulir, alarm pengingat, undo; layar Hari Ini | Kelola tugas offline, notifikasi |
 | **3. Kalender** | Query gabungan + kejadian virtual, grid bulan/strip minggu, agenda hari | Pusat aktivitas |
-| **4. Jurnal + Catatan** | Editor Markdown bersama, mood & insight, cari/filter, templat | |
+| **4. Jurnal + Catatan** | Editor Markdown bersama, mood & insight, cari/filter, templat | Menulis jurnal & catatan offline, muncul di Kalender |
 | **5. Keuangan** | 6 tab, multi dompet, kategori ikon, grafik, input rupiah, berulang, anggaran, hutang, CSV | |
 | **6. Lampiran + Vault Kode** | Presign R2, outbox, snippet, project ZIP + viewer + versi | |
 | **7. Sandi + Konfigurasi** | Kripto kompatibel webapp (uji vektor), brankas, generator, TOTP + riwayat, recovery, rotasi, device trust | Brankas dari laptop terbuka di HP |
