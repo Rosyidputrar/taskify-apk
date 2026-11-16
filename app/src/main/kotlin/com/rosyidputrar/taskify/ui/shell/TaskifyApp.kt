@@ -1,5 +1,15 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.navigation.NavDestination
+import androidx.navigation.NavBackStackEntry
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.AnimatedContentTransitionScope
 import com.rosyidputrar.taskify.feature.wellbeing.WellbeingScreen
 import com.rosyidputrar.taskify.feature.notifications.NotificationDraftsBanner
 import com.rosyidputrar.taskify.feature.notifications.NotificationsScreen
@@ -267,7 +277,7 @@ fun TaskifyApp(
     }
     LaunchedEffect(currentModule) { currentModule?.let { com.rosyidputrar.taskify.widget.ModuleShortcuts.report(shortcutContext, it) } }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() || it.hasRoute<FocusRoute>() } == true
+    val immersive = destination?.isFullScreenEditor() == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -453,223 +463,316 @@ private fun TaskifyNavHost(
     onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit,
     modifier: Modifier,
 ) {
-    // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
-    // Lebih singkat: layar baru muncul 220 ms (sedikit membesar), yang lama hilang 120 ms.
+    val pinned = preferences.pinnedModule
+    // Pola Animeru: top-level ↔ top-level = crossfade + skala halus; push/pop = geser berpegas
+    // (paralaks 1/3); editor layar penuh = pudar + skala tanpa geser. SharedTransitionLayout
+    // memungkinkan elemen bersama (kartu tugas) "terbang" antar layar lewat Modifier.sharedBounds.
+    SharedTransitionLayout(modifier) {
+    CompositionLocalProvider(LocalSharedScope provides this) {
     NavHost(
         navController = navController,
         startDestination = HomeRoute,
-        modifier = modifier,
-        enterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
-        exitTransition = { fadeOut(tween(120)) },
-        popEnterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
-        popExitTransition = { fadeOut(tween(120)) },
+        modifier = Modifier.fillMaxSize(),
+        enterTransition = { enter(pinned) },
+        exitTransition = { exit(pinned) },
+        popEnterTransition = { popEnter(pinned) },
+        popExitTransition = { popExit(pinned) },
     ) {
         composable<HomeRoute> {
-            home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } }
+            CompositionLocalProvider(LocalNavScope provides this) { home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } } }
         }
         composable<TasksRoute> { entry ->
-            val route = entry.toRoute<TasksRoute>()
-            TasksScreen(
-                contentPadding = contentPadding,
-                openTaskId = route.taskId,
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<TasksRoute>()
+                TasksScreen(
+                    contentPadding = contentPadding,
+                    openTaskId = route.taskId,
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                    // Kartu tugas di Beranda "terbang" ke barisnya di daftar (key sama: task-{id}).
+                    taskModifier = { id -> Modifier.sharedBounds("task-$id") },
+                )
+            }
         }
         composable<CalendarRoute> { entry ->
-            CalendarScreen(
-                contentPadding = contentPadding,
-                initialDate = entry.toRoute<CalendarRoute>().date,
-                onOpenModule = onOpenModule,
-                onOpenJournal = { id, date -> navController.navigate(JournalEntryRoute(id, date)) },
-                onOpenNote = { id, date -> navController.navigate(NoteEditRoute(id, date)) },
-                onOpenTransaction = { id, date -> navController.navigate(TransactionRoute(id, date)) },
-                onOpenVault = { kind, id -> navController.navigate(if (kind == "snippet") SnippetRoute(id) else ProjectRoute(id)) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                CalendarScreen(
+                    contentPadding = contentPadding,
+                    initialDate = entry.toRoute<CalendarRoute>().date,
+                    onOpenModule = onOpenModule,
+                    onOpenJournal = { id, date -> navController.navigate(JournalEntryRoute(id, date)) },
+                    onOpenNote = { id, date -> navController.navigate(NoteEditRoute(id, date)) },
+                    onOpenTransaction = { id, date -> navController.navigate(TransactionRoute(id, date)) },
+                    onOpenVault = { kind, id -> navController.navigate(if (kind == "snippet") SnippetRoute(id) else ProjectRoute(id)) },
+                )
+            }
         }
         composable<VaultRoute> {
-            VaultScreen(
-                contentPadding = contentPadding,
-                onOpenSnippet = { navController.navigate(SnippetRoute(it)) },
-                onOpenProject = { navController.navigate(ProjectRoute(it)) },
-                onOpenConfig = { id -> navController.navigate(if (id == null) ConfigEditRoute() else ConfigFileRoute(id)) },
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                VaultScreen(
+                    contentPadding = contentPadding,
+                    onOpenSnippet = { navController.navigate(SnippetRoute(it)) },
+                    onOpenProject = { navController.navigate(ProjectRoute(it)) },
+                    onOpenConfig = { id -> navController.navigate(if (id == null) ConfigEditRoute() else ConfigFileRoute(id)) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<ConfigFileRoute> { entry ->
-            ConfigFileScreen(
-                entry.toRoute<ConfigFileRoute>().id,
-                contentPadding = contentPadding,
-                onBack = { navController.popBackStack() },
-                onEdit = { navController.navigate(ConfigEditRoute(fileId = it)) },
-                onOpenSandi = { navController.navigate(SandiRoute) },
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                ConfigFileScreen(
+                    entry.toRoute<ConfigFileRoute>().id,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onEdit = { navController.navigate(ConfigEditRoute(fileId = it)) },
+                    onOpenSandi = { navController.navigate(SandiRoute) },
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<ConfigEditRoute> { entry ->
-            val route = entry.toRoute<ConfigEditRoute>()
-            ConfigEditorScreen(
-                route.fileId, route.projectId,
-                contentPadding = contentPadding,
-                onBack = { navController.popBackStack() },
-                onSaved = { id ->
-                    navController.popBackStack()
-                    if (route.fileId == null) navController.navigate(ConfigFileRoute(id))
-                },
-                onOpenSandi = { navController.navigate(SandiRoute) },
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<ConfigEditRoute>()
+                ConfigEditorScreen(
+                    route.fileId, route.projectId,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onSaved = { id ->
+                        navController.popBackStack()
+                        if (route.fileId == null) navController.navigate(ConfigFileRoute(id))
+                    },
+                    onOpenSandi = { navController.navigate(SandiRoute) },
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<ShareRoute> {
-            ShareScreen(
-                contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
-                onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                ShareScreen(
+                    contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
+                    onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
+                )
+            }
         }
         composable<NotificationsRoute> { entry ->
-            val route = entry.toRoute<NotificationsRoute>()
-            NotificationsScreen(
-                contentPadding = contentPadding,
-                app = route.app,
-                openDrafts = route.drafts,
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<NotificationsRoute>()
+                NotificationsScreen(
+                    contentPadding = contentPadding,
+                    app = route.app,
+                    openDrafts = route.drafts,
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<WellbeingRoute> {
-            WellbeingScreen(
-                contentPadding = contentPadding,
-                onOpenNotifications = { pkg -> navController.navigate(NotificationsRoute(app = pkg)) },
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                WellbeingScreen(
+                    contentPadding = contentPadding,
+                    onOpenNotifications = { pkg -> navController.navigate(NotificationsRoute(app = pkg)) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<FocusRoute> { entry ->
-            FocusScreen(
-                taskId = entry.toRoute<FocusRoute>().taskId,
-                contentPadding = contentPadding,
-                backButton = { BackButton(it) },
-                onBack = { navController.popBackStack() },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                FocusScreen(
+                    taskId = entry.toRoute<FocusRoute>().taskId,
+                    contentPadding = contentPadding,
+                    backButton = { BackButton(it) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable<MusicRoute> {
-            MusicScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { MusicScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
         composable<TikTokRoute> { entry ->
-            TikTokScreen(contentPadding, initial = entry.toRoute<TikTokRoute>().input, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { TikTokScreen(contentPadding, initial = entry.toRoute<TikTokRoute>().input, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
         composable<TagsRoute> {
-            TagsScreen(contentPadding, onOpenTag = { navController.navigate(TagRoute(it)) }, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { TagsScreen(contentPadding, onOpenTag = { navController.navigate(TagRoute(it)) }, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
         composable<TagRoute> { entry ->
-            TagScreen(entry.toRoute<TagRoute>().id, contentPadding, onBack = { navController.popBackStack() }, backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { TagScreen(entry.toRoute<TagRoute>().id, contentPadding, onBack = { navController.popBackStack() }, backButton = { BackButton(it) }) }
         }
         composable<TrashRoute> {
-            TrashScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { TrashScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
         composable<ReviewRoute> {
-            ReviewScreen(
-                contentPadding = contentPadding,
-                nav = ReviewNav(
-                    openDay = { navController.navigate(CalendarRoute(it)) },
-                    openJournal = { navController.navigate(JournalEntryRoute(id = it)) },
-                    openFinance = { navController.navigate(FinanceRoute) },
-                    openVault = { navController.navigate(VaultRoute) },
-                    reflect = { period, from, to ->
-                        navController.navigate(JournalEntryRoute(date = Dates.today(), template = if (period == ReviewPeriod.Month) "month" else "week", from = from, to = to))
-                    },
-                ),
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                ReviewScreen(
+                    contentPadding = contentPadding,
+                    nav = ReviewNav(
+                        openDay = { navController.navigate(CalendarRoute(it)) },
+                        openJournal = { navController.navigate(JournalEntryRoute(id = it)) },
+                        openFinance = { navController.navigate(FinanceRoute) },
+                        openVault = { navController.navigate(VaultRoute) },
+                        reflect = { period, from, to ->
+                            navController.navigate(JournalEntryRoute(date = Dates.today(), template = if (period == ReviewPeriod.Month) "month" else "week", from = from, to = to))
+                        },
+                    ),
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<FilesRoute> {
-            FilesScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { FilesScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
         composable<SandiRoute> {
-            SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+            CompositionLocalProvider(LocalNavScope provides this) { SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
-        composable<SnippetRoute> { entry -> SnippetEditorScreen(entry.toRoute<SnippetRoute>().id, onBack = { navController.popBackStack() }) }
+        composable<SnippetRoute> { entry ->
+            CompositionLocalProvider(LocalNavScope provides this) { SnippetEditorScreen(entry.toRoute<SnippetRoute>().id, onBack = { navController.popBackStack() }) }
+        }
         composable<ProjectRoute> { entry ->
-            ProjectScreen(
-                entry.toRoute<ProjectRoute>().id,
-                contentPadding = contentPadding,
-                onBack = { navController.popBackStack() },
-                onViewZip = { navController.navigate(ZipRoute(it)) },
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                ProjectScreen(
+                    entry.toRoute<ProjectRoute>().id,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onViewZip = { navController.navigate(ZipRoute(it)) },
+                    backButton = { BackButton(it) },
+                )
+            }
         }
-        composable<ZipRoute> { entry -> ZipViewerScreen(entry.toRoute<ZipRoute>().attachmentId, onBack = { navController.popBackStack() }) }
+        composable<ZipRoute> { entry ->
+            CompositionLocalProvider(LocalNavScope provides this) { ZipViewerScreen(entry.toRoute<ZipRoute>().attachmentId, onBack = { navController.popBackStack() }) }
+        }
         composable<FinanceRoute> {
-            FinanceScreen(
-                contentPadding = contentPadding,
-                onOpenTx = { navController.navigate(TransactionRoute(id = it)) },
-                onNewTx = { walletId -> navController.navigate(TransactionRoute(walletId = walletId)) },
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-                topSlot = { NotificationDraftsBanner(onOpen = { navController.navigate(NotificationsRoute(drafts = true)) }) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                FinanceScreen(
+                    contentPadding = contentPadding,
+                    onOpenTx = { navController.navigate(TransactionRoute(id = it)) },
+                    onNewTx = { walletId -> navController.navigate(TransactionRoute(walletId = walletId)) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                    topSlot = { NotificationDraftsBanner(onOpen = { navController.navigate(NotificationsRoute(drafts = true)) }) },
+                )
+            }
         }
         composable<TransactionRoute> { entry ->
-            val route = entry.toRoute<TransactionRoute>()
-            TxEditorScreen(TxEditorArgs(route.id, route.date, route.walletId), onBack = { navController.popBackStack() })
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<TransactionRoute>()
+                TxEditorScreen(TxEditorArgs(route.id, route.date, route.walletId), onBack = { navController.popBackStack() })
+            }
         }
         composable<JournalRoute> {
-            JournalScreen(
-                contentPadding = contentPadding,
-                onOpenEntry = { navController.navigate(JournalEntryRoute(id = it)) },
-                onNewEntry = { navController.navigate(JournalEntryRoute(date = it)) },
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                JournalScreen(
+                    contentPadding = contentPadding,
+                    onOpenEntry = { navController.navigate(JournalEntryRoute(id = it)) },
+                    onNewEntry = { navController.navigate(JournalEntryRoute(date = it)) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<JournalEntryRoute> { entry ->
-            val route = entry.toRoute<JournalEntryRoute>()
-            val template = when (route.template) { "week" -> ReflectionKind.Week; "month" -> ReflectionKind.Month; else -> null }
-            JournalEditorScreen(JournalEditorArgs(route.id, route.date, template, route.from, route.to), onBack = { navController.popBackStack() })
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<JournalEntryRoute>()
+                val template = when (route.template) { "week" -> ReflectionKind.Week; "month" -> ReflectionKind.Month; else -> null }
+                JournalEditorScreen(JournalEditorArgs(route.id, route.date, template, route.from, route.to), onBack = { navController.popBackStack() })
+            }
         }
         composable<NotesRoute> {
-            NotesScreen(
-                contentPadding = contentPadding,
-                onOpenNote = { navController.navigate(NoteEditRoute(id = it)) },
-                onNewNote = { navController.navigate(NoteEditRoute()) },
-                onBack = navController.backIfPossible(),
-                backButton = { BackButton(it) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                NotesScreen(
+                    contentPadding = contentPadding,
+                    onOpenNote = { navController.navigate(NoteEditRoute(id = it)) },
+                    onNewNote = { navController.navigate(NoteEditRoute()) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
         }
         composable<NoteEditRoute> { entry ->
-            val route = entry.toRoute<NoteEditRoute>()
-            NoteEditorScreen(NoteEditorArgs(route.id, route.date), onBack = { navController.popBackStack() })
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<NoteEditRoute>()
+                NoteEditorScreen(NoteEditorArgs(route.id, route.date), onBack = { navController.popBackStack() })
+            }
         }
         composable<RoomRoute> {
-            RoomScreen(
-                contentPadding = contentPadding,
-                pinnedModule = preferences.pinnedModule,
-                onOpenModule = onOpenModule,
-                onPinnedModuleChange = onPinnedModuleChange,
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                RoomScreen(
+                    contentPadding = contentPadding,
+                    pinnedModule = preferences.pinnedModule,
+                    onOpenModule = onOpenModule,
+                    onPinnedModuleChange = onPinnedModuleChange,
+                )
+            }
         }
         composable<SettingsRoute> {
-            SettingsScreen(
-                contentPadding = contentPadding,
-                themeMode = preferences.themeMode,
-                pinnedModule = preferences.pinnedModule,
-                onThemeModeChange = onThemeModeChange,
-                onPinnedModuleChange = onPinnedModuleChange,
-                haptics = preferences.haptics,
-                onHapticsChange = onHapticsChange,
-                theme = preferences.theme,
-                onThemeChange = onThemeChange,
-                onBack = navController.backIfPossible(),
-                onOpenModule = { navController.navigate(it.route()) },
-            )
+            CompositionLocalProvider(LocalNavScope provides this) {
+                SettingsScreen(
+                    contentPadding = contentPadding,
+                    themeMode = preferences.themeMode,
+                    pinnedModule = preferences.pinnedModule,
+                    onThemeModeChange = onThemeModeChange,
+                    onPinnedModuleChange = onPinnedModuleChange,
+                    haptics = preferences.haptics,
+                    onHapticsChange = onHapticsChange,
+                    theme = preferences.theme,
+                    onThemeChange = onThemeChange,
+                    onBack = navController.backIfPossible(),
+                    onOpenModule = { navController.navigate(it.route()) },
+                )
+            }
         }
         composable<ModuleRoute> { entry ->
-            val route = entry.toRoute<ModuleRoute>()
-            ModulePlaceholderScreen(route.module, contentPadding, onBack = navController.backIfPossible())
+            CompositionLocalProvider(LocalNavScope provides this) {
+                val route = entry.toRoute<ModuleRoute>()
+                ModulePlaceholderScreen(route.module, contentPadding, onBack = navController.backIfPossible())
+            }
         }
     }
+    }
+    }
+}
+
+/**
+ * Editor layar penuh (tanpa dok): juga dianimasikan seperti PlayerRoute Animeru — pudar + skala,
+ * tanpa geser. Satu sumber untuk flag `immersive` dan aturan transisi.
+ */
+internal fun NavDestination.isFullScreenEditor(): Boolean =
+    hasRoute<JournalEntryRoute>() || hasRoute<NoteEditRoute>() || hasRoute<TransactionRoute>() ||
+        hasRoute<SnippetRoute>() || hasRoute<ZipRoute>() || hasRoute<ConfigEditRoute>() || hasRoute<FocusRoute>()
+
+/** Padanan `isTab()` Animeru: Hari Ini, Kalender, Ruang, dan modul yang disematkan di dok. */
+internal fun NavBackStackEntry.isTopLevel(pinned: TaskifyModule?): Boolean {
+    val d = destination
+    if (d.hasRoute<HomeRoute>() || d.hasRoute<CalendarRoute>() || d.hasRoute<RoomRoute>()) return true
+    val route = pinned?.route() ?: return false
+    return d.hasRoute(route::class)
+}
+
+/** Transisi layar: top-level ke top-level = crossfade + skala halus; push/pop = geser berpegas (paralaks 1/3). */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(pinned: TaskifyModule?): EnterTransition = when {
+    targetState.destination.isFullScreenEditor() -> fadeIn(Motion.screenFloat) + scaleIn(Motion.screenFloat, 0.96f)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeIn(Motion.screenFloat) + scaleIn(Motion.screenFloat, 0.985f)
+    else -> slideInHorizontally(Motion.screenOffset) { it } + fadeIn(Motion.screenFloat, 0.6f)
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(pinned: TaskifyModule?): ExitTransition = when {
+    targetState.destination.isFullScreenEditor() -> fadeOut(Motion.screenFloat)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeOut(Motion.screenFloat)
+    else -> slideOutHorizontally(Motion.screenOffset) { -it / 3 } + fadeOut(Motion.screenFloat, 0.4f)
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(pinned: TaskifyModule?): EnterTransition = when {
+    initialState.destination.isFullScreenEditor() -> fadeIn(Motion.screenFloat)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeIn(Motion.screenFloat)
+    else -> slideInHorizontally(Motion.screenOffset) { -it / 3 } + fadeIn(Motion.screenFloat, 0.4f)
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(pinned: TaskifyModule?): ExitTransition = when {
+    initialState.destination.isFullScreenEditor() -> fadeOut(Motion.screenFloat) + scaleOut(Motion.screenFloat, 0.96f)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeOut(Motion.screenFloat)
+    else -> slideOutHorizontally(Motion.screenOffset) { it } + fadeOut(Motion.screenFloat, 0.6f)
 }
 
 /** Tombol kembali hanya bila layar dibuka dari layar lain (bukan tujuan dok). */

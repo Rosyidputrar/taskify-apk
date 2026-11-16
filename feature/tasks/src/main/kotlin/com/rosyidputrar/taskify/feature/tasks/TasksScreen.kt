@@ -60,10 +60,12 @@ fun TasksScreen(
     openTaskId: String? = null,
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
+    /** Modifier tambahan per baris tugas (aplikasi memasang elemen bersama `task-{id}` di sini). */
+    taskModifier: (taskId: String) -> Modifier = { Modifier },
     viewModel: TasksViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    TasksContent(state, viewModel, contentPadding, openTaskId, onBack, backButton)
+    TasksContent(state, viewModel, contentPadding, openTaskId, onBack, backButton, taskModifier)
 }
 
 /** Aksi layar Tugas — dipisah agar konten bisa dirender tanpa database (tes tangkapan layar). */
@@ -87,6 +89,7 @@ fun TasksContent(
     openTaskId: String? = null,
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
+    taskModifier: (taskId: String) -> Modifier = { Modifier },
 ) {
     val haptics = rememberHaptics()
     @Suppress("NAME_SHADOWING")
@@ -207,7 +210,7 @@ fun TasksContent(
                     onToggle = { viewModel.toggle(task) },
                     onOpen = { detailId = task.id },
                     onDelete = { viewModel.remove(task) },
-                    modifier = Modifier.animateItem(),
+                    modifier = Modifier.animateItem().then(taskModifier(task.id)),
                 )
             }
         }
@@ -222,7 +225,7 @@ fun TasksContent(
                     onToggle = { viewModel.toggle(task) },
                     onOpen = { detailId = task.id },
                     onDelete = { viewModel.remove(task) },
-                    modifier = Modifier.animateItem(),
+                    modifier = Modifier.animateItem().then(taskModifier(task.id)),
                 )
             }
         }
