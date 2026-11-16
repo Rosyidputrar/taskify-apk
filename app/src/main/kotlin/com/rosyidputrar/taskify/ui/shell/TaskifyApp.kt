@@ -161,6 +161,7 @@ fun TaskifyApp(
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     onHapticsChange: (Boolean) -> Unit = {},
+    onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit = {},
     displayName: String? = null,
     messages: Flow<UiMessage> = emptyFlow(),
     home: HomeSlot = { padding, name, openModule, openTask -> HomeScreen(padding, name, openModule, openTask) },
@@ -307,6 +308,7 @@ fun TaskifyApp(
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
                 onHapticsChange = onHapticsChange,
+                onThemeChange = onThemeChange,
                 modifier = modifier,
             )
         }
@@ -437,6 +439,7 @@ private fun TaskifyNavHost(
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     onHapticsChange: (Boolean) -> Unit,
+    onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit,
     modifier: Modifier,
 ) {
     // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
@@ -618,6 +621,8 @@ private fun TaskifyNavHost(
                 onPinnedModuleChange = onPinnedModuleChange,
                 haptics = preferences.haptics,
                 onHapticsChange = onHapticsChange,
+                theme = preferences.theme,
+                onThemeChange = onThemeChange,
                 onBack = navController.backIfPossible(),
                 onOpenModule = { navController.navigate(it.route()) },
             )

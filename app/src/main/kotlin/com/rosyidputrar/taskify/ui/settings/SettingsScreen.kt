@@ -56,6 +56,8 @@ fun SettingsScreen(
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     haptics: Boolean = true,
     onHapticsChange: (Boolean) -> Unit = {},
+    theme: com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec = com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec.Default,
+    onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit = {},
     onBack: (() -> Unit)?,
     onOpenModule: (TaskifyModule) -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
@@ -97,6 +99,8 @@ fun SettingsScreen(
                         )
                     }
                 }
+                Spacer(Modifier.height(16.dp))
+                ThemePaletteSettings(theme, onThemeChange)
                 Spacer(Modifier.height(12.dp))
                 SwitchRow(
                     title = "Getaran",

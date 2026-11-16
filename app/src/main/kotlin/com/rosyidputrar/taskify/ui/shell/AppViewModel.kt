@@ -21,6 +21,10 @@ class AppViewModel(private val preferences: AppPreferences) : ViewModel() {
         launchSafe { preferences.setThemeMode(mode) }
     }
 
+    fun setTheme(spec: com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) {
+        launchSafe { preferences.setTheme(spec) }
+    }
+
     fun setHaptics(enabled: Boolean) {
         launchSafe { preferences.setHaptics(enabled) }
     }

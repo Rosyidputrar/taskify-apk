@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify
 
+import com.rosyidputrar.taskify.core.designsystem.theme.isDark
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -27,7 +30,11 @@ class PublicFileActivity : ComponentActivity() {
         enableEdgeToEdge()
         token = tokenOf(intent)
         setContent {
-            TaskifyTheme(darkTheme = isSystemInDarkTheme()) { PublicFileScreen(token) }
+            // Tema yang dipilih pengguna juga berlaku di halaman unduhan publik.
+            val prefs = remember { org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.rosyidputrar.taskify.data.AppPreferences>() }
+            val snapshot by (prefs?.snapshot ?: kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+            val dark = snapshot?.themeMode?.isDark() ?: isSystemInDarkTheme()
+            TaskifyTheme(darkTheme = dark, spec = snapshot?.theme ?: com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec.Default) { PublicFileScreen(token) }
         }
     }
 

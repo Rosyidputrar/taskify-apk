@@ -73,7 +73,7 @@ class MainActivity : FragmentActivity() {
             val gate by gateViewModel.ui.collectAsStateWithLifecycle()
             val snapshot = prefs ?: return@setContent
             CompositionLocalProvider(LocalHapticsEnabled provides snapshot.haptics) {
-                TaskifyTheme(darkTheme = snapshot.themeMode.isDark()) {
+                TaskifyTheme(darkTheme = snapshot.themeMode.isDark(), spec = snapshot.theme) {
                     AppGate(gate, snapshot)
                 }
             }
@@ -91,6 +91,7 @@ class MainActivity : FragmentActivity() {
                 onThemeModeChange = appViewModel::setThemeMode,
                 onPinnedModuleChange = appViewModel::setPinnedModule,
                 onHapticsChange = appViewModel::setHaptics,
+                onThemeChange = appViewModel::setTheme,
             )
         }
         GateHost(gate, shell = shell, gateScreen = { target ->

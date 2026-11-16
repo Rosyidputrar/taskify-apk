@@ -149,6 +149,18 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
   nama untuk TalkBack, dan layar utama direkam pada ukuran huruf 160% (`a11y_font160_*.png`).
   Label tab, angka uang, dan ubin statistik mengecil sendiri alih-alih terpotong.
 
+### Tema
+
+Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **kontras** (Standar/Sedang/Tinggi).
+- Palet siap pakai: Kertas & Tinta (desain asli), Laut, Hutan, Senja, Lavender, Sakura, Grafit, dan
+  Material You (warna wallpaper, Android 12+).
+- **Kustom** lewat Studio tema: warna dasar (contoh cepat, hue + kekuatan warna, atau hex), gaya palet
+  (Seimbang, Cerah, Ekspresif, Kalem, Setia warna, Monokrom), dan "nuansa kertas" (permukaan krem/arang
+  khas Taskify). Pratinjau terang & gelap langsung, plus strip palet tonal.
+- Semua peran warna diturunkan dari satu warna dasar lewat ruang warna HCT (port material-color-utilities);
+  warna modul diselaraskan ke warna utama dengan tone terkunci. ThemeEngineTest memeriksa setiap palet ×
+  kontras × terang/gelap dan ratusan tema kustom dari warna ekstrem: teks/latar utama & warna modul ≥ 4.5:1.
+
 ### Pengaturan
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —
