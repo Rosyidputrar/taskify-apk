@@ -67,6 +67,7 @@ import com.rosyidputrar.taskify.core.ui.DatePickerSheet
 import com.rosyidputrar.taskify.core.ui.TimePickerDialog
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.feature.attachments.AttachmentsSection
+import com.rosyidputrar.taskify.feature.links.LinksSection
 import com.rosyidputrar.taskify.feature.finance.component.CategoryBadge
 import com.rosyidputrar.taskify.feature.finance.component.ChoiceRow
 import com.rosyidputrar.taskify.feature.finance.component.FieldLabel
@@ -91,7 +92,7 @@ fun TxEditorScreen(args: TxEditorArgs, onBack: () -> Unit) {
             override fun save() = vm.save(onBack)
             override fun remove() = vm.remove(onBack)
         },
-        attachments = { id -> AttachmentsSection(EntityType.Transaction, id) },
+        attachments = { id -> AttachmentsSection(EntityType.Transaction, id); LinksSection(EntityType.Transaction, id) },
     )
 }
 

@@ -16,6 +16,10 @@ sealed interface AppEvent {
     data class OpenNote(val id: String? = null, val date: String? = null) : AppEvent
     /** Buka editor transaksi: transaksi [id], atau transaksi baru di [date]. */
     data class OpenTransaction(val id: String? = null, val date: String? = null) : AppEvent
+    /** Kotak masuk "Bagikan ke Taskify" sudah terisi. */
+    data object OpenShare : AppEvent
+    /** Buka entitas lintas modul (hasil pencarian, tag, tautan, Sampah). */
+    data class OpenEntity(val type: com.rosyidputrar.taskify.core.domain.files.EntityType, val id: String) : AppEvent
 }
 
 object AppEvents {

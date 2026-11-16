@@ -62,6 +62,12 @@ class AttachmentRepository(private val db: PowerSyncDatabase, private val users:
         db.getOptional("SELECT 1 FROM attachments WHERE id = ? AND deleted_at IS NULL", listOf(id)) { 1 } != null
 
     /** Cari file identik (SHA-256) yang masih ada. */
+    /** Label versi yang sudah dipakai project (untuk label berikutnya). */
+    suspend fun versionLabels(projectId: String): List<String?> = db.getAll(
+        "SELECT COALESCE(version_label, '') FROM attachments WHERE entity_type = 'code_project' AND entity_id = ? AND deleted_at IS NULL",
+        listOf(projectId),
+    ) { it.getString(0) ?: "" }.map { it.ifEmpty { null } }
+
     suspend fun findDuplicate(sha: String): DuplicateInfo? = db.getOptional(
         "SELECT file_name, version_label, entity_type, entity_id FROM attachments WHERE sha256 = ? AND deleted_at IS NULL LIMIT 1",
         listOf(sha),

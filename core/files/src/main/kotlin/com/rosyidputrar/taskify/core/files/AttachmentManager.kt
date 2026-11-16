@@ -57,6 +57,17 @@ class AttachmentManager(
     /** Salin & analisis file pilihan pengguna (ZIP: daftar isi & peringatan; semua: SHA-256, duplikat). */
     suspend fun prepare(uri: Uri, compress: Boolean = true): PreparedFile = withContext(Dispatchers.IO) {
         val (raw, name, mime) = FilePrep.copy(context, uri, store.scratchDir)
+        finish(raw, name, mime, compress)
+    }
+
+    /** Sama dengan [prepare] untuk berkas lokal (mis. kotak masuk "Bagikan ke Taskify"). */
+    suspend fun prepareLocal(source: java.io.File, name: String, mime: String, compress: Boolean = true): PreparedFile = withContext(Dispatchers.IO) {
+        val raw = java.io.File(store.scratchDir, java.util.UUID.randomUUID().toString())
+        source.copyTo(raw, overwrite = true)
+        finish(raw, name, mime, compress)
+    }
+
+    private fun finish(raw: java.io.File, name: String, mime: String, compress: Boolean): PreparedFile {
         val (file, finalName, finalMime) = if (compress) FilePrep.compressIfLarge(raw, name, mime) else Triple(raw, name, mime)
         if (file.length() > MAX_FILE_BYTES) {
             file.delete()
@@ -67,7 +78,7 @@ class AttachmentManager(
             throw FileTransferException("File kosong")
         }
         val zip = if (finalMime.contains("zip") || finalName.endsWith(".zip", true)) runCatching { summarizeZip(ZipReader.entries(file)) }.getOrNull() else null
-        PreparedFile(file, finalName, finalMime, file.length(), FilePrep.sha256(file), zip)
+        return PreparedFile(file, finalName, finalMime, file.length(), FilePrep.sha256(file), zip)
     }
 
     suspend fun findDuplicate(sha: String): DuplicateInfo? = repo.findDuplicate(sha)

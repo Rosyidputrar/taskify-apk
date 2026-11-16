@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.feature.links.LinksSection
+import com.rosyidputrar.taskify.core.domain.files.EntityType
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +80,7 @@ fun NoteEditorScreen(args: NoteEditorArgs, onBack: () -> Unit) {
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
         },
+        links = { id -> LinksSection(EntityType.Note, id) },
     )
 }
 
@@ -103,6 +106,7 @@ fun NoteEditorContent(
     actions: NoteEditorActions,
     initialPreview: Boolean = false,
     today: String = Dates.today(),
+    links: @Composable (noteId: String) -> Unit = {},
 ) {
     if (!ui.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -205,6 +209,7 @@ fun NoteEditorContent(
                 } else {
                     Text("Tag bisa ditambahkan setelah catatan tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                ui.id?.let { links(it) }
             }
         },
     )

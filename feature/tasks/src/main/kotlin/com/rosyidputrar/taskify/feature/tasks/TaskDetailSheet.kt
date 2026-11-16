@@ -82,6 +82,7 @@ import com.rosyidputrar.taskify.feature.tasks.component.RecurrenceDialog
 import com.rosyidputrar.taskify.core.ui.TagPicker
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.feature.attachments.AttachmentsSection
+import com.rosyidputrar.taskify.feature.links.LinksSection
 import com.rosyidputrar.taskify.feature.tasks.component.TaskCheck
 import com.rosyidputrar.taskify.core.ui.TimePickerDialog
 import com.rosyidputrar.taskify.feature.tasks.component.priorityColor
@@ -247,6 +248,7 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
 
         Section("Tag") { TagPicker(state.tags, state.allTags, vm::addTag, vm::removeTag) }
         AttachmentsSection(EntityType.Task, task.id)
+        LinksSection(EntityType.Task, task.id)
 
         Section("Catatan") {
             OutlinedTextField(

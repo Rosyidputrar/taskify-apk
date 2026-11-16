@@ -28,6 +28,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import com.rosyidputrar.taskify.core.designsystem.theme.namedColor
+import com.rosyidputrar.taskify.core.domain.files.EntityType
+import com.rosyidputrar.taskify.core.domain.search.EntityRow
+import com.rosyidputrar.taskify.core.domain.search.Search
+import com.rosyidputrar.taskify.core.domain.search.TagHit
+import com.rosyidputrar.taskify.core.domain.search.label
+import com.rosyidputrar.taskify.core.store.search.SearchRepository
+import com.rosyidputrar.taskify.core.ui.describe
+import com.rosyidputrar.taskify.core.ui.icon
+import com.rosyidputrar.taskify.core.ui.module
+import kotlinx.coroutines.delay
+import org.koin.core.context.GlobalContext
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +86,16 @@ private sealed interface SpotlightResult {
         override val subtitle = "Jadikan tugas, catatan, jurnal, atau transaksi"
     }
 
+    data class Entity(val row: EntityRow) : SpotlightResult {
+        override val title = row.title.ifBlank { "(tanpa judul)" }
+        override val subtitle = row.describe()
+    }
+
+    data class Tag(val hit: TagHit) : SpotlightResult {
+        override val title = "#${hit.name}"
+        override val subtitle = "${hit.count} item bertag"
+    }
+
     data class Theme(val mode: ThemeMode) : SpotlightResult {
         override val title = "Tema: ${mode.label}"
         override val subtitle = "Ubah tampilan aplikasi"
@@ -87,6 +114,8 @@ fun Spotlight(
     onCapture: (String) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onOpenEntity: (EntityType, String) -> Unit = { _, _ -> },
+    onOpenTag: (String) -> Unit = {},
 ) {
     BackHandler(enabled = visible, onBack = onDismiss)
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
@@ -109,6 +138,8 @@ fun Spotlight(
                 onCapture = onCapture,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                onOpenEntity = onOpenEntity,
+                onOpenTag = onOpenTag,
             )
         }
     }
@@ -121,12 +152,23 @@ private fun SpotlightPanel(
     onCapture: (String) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onOpenEntity: (EntityType, String) -> Unit,
+    onOpenTag: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    // Pencarian isi (FTS5 lokal) — debounce 120 ms seperti webapp; tanpa repository = modul saja.
+    val search = remember { runCatching { GlobalContext.getOrNull()?.getOrNull<SearchRepository>() }.getOrNull() }
+    var found by remember { mutableStateOf<Pair<List<EntityRow>, List<TagHit>>>(emptyList<EntityRow>() to emptyList()) }
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.isEmpty() || search == null) { found = emptyList<EntityRow>() to emptyList(); return@LaunchedEffect }
+        delay(120)
+        found = runCatching { search.search(q) to search.searchTags(q) }.getOrDefault(emptyList<EntityRow>() to emptyList())
+    }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    val results = remember(query, themeMode) { buildResults(query.trim(), themeMode) }
+    val results = remember(query, themeMode, found) { buildResults(query.trim(), themeMode, found.first, found.second) }
     val run: (SpotlightResult) -> Unit = { result ->
         when (result) {
             is SpotlightResult.Module -> onOpenModule(result.module)
@@ -135,6 +177,8 @@ private fun SpotlightPanel(
                 onThemeModeChange(result.mode)
                 onDismiss()
             }
+            is SpotlightResult.Entity -> onOpenEntity(result.row.type, result.row.id)
+            is SpotlightResult.Tag -> onOpenTag(result.hit.id)
         }
         query = ""
     }
@@ -170,12 +214,12 @@ private fun SpotlightPanel(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             LazyColumn(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                items(results, key = { it.title }) { result ->
+                items(results, key = { r -> if (r is SpotlightResult.Entity) r.row.type.value + r.row.id else r.title }) { result ->
                     ResultRow(result, onClick = { run(result) })
                 }
-                item {
+                if (query.isBlank()) item {
                     Text(
-                        "Pencarian isi tugas, catatan, jurnal, dan transaksi aktif setelah data tersinkron.",
+                        "Ketik untuk mencari isi tugas, jurnal, catatan, transaksi, dan Vault — juga saat offline.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -186,7 +230,7 @@ private fun SpotlightPanel(
     }
 }
 
-private fun buildResults(query: String, themeMode: ThemeMode): List<SpotlightResult> {
+private fun buildResults(query: String, themeMode: ThemeMode, hits: List<EntityRow>, tags: List<TagHit>): List<SpotlightResult> {
     val all = TaskifyModule.main + TaskifyModule.extras
     val modules = if (query.isEmpty()) {
         all
@@ -199,7 +243,8 @@ private fun buildResults(query: String, themeMode: ThemeMode): List<SpotlightRes
         .map { SpotlightResult.Theme(it) }
     val capture = if (query.isNotEmpty()) listOf(SpotlightResult.Capture(query)) else emptyList()
     // Teks yang tidak cocok modul mana pun paling mungkin catat cepat → taruh di atas.
-    return if (modules.isEmpty()) capture + themes else modules + capture + themes
+    val content = hits.map { SpotlightResult.Entity(it) } + tags.map { SpotlightResult.Tag(it) }
+    return if (modules.isEmpty()) content + capture + themes else modules + content + capture + themes
 }
 
 @Composable
@@ -208,11 +253,15 @@ private fun ResultRow(result: SpotlightResult, onClick: () -> Unit) {
         is SpotlightResult.Module -> result.module.icon to TaskifyTheme.modules.accent(result.module)
         is SpotlightResult.Capture -> Icons.Outlined.Bolt to MaterialTheme.colorScheme.primary
         is SpotlightResult.Theme -> Icons.Outlined.Contrast to MaterialTheme.colorScheme.onSurfaceVariant
+        is SpotlightResult.Entity -> result.row.type.icon to TaskifyTheme.modules.accent(result.row.type.module)
+        is SpotlightResult.Tag -> Icons.Outlined.Tag to namedColor(result.hit.color)
     }
     val kind = when (result) {
         is SpotlightResult.Module -> "MODUL"
         is SpotlightResult.Capture -> "TANGKAP"
         is SpotlightResult.Theme -> "PERINTAH"
+        is SpotlightResult.Entity -> result.row.type.label.uppercase()
+        is SpotlightResult.Tag -> "TAG"
     }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),
@@ -222,7 +271,20 @@ private fun ResultRow(result: SpotlightResult, onClick: () -> Unit) {
         Spacer(Modifier.size(16.dp))
         Column(Modifier.weight(1f)) {
             Text(result.title, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-            Text(result.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            val snippet = (result as? SpotlightResult.Entity)?.row?.snippet?.takeIf { it.contains(Search.MARK_OPEN) }
+            if (snippet != null) {
+                val hl = MaterialTheme.colorScheme.primary
+                Text(
+                    buildAnnotatedString {
+                        Search.splitSnippet(snippet.replace(Regex("\\s+"), " ")).forEach { p ->
+                            if (p.hit) withStyle(SpanStyle(color = hl, fontWeight = FontWeight.SemiBold)) { append(p.text) } else append(p.text)
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
+                )
+            } else {
+                Text(result.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
         }
         Text(kind, style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

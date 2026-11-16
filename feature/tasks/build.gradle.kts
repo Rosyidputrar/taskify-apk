@@ -8,6 +8,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.feature.links)
     api(projects.core.data)
     implementation(projects.core.designsystem)
     implementation(projects.core.ui)

@@ -71,8 +71,17 @@ import com.rosyidputrar.taskify.navigation.ZipRoute
 import com.rosyidputrar.taskify.navigation.ConfigFileRoute
 import com.rosyidputrar.taskify.navigation.ConfigEditRoute
 import com.rosyidputrar.taskify.navigation.SandiRoute
+import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.navigation.FilesRoute
 import com.rosyidputrar.taskify.navigation.ReviewRoute
+import com.rosyidputrar.taskify.navigation.TagsRoute
+import com.rosyidputrar.taskify.navigation.TagRoute
+import com.rosyidputrar.taskify.navigation.TrashRoute
+import com.rosyidputrar.taskify.navigation.ShareRoute
+import com.rosyidputrar.taskify.ui.share.ShareScreen
+import com.rosyidputrar.taskify.feature.organize.TagScreen
+import com.rosyidputrar.taskify.feature.organize.TagsScreen
+import com.rosyidputrar.taskify.feature.organize.TrashScreen
 import com.rosyidputrar.taskify.feature.review.ReviewNav
 import com.rosyidputrar.taskify.feature.review.ReviewScreen
 import com.rosyidputrar.taskify.core.domain.review.ReviewPeriod
@@ -144,9 +153,29 @@ fun TaskifyApp(
         captureOpen = true
     }
 
+    fun openEntity(type: EntityType, id: String) {
+        spotlightOpen = false
+        when (type) {
+            EntityType.Task -> navController.navigate(TasksRoute(id)) { launchSingleTop = true }
+            EntityType.JournalEntry -> navController.navigate(JournalEntryRoute(id = id))
+            EntityType.Note -> navController.navigate(NoteEditRoute(id = id))
+            EntityType.Transaction -> navController.navigate(TransactionRoute(id = id))
+            EntityType.Snippet -> navController.navigate(SnippetRoute(id))
+            EntityType.CodeProject -> navController.navigate(ProjectRoute(id))
+        }
+    }
+
+    // Dibagikan saat gerbang (login/PIN) masih tertutup: event-nya terlewat, isinya tetap di kotak masuk.
+    LaunchedEffect(Unit) {
+        val pending = runCatching { org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.rosyidputrar.taskify.ui.share.ShareInbox>() }.getOrNull()
+        if (pending?.content?.value != null) navController.navigate(ShareRoute) { launchSingleTop = true }
+    }
+
     LaunchedEffect(Unit) {
         AppEvents.events.collect { event ->
             when (event) {
+                is AppEvent.OpenEntity -> openEntity(event.type, event.id)
+                AppEvent.OpenShare -> { spotlightOpen = false; navController.navigate(ShareRoute) { launchSingleTop = true } }
                 AppEvent.OpenSpotlight -> spotlightOpen = true
                 is AppEvent.OpenCapture -> openCapture(event.text)
                 is AppEvent.OpenCalendar -> {
@@ -190,6 +219,8 @@ fun TaskifyApp(
         destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
         destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
         destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
+        destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
+        destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
@@ -307,6 +338,8 @@ fun TaskifyApp(
             onCapture = { text -> openCapture(text) },
             themeMode = preferences.themeMode,
             onThemeModeChange = onThemeModeChange,
+            onOpenEntity = ::openEntity,
+            onOpenTag = { id -> spotlightOpen = false; navController.navigate(TagRoute(id)) },
         )
     }
     }
@@ -390,6 +423,18 @@ private fun TaskifyNavHost(
                 onOpenSandi = { navController.navigate(SandiRoute) },
                 backButton = { BackButton(it) },
             )
+        }
+        composable<ShareRoute> {
+            ShareScreen(contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) })
+        }
+        composable<TagsRoute> {
+            TagsScreen(contentPadding, onOpenTag = { navController.navigate(TagRoute(it)) }, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+        }
+        composable<TagRoute> { entry ->
+            TagScreen(entry.toRoute<TagRoute>().id, contentPadding, onBack = { navController.popBackStack() }, backButton = { BackButton(it) })
+        }
+        composable<TrashRoute> {
+            TrashScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
         }
         composable<ReviewRoute> {
             ReviewScreen(

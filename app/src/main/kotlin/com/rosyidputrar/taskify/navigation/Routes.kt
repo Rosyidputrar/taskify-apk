@@ -58,6 +58,14 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object ReviewRoute
 
+@Serializable data object TagsRoute
+
+@Serializable data class TagRoute(val id: String)
+
+@Serializable data object TrashRoute
+
+@Serializable data object ShareRoute
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -75,5 +83,7 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Sandi -> SandiRoute
     TaskifyModule.Files -> FilesRoute
     TaskifyModule.Review -> ReviewRoute
+    TaskifyModule.Tags -> TagsRoute
+    TaskifyModule.Trash -> TrashRoute
     else -> ModuleRoute(name)
 }

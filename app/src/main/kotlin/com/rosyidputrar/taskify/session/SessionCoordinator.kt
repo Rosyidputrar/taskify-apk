@@ -42,6 +42,8 @@ class SessionCoordinator(
     private val attachments: com.rosyidputrar.taskify.core.files.AttachmentManager,
     private val sandi: com.rosyidputrar.taskify.core.sandi.SandiService,
     private val tempFiles: com.rosyidputrar.taskify.core.files.TempFileUploader,
+    private val search: com.rosyidputrar.taskify.core.store.search.SearchRepository,
+    private val trash: com.rosyidputrar.taskify.core.store.cross.TrashRepository,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -72,8 +74,18 @@ class SessionCoordinator(
 
     private suspend fun open(userId: String) {
         database.prepareFor(userId)
+        // Indeks pencarian FTS5 lokal (trigger di tabel PowerSync); gagal = fallback LIKE.
+        runCatching { search.setup() }
         _readyUser.value = userId
         database.connect(connector)
+        // Isi Sampah > 30 hari dihapus permanen sekali per sesi, SETELAH sinkron awal (sama dengan
+        // webapp) — sebelum itu data lokal belum lengkap.
+        scope.launch {
+            runCatching {
+                database.db.waitForFirstSync()
+                if (_readyUser.value == userId) trash.purgeExpired()
+            }
+        }
     }
 
     private suspend fun close() {
@@ -101,6 +113,7 @@ class SessionCoordinator(
         sandi.wipe()
         // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
         tempFiles.wipe()
+        search.clear()
         database.wipe()
         auth.signOut()
     }

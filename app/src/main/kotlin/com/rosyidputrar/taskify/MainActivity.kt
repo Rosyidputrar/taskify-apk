@@ -2,6 +2,8 @@ package com.rosyidputrar.taskify
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
     private val appViewModel: AppViewModel by viewModel()
     private val gateViewModel: GateViewModel by viewModel()
     private val messenger: Messenger by inject()
+    private val shareInbox: com.rosyidputrar.taskify.ui.share.ShareInbox by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -98,6 +101,10 @@ class MainActivity : ComponentActivity() {
             ACTION_CAPTURE -> AppEvents.send(AppEvent.OpenCapture())
             ACTION_SEARCH -> AppEvents.send(AppEvent.OpenSpotlight)
             ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar())
+            Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> {
+                // Salin isi selagi izin baca dari aplikasi pengirim masih berlaku, lalu buka layar Bagikan.
+                lifecycleScope.launch { if (shareInbox.receive(intent)) AppEvents.send(AppEvent.OpenShare) }
+            }
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
         }
     }

@@ -27,6 +27,16 @@ import com.rosyidputrar.taskify.feature.files.OnlineStatus
 import com.rosyidputrar.taskify.feature.files.filesFeatureModule
 import com.rosyidputrar.taskify.feature.review.reviewFeatureModule
 import com.rosyidputrar.taskify.core.store.review.ReviewRepository
+import com.rosyidputrar.taskify.core.store.search.SearchRepository
+import com.rosyidputrar.taskify.core.store.cross.LinkRepository
+import com.rosyidputrar.taskify.core.store.cross.TrashRepository
+import com.rosyidputrar.taskify.feature.links.EntityOpener
+import com.rosyidputrar.taskify.feature.links.linksFeatureModule
+import com.rosyidputrar.taskify.feature.organize.organizeFeatureModule
+import com.rosyidputrar.taskify.ui.shell.AppEvent
+import com.rosyidputrar.taskify.ui.shell.AppEvents
+import com.rosyidputrar.taskify.ui.share.ShareInbox
+import com.rosyidputrar.taskify.ui.share.ShareViewModel
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
 import com.rosyidputrar.taskify.core.store.files.TempFileRepository
@@ -115,6 +125,11 @@ private val deviceModule = module {
     single { SandiService(get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
     single { AccountEmail { getOrNull<AuthRepository>()?.currentEmail() } }
     single { ReviewRepository(get()) }
+    single { SearchRepository(get()) }
+    single { TrashRepository(get()) }
+    single { ShareInbox(androidContext()) }
+    single { LinkRepository(get(), get()) }
+    single { EntityOpener { type, id -> AppEvents.send(AppEvent.OpenEntity(type, id)) } }
     single { TempFileRepository(get()) }
     // Tanpa SupabaseClient (konfigurasi belum lengkap) halaman unduh publik tetap bisa memakai URL-nya.
     single { TempFilesApi(getOrNull<SupabaseClient>(), AppConfig.supabaseUrl) }
@@ -129,6 +144,7 @@ private val deviceModule = module {
     viewModel { HomeViewModel(get(), get(), get(), get()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
+    viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { GateViewModel(getOrNull(), getOrNull(), get()) }
     viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get()) }
 }
@@ -141,10 +157,10 @@ private val serverModule = module {
     single { FilesApi(get()) }
     single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get()) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get()) }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

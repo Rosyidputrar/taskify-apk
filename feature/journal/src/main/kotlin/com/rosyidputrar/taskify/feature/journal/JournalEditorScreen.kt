@@ -46,6 +46,7 @@ import com.rosyidputrar.taskify.core.ui.DatePickerSheet
 import com.rosyidputrar.taskify.core.ui.TagPicker
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.feature.attachments.AttachmentsSection
+import com.rosyidputrar.taskify.feature.links.LinksSection
 import com.rosyidputrar.taskify.core.ui.markdown.DateChip
 import com.rosyidputrar.taskify.core.ui.markdown.EditorTopBar
 import com.rosyidputrar.taskify.core.ui.markdown.PaperEditor
@@ -80,7 +81,7 @@ fun JournalEditorScreen(args: JournalEditorArgs, onBack: () -> Unit) {
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
         },
-        attachments = { id -> AttachmentsSection(EntityType.JournalEntry, id) },
+        attachments = { id -> AttachmentsSection(EntityType.JournalEntry, id); LinksSection(EntityType.JournalEntry, id) },
     )
 }
 

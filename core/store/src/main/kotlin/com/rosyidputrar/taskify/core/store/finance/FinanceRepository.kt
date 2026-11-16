@@ -534,4 +534,14 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
         insertTx(id, userId, v, recurringId, debtId)
         return true
     }
+
+    /** Pengeluaran terbaru (tujuan "struk untuk transaksi" saat berbagi foto). */
+    fun watchRecentExpenses(limit: Int = 15): Flow<List<RecentExpense>> = db.watch(
+        """SELECT t.id, COALESCE(NULLIF(t.title, ''), c.name, 'Pengeluaran'), t.amount, t.occurred_on FROM transactions t
+             LEFT JOIN categories c ON c.id = t.category_id
+            WHERE t.deleted_at IS NULL AND t.kind = 'expense' ORDER BY t.occurred_on DESC, t.created_at DESC LIMIT ?""",
+        listOf(limit.toLong()),
+    ) { c -> RecentExpense(c.getString(0)!!, c.getString(1) ?: "Pengeluaran", c.getLong(2) ?: 0, c.getString(3) ?: "") }
 }
+
+data class RecentExpense(val id: String, val title: String, val amount: Long, val day: String)
