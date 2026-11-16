@@ -4,6 +4,7 @@ import com.powersync.PowerSyncDatabase
 import com.powersync.inMemory
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.core.store.cross.LinkRepository
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashType
 import com.rosyidputrar.taskify.core.store.cross.TrashRepository
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +78,38 @@ class CrossModuleRepositoryTest {
         assertEquals(listOf("baru"), db.getAll("SELECT id FROM notes") { it.getString(0)!! })
         assertEquals(0, count("SELECT count(*) FROM tags"))
         assertEquals(0, count("SELECT count(*) FROM config_versions"))
+        assertEquals(0, count("SELECT count(*) FROM config_files"))
+    }
+
+    @Test fun secretItemsAppearInTrashAndCanBeRestoredOrDestroyed() = runBlocking {
+        db.execute("INSERT INTO pw_items (id, user_id, enc, v, deleted_at, created_at, updated_at) VALUES ('pw', ?, 'k.x', 1, '2026-11-12T00:00:00Z', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+        db.execute("INSERT INTO pw_items (id, user_id, enc, v, created_at, updated_at) VALUES ('pw-hidup', ?, 'k.x', 1, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+        db.execute("INSERT INTO config_files (id, user_id, name, format, environment, deleted_at, created_at, updated_at) VALUES ('c', ?, '.env', 'env', 'production', '2026-11-13 00:00:00Z', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+        db.execute("INSERT INTO config_versions (id, user_id, file_id, enc, v, created_at, updated_at) VALUES ('v', ?, 'c', 'x', 1, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+
+        // Terbaru dulu; judul Sandi tidak bisa dibaca (terenkripsi) → nama jenisnya.
+        val rows = trash.watchSecretTrash().first()
+        assertEquals(listOf(SecretTrashType.ConfigFile to "c", SecretTrashType.PasswordItem to "pw"), rows.map { it.type to it.id })
+        assertEquals(listOf(".env", "Item Sandi"), rows.map { it.title })
+        assertEquals("production", rows.first().subtitle)
+        // Item rahasia tidak bercampur dengan daftar entitas biasa.
+        assertTrue(trash.watchTrash().first().isEmpty())
+
+        trash.restoreSecret(SecretTrashType.PasswordItem, "pw")
+        assertEquals(0, count("SELECT count(*) FROM pw_items WHERE deleted_at IS NOT NULL"))
+        assertEquals(listOf("c"), trash.watchSecretTrash().first().map { it.id })
+
+        trash.destroySecret(SecretTrashType.ConfigFile, listOf("c"))
+        assertEquals(0, count("SELECT count(*) FROM config_files"))
+        assertEquals(0, count("SELECT count(*) FROM config_versions"), "versi ikut terhapus")
+        assertEquals(2, count("SELECT count(*) FROM pw_items"))
+    }
+
+    @Test fun emptyTrashIncludesSecretItems() = runBlocking {
+        db.execute("INSERT INTO pw_items (id, user_id, enc, v, deleted_at, created_at, updated_at) VALUES ('pw', ?, 'k.x', 1, '2026-11-12T00:00:00Z', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+        db.execute("INSERT INTO pw_items (id, user_id, enc, v, created_at, updated_at) VALUES ('pw-hidup', ?, 'k.x', 1, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')", listOf(user))
+        trash.emptyTrash()
+        assertEquals(listOf("pw-hidup"), db.getAll("SELECT id FROM pw_items") { it.getString(0)!! })
     }
 
     @Test fun linksBothDirections() = runBlocking {

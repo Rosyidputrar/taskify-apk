@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import com.rosyidputrar.taskify.core.designsystem.component.SecureWindow
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -98,6 +99,8 @@ fun LockedNotice(onOpenSandi: () -> Unit, modifier: Modifier = Modifier) {
 fun ConfigFileScreen(id: String, contentPadding: PaddingValues, onBack: () -> Unit, onEdit: (String) -> Unit, onOpenSandi: () -> Unit, backButton: @Composable (() -> Unit) -> Unit) {
     val vm: ConfigFileViewModel = koinViewModel(key = "config-$id") { parametersOf(id) }
     val state by vm.state.collectAsStateWithLifecycle()
+    // Nilai konfigurasi yang didekripsi (bisa ditampilkan) → tidak boleh di-screenshot / tampil di Terkini.
+    SecureWindow()
     ConfigFileContent(state, vm, contentPadding, onBack, onEdit = { onEdit(id) }, onOpenSandi, backButton)
 }
 
@@ -282,6 +285,8 @@ private fun MetaDialog(name: String, environment: String, onDismiss: () -> Unit,
 fun ConfigEditorScreen(fileId: String?, projectId: String?, contentPadding: PaddingValues, onBack: () -> Unit, onSaved: (String) -> Unit, onOpenSandi: () -> Unit, backButton: @Composable (() -> Unit) -> Unit) {
     val vm: ConfigEditorViewModel = koinViewModel(key = "config-edit-$fileId") { parametersOf(fileId, projectId) }
     val state by vm.state.collectAsStateWithLifecycle()
+    // Editor selalu menampilkan teks polos konfigurasi.
+    SecureWindow()
     ConfigEditorContent(state, vm, contentPadding, onBack, onSaved, onOpenSandi, backButton)
 }
 

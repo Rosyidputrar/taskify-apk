@@ -43,6 +43,8 @@ import com.rosyidputrar.taskify.feature.organize.TagsContent
 import com.rosyidputrar.taskify.feature.organize.TagsUiState
 import com.rosyidputrar.taskify.feature.organize.TrashActions
 import com.rosyidputrar.taskify.feature.organize.TrashContent
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashRow
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashType
 import com.rosyidputrar.taskify.feature.organize.TrashUiState
 import com.rosyidputrar.taskify.ui.placeholder.BackButton
 import com.rosyidputrar.taskify.ui.share.FileTarget
@@ -75,6 +77,10 @@ object SampleCross {
         EntityRow(EntityType.Note, "n1", "Draf pengumuman lama", null, "2026-11-15 09:00:00Z"),
         EntityRow(EntityType.Task, "t1", "Telepon vendor AC", "2026-11-03", "2026-11-04T02:00:00.000Z"),
         EntityRow(EntityType.Transaction, "x1", "Parkir", "2026-10-28|expense|5000", "2026-10-20T02:00:00.000Z"),
+    )
+    val secretTrash = listOf(
+        SecretTrashRow(SecretTrashType.ConfigFile, "c1", ".env", "production", "2026-11-14T02:00:00.000Z"),
+        SecretTrashRow(SecretTrashType.PasswordItem, "p1", "Item Sandi", null, "2026-11-10T02:00:00.000Z"),
     )
     private fun song(id: String, t: String, a: String, d: String) = Song(id.padEnd(11, '0'), t, a, d, emptyList())
     val songs = listOf(song("s1", "Hujan di Bulan Juni", "Kopi Senja", "4.12"), song("s2", "Lampu Kota", "Orkes Malam", "3.48"),
@@ -150,7 +156,7 @@ class CrossModuleScreenshotTest {
         TagContent(TagUiState(SampleCross.tags[0], SampleCross.rows, true), SampleCross.Actions, padding, {}) { BackButton(it) }
     }
 
-    @Test fun trash() = shot("trash_light", false) { TrashContent(TrashUiState(SampleCross.trash, true, SampleCross.NOW), SampleCross.Actions, padding) }
+    @Test fun trash() = shot("trash_light", false) { TrashContent(TrashUiState(SampleCross.trash, true, SampleCross.NOW, SampleCross.secretTrash), SampleCross.Actions, padding) }
 
     @Test fun share() = shot("share_light", false) {
         val dir = File(System.getProperty("java.io.tmpdir"))

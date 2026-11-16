@@ -147,6 +147,8 @@ class TaskRepositoryTest {
         assertEquals(listOf(id), tasks.watchView(TaskView.List(list), today).first().map { it.id })
         assertEquals(listOf(id), tasks.watchUpcomingReminders("2026-10-07T00:00:00.000Z").first().map { it.id })
         assertTrue(tasks.watchUpcomingReminders("2026-10-08T00:00:00.000Z").first().isEmpty())
+        assertEquals(mapOf(id to "2026-10-07T02:00:00.000Z"), tasks.upcomingReminders("2026-10-07T00:00:00.000Z"))
+        assertTrue(tasks.upcomingReminders("2026-10-08T00:00:00.000Z").isEmpty())
         tasks.removeList(list)
         assertNull(tasks.get(id)!!.listId)
         assertTrue(tasks.watchLists().first().isEmpty())

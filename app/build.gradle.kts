@@ -49,8 +49,10 @@ android {
     }
 
     signingConfigs {
-        // Kunci debug tetap (bukan rahasia) supaya APK dari CI bisa dipasang menimpa versi sebelumnya
-        // tanpa harus uninstall (uninstall = data lokal yang belum tersinkron ikut hilang).
+        // Kunci debug tetap (bukan rahasia) supaya APK debug dari CI bisa dipasang menimpa versi
+        // debug sebelumnya tanpa uninstall. Karena kunci ini publik, build debug memakai paket
+        // terpisah (`.debug`, lihat buildTypes): APK yang ditandatangani kunci ini tidak bisa
+        // menimpa aplikasi utama dan tidak bisa membaca datanya.
         getByName("debug") {
             storeFile = rootProject.file("app/debug.keystore")
             storePassword = "android"
@@ -71,6 +73,10 @@ android {
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
+            // Paket sendiri: bisa terpasang berdampingan dengan versi rilis, tidak bisa menimpanya.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            // Nama & shortcut statis versi debug: app/src/debug/res.
         }
         getByName("release") {
             isMinifyEnabled = true

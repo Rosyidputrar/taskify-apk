@@ -19,7 +19,8 @@ data class SharedFile(val key: String, val file: File, val name: String, val mim
     val kind: SharedKind get() = Share.kind(name, mime)
 }
 
-data class ShareContent(val title: String, val text: String, val url: String, val files: List<SharedFile>) {
+/** [skipped] = berkas yang ditolak (sumber tidak aman, terlalu besar, atau melebihi batas jumlah). */
+data class ShareContent(val title: String, val text: String, val url: String, val files: List<SharedFile>, val skipped: Int = 0) {
     val merged: String get() = Share.text(title, text, url)
     val isEmpty: Boolean get() = merged.isBlank() && files.isEmpty()
 }
@@ -29,7 +30,12 @@ data class ShareContent(val title: String, val text: String, val url: String, va
  * disalin ke cache aplikasi saat diterima — izin baca `content://` dari aplikasi pengirim hanya
  * berlaku selama Activity penerima hidup.
  */
-class ShareInbox(private val context: Context) {
+class ShareInbox(
+    private val context: Context,
+    private val maxFileBytes: Long = Share.MAX_FILE_BYTES,
+    private val maxFiles: Int = Share.MAX_FILES,
+    private val maxTotalBytes: Long = Share.MAX_TOTAL_BYTES,
+) {
     private val _content = MutableStateFlow<ShareContent?>(null)
     val content: StateFlow<ShareContent?> = _content.asStateFlow()
 
@@ -43,9 +49,16 @@ class ShareInbox(private val context: Context) {
         val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
         val title = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
         clearFiles()
-        val files = uris.mapNotNull { copy(it) }
+        val files = mutableListOf<SharedFile>()
+        var total = 0L
+        for (uri in uris) {
+            if (files.size >= maxFiles) break
+            val file = copy(uri, maxBytes = minOf(maxFileBytes, maxTotalBytes - total)) ?: continue
+            files += file
+            total += file.size
+        }
         // URL terpisah tidak dikirim Android (selalu di EXTRA_TEXT) — biarkan kosong.
-        val content = ShareContent(title, text, "", files)
+        val content = ShareContent(title, text, "", files, skipped = uris.size - files.size)
         _content.value = content.takeUnless { it.isEmpty }
         !content.isEmpty
     }
@@ -57,16 +70,58 @@ class ShareInbox(private val context: Context) {
     private fun Intent.streams(): List<Uri> =
         (if (Build.VERSION.SDK_INT >= 33) getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else getParcelableArrayListExtra(Intent.EXTRA_STREAM)).orEmpty()
 
-    private fun copy(uri: Uri): SharedFile? = runCatching {
-        val resolver = context.contentResolver
-        var name = uri.lastPathSegment?.substringAfterLast('/') ?: "berkas"
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { name = it } }
-        val mime = resolver.getType(uri) ?: "application/octet-stream"
+    /** Authority content provider milik aplikasi ini (FileProvider lampiran, dll.). */
+    private val ownAuthorities: Set<String> by lazy {
+        runCatching {
+            val flags = android.content.pm.PackageManager.GET_PROVIDERS
+            val info = if (Build.VERSION.SDK_INT >= 33) {
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                @Suppress("DEPRECATION") context.packageManager.getPackageInfo(context.packageName, flags)
+            }
+            info.providers.orEmpty().flatMap { it.authority.orEmpty().split(';') }.filter { it.isNotBlank() }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    /**
+     * Salin satu berkas ke cache. null = ditolak: bukan `content://` milik aplikasi lain (lihat
+     * [Share.isAcceptableSource]), tidak terbaca, atau lebih besar dari [maxBytes] (dihitung saat
+     * menyalin — ukuran yang dilaporkan pengirim tidak dipercaya).
+     */
+    private fun copy(uri: Uri, maxBytes: Long): SharedFile? {
+        if (!Share.isAcceptableSource(uri.scheme, uri.authority, ownAuthorities, context.packageName)) return null
+        if (maxBytes <= 0) return null
         val key = UUID.randomUUID().toString()
         val target = File(dir, key)
-        resolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } } ?: return null
-        SharedFile(key, target, name.replace('/', '_'), mime, target.length())
-    }.getOrNull()
+        return runCatching {
+            val resolver = context.contentResolver
+            var name = uri.lastPathSegment?.substringAfterLast('/') ?: "berkas"
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { name = it } }
+            val mime = resolver.getType(uri) ?: "application/octet-stream"
+            val copied = resolver.openInputStream(uri)?.use { input -> target.outputStream().use { out -> copyLimited(input, out, maxBytes) } }
+            if (copied == null) {
+                target.delete()
+                null
+            } else {
+                SharedFile(key, target, name.replace('/', '_'), mime, copied)
+            }
+        }.getOrElse {
+            target.delete()
+            null
+        }
+    }
+
+    private fun copyLimited(input: java.io.InputStream, out: java.io.OutputStream, maxBytes: Long): Long {
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) return total
+            total += n
+            if (total > maxBytes) throw java.io.IOException("Berkas terlalu besar")
+            out.write(buffer, 0, n)
+        }
+    }
 
     /** Tandai satu item selesai (berkasnya dihapus dari cache). */
     fun done(key: String) {

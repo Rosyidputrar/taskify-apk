@@ -263,6 +263,14 @@ fun ShareContentView(
                 }
             }
         }
+        if (content.skipped > 0) item(key = "skipped") {
+            Text(
+                "${content.skipped} berkas tidak diterima (tidak bisa dibaca, terlalu besar, atau melebihi ${com.rosyidputrar.taskify.core.domain.share.Share.MAX_FILES} berkas).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+            )
+        }
         items(content.files, key = { it.key }) { f -> FileTargetCard(f, state, actions, Modifier.animateItem()) }
         if (state.busy != null) item(key = "busy") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) }
         item(key = "finish") {

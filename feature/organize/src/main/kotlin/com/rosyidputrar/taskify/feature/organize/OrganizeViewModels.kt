@@ -6,6 +6,7 @@ import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import com.rosyidputrar.taskify.core.domain.search.EntityRow
 import com.rosyidputrar.taskify.core.domain.search.label
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashRow
 import com.rosyidputrar.taskify.core.store.cross.TrashRepository
 import com.rosyidputrar.taskify.core.store.tasks.TagRef
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
@@ -70,17 +71,36 @@ class TagViewModel(private val tagId: String, private val repo: TagRepository, p
 
 // ---------------------------------------------------------------- Sampah
 
-data class TrashUiState(val rows: List<EntityRow> = emptyList(), val loaded: Boolean = false, val now: Long = System.currentTimeMillis())
+data class TrashUiState(
+    val rows: List<EntityRow> = emptyList(),
+    val loaded: Boolean = false,
+    val now: Long = System.currentTimeMillis(),
+    /** Item Sandi & Konfigurasi yang dihapus. */
+    val secrets: List<SecretTrashRow> = emptyList(),
+) {
+    val isEmpty: Boolean get() = rows.isEmpty() && secrets.isEmpty()
+    val total: Int get() = rows.size + secrets.size
+}
 
 interface TrashActions {
     fun restore(row: EntityRow)
     fun destroy(row: EntityRow)
     fun emptyAll()
+    fun restoreSecret(row: SecretTrashRow) = Unit
+    fun destroySecret(row: SecretTrashRow) = Unit
 }
 
 class TrashViewModel(private val repo: TrashRepository, private val messenger: Messenger) : ViewModel(), TrashActions {
-    val state: StateFlow<TrashUiState> = repo.watchTrash().map { TrashUiState(it, true) }
+    val state: StateFlow<TrashUiState> = combine(repo.watchTrash(), repo.watchSecretTrash()) { rows, secrets -> TrashUiState(rows, true, secrets = secrets) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrashUiState())
+
+    override fun restoreSecret(row: SecretTrashRow) {
+        viewModelScope.launch { repo.restoreSecret(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }
+    }
+
+    override fun destroySecret(row: SecretTrashRow) {
+        viewModelScope.launch { repo.destroySecret(row.type, listOf(row.id)); messenger.show("\"${row.title}\" dihapus permanen") }
+    }
 
     override fun restore(row: EntityRow) {
         viewModelScope.launch { repo.restore(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }

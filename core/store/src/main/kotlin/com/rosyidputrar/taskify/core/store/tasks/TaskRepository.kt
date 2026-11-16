@@ -149,6 +149,13 @@ class TaskRepository(private val db: PowerSyncDatabase, private val users: UserI
         listOf(fromIso),
     ) { it.toTask() }
 
+    /** Sekali baca: `id → remind_at` tugas aktif yang pengingatnya ≥ [fromIso] (urut paling dekat). */
+    suspend fun upcomingReminders(fromIso: String): Map<String, String> = db.getAll(
+        """SELECT id, remind_at FROM tasks WHERE deleted_at IS NULL AND $ACTIVE AND remind_at IS NOT NULL
+           AND replace(remind_at, ' ', 'T') >= ? ORDER BY remind_at LIMIT 400""",
+        listOf(fromIso),
+    ) { it.getString(0)!! to it.getString(1)!! }.toMap()
+
     suspend fun get(id: String): Task? =
         db.getOptional("SELECT $TASK_COLUMNS FROM tasks WHERE id = ?", listOf(id)) { it.toTask() }
 

@@ -31,6 +31,18 @@ internal suspend fun ConnectionContext.deleteEntityRefs(type: EntityType, ids: L
     )
 }
 
+/** Jenis item rahasia di Sampah (bukan [EntityType]: tidak punya tag, tautan, atau lampiran). */
+enum class SecretTrashType(val table: String, val label: String) {
+    PasswordItem("pw_items", "Item Sandi"),
+    ConfigFile("config_files", "Konfigurasi"),
+}
+
+/**
+ * Item Sandi / Konfigurasi di Sampah. Isi item Sandi terenkripsi (judulnya pun), jadi yang
+ * ditampilkan hanya jenisnya; nama berkas konfigurasi tidak dienkripsi.
+ */
+data class SecretTrashRow(val type: SecretTrashType, val id: String, val title: String, val subtitle: String?, val deletedAt: String?)
+
 /**
  * Sampah lintas modul (port `trash-actions.ts`): daftar, pulihkan, hapus permanen (+ subtask,
  * tag, tautan), dan pembersihan otomatis setelah [RETENTION_DAYS] hari.
@@ -56,6 +68,35 @@ class TrashRepository(private val db: PowerSyncDatabase) {
            SELECT 'code_project', id, name, NULL, deleted_at FROM code_projects WHERE deleted_at IS NOT NULL
            ORDER BY deleted_at DESC""",
     ) { it.entityRowOrNull() ?: NONE }.map { rows -> rows.filter { it !== NONE } }
+
+    /** Item Sandi & Konfigurasi yang dihapus (terbaru dulu). */
+    fun watchSecretTrash(): Flow<List<SecretTrashRow>> = db.watch(
+        """SELECT 'pw', id, NULL, NULL, deleted_at FROM pw_items WHERE deleted_at IS NOT NULL
+           UNION ALL
+           SELECT 'config', id, name, NULLIF(environment, ''), deleted_at FROM config_files WHERE deleted_at IS NOT NULL
+           ORDER BY deleted_at DESC""",
+    ) { c ->
+        val type = if (c.getString(0) == "pw") SecretTrashType.PasswordItem else SecretTrashType.ConfigFile
+        SecretTrashRow(type, c.getString(1)!!, c.getString(2)?.takeIf { it.isNotBlank() } ?: type.label, c.getString(3), c.getString(4))
+    }
+
+    suspend fun restoreSecret(type: SecretTrashType, id: String) {
+        db.execute("UPDATE ${type.table} SET deleted_at = NULL, updated_at = ? WHERE id = ?", listOf(Timestamps.nowIso(), id))
+    }
+
+    /** Hapus permanen (konfigurasi beserta semua versinya). */
+    suspend fun destroySecret(type: SecretTrashType, ids: List<String>) {
+        if (ids.isEmpty()) return
+        db.writeTransactionAsync { tx -> destroySecretIn(tx, type, ids) }
+    }
+
+    private suspend fun destroySecretIn(tx: ConnectionContext, type: SecretTrashType, ids: List<String>) {
+        ids.chunked(200).forEach { chunk ->
+            val marks = chunk.joinToString(",") { "?" }
+            if (type == SecretTrashType.ConfigFile) tx.executeAsync("DELETE FROM config_versions WHERE file_id IN ($marks)", chunk)
+            tx.executeAsync("DELETE FROM ${type.table} WHERE id IN ($marks)", chunk)
+        }
+    }
 
     /** Pulihkan; tugas ikut memulihkan subtask-nya yang terhapus. */
     suspend fun restore(type: EntityType, id: String) {
@@ -91,6 +132,10 @@ class TrashRepository(private val db: PowerSyncDatabase) {
                 val ids = tx.getAllAsync("SELECT id FROM ${type.table} WHERE deleted_at IS NOT NULL$extra") { it.getString(0)!! }
                 destroyIn(tx, type, ids)
             }
+            for (type in SecretTrashType.entries) {
+                val ids = tx.getAllAsync("SELECT id FROM ${type.table} WHERE deleted_at IS NOT NULL") { it.getString(0)!! }
+                destroySecretIn(tx, type, ids)
+            }
         }
     }
 
@@ -107,13 +152,12 @@ class TrashRepository(private val db: PowerSyncDatabase) {
                 val ids = tx.getAllAsync("SELECT id FROM ${type.table} WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
                 destroyIn(tx, type, ids)
             }
-            for (table in listOf("budgets", "debts", "recurring_transactions", "task_lists", "tags", "pw_items")) {
+            for (table in listOf("budgets", "debts", "recurring_transactions", "task_lists", "tags")) {
                 tx.executeAsync("DELETE FROM $table WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff))
             }
-            val files = tx.getAllAsync("SELECT id FROM config_files WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
-            files.forEach { id ->
-                tx.executeAsync("DELETE FROM config_versions WHERE file_id = ?", listOf(id))
-                tx.executeAsync("DELETE FROM config_files WHERE id = ?", listOf(id))
+            for (type in SecretTrashType.entries) {
+                val ids = tx.getAllAsync("SELECT id FROM ${type.table} WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
+                destroySecretIn(tx, type, ids)
             }
         }
     }

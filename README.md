@@ -43,10 +43,14 @@ Langkah CI "Sidik jari sertifikat rilis" menulis SHA-256 sertifikat ke ringkasan
 nilai `sha256_cert_fingerprints` untuk `assetlinks.json` (lihat bagian App Link di bawah,
 format huruf besar dipisah titik dua).
 
-Tanpa secret itu CI tetap menghasilkan APK debug yang ditandatangani kunci debug tetap
-(`app/debug.keystore`, bukan rahasia), sehingga build berikutnya bisa dipasang menimpa yang lama
-tanpa uninstall. APK debug dan rilis memakai kunci berbeda: pindah dari debug ke rilis perlu
-uninstall sekali (unggah dulu semua perubahan — lihat Pengaturan › Sinkronisasi).
+CI juga selalu menghasilkan APK debug yang ditandatangani kunci debug tetap
+(`app/debug.keystore`, bukan rahasia), sehingga build debug berikutnya bisa dipasang menimpa yang
+lama tanpa uninstall. Karena kunci itu publik, APK debug memakai paket terpisah
+`com.rosyidputrar.taskify.debug` (nama "Taskify Debug", bisa `debuggable`): ia terpasang
+berdampingan dengan versi rilis, tidak bisa menimpanya, dan tidak bisa membaca datanya.
+**Untuk pemakaian sehari-hari pasang APK rilis.** APK debug versi lama (sebelum pemisahan paket)
+memakai paket `com.rosyidputrar.taskify`; unggah dulu semua perubahan (Pengaturan › Sinkronisasi),
+lalu uninstall sebelum memasang APK rilis.
 
 ## Struktur
 

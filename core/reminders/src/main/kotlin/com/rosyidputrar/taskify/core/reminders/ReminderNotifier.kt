@@ -47,6 +47,8 @@ class ReminderNotifier(private val context: Context, private val prefs: Reminder
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
+            // Notifikasi yang masih tampil diperbarui tanpa bunyi/heads-up kedua.
+            .setOnlyAlertOnce(true)
             .setContentIntent(openTask(task.id))
             .addAction(0, "Selesai", action(task.id, ReminderActionReceiver.ACTION_DONE))
             .addAction(0, "Tunda 10 mnt", action(task.id, ReminderActionReceiver.ACTION_SNOOZE))

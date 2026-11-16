@@ -8,10 +8,6 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +25,7 @@ import com.rosyidputrar.taskify.feature.auth.LockScreen
 import com.rosyidputrar.taskify.feature.auth.LoginScreen
 import com.rosyidputrar.taskify.feature.auth.MfaScreen
 import com.rosyidputrar.taskify.ui.gate.ConfigMissingScreen
+import com.rosyidputrar.taskify.ui.gate.GateHost
 import com.rosyidputrar.taskify.ui.gate.GateUi
 import com.rosyidputrar.taskify.ui.gate.GateViewModel
 import com.rosyidputrar.taskify.ui.gate.PreparingScreen
@@ -77,18 +74,17 @@ class MainActivity : ComponentActivity() {
                 onPinnedModuleChange = appViewModel::setPinnedModule,
             )
         }
-        val key = if (gate is GateUi.Open) "open" else gate::class.simpleName
-        AnimatedContent(targetState = key, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "gate") { _ ->
-            when (gate) {
+        GateHost(gate, shell = shell, gateScreen = { target ->
+            when (target) {
                 GateUi.Loading -> Unit
                 GateUi.ConfigMissing -> if (preview) shell(null) else ConfigMissingScreen(onPreview = { preview = true })
                 GateUi.SignedOut -> LoginScreen()
-                is GateUi.Mfa -> MfaScreen(gate.status)
+                is GateUi.Mfa -> MfaScreen(target.status)
                 GateUi.Preparing -> PreparingScreen()
                 GateUi.Locked -> LockScreen()
-                is GateUi.Open -> shell(gate.displayName)
+                is GateUi.Open -> Unit // ditangani GateHost
             }
-        }
+        })
     }
 
     override fun onNewIntent(intent: Intent) {

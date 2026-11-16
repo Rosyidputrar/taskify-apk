@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ import com.rosyidputrar.taskify.core.domain.sandi.Totp
 import com.rosyidputrar.taskify.core.domain.sandi.displayHost
 import com.rosyidputrar.taskify.core.domain.sandi.safeUrl
 import com.rosyidputrar.taskify.core.sandi.SandiItem
+import com.rosyidputrar.taskify.core.store.cross.TrashRepository.Companion.RETENTION_DAYS as TRASH_RETENTION_DAYS
 import com.rosyidputrar.taskify.feature.sandi.component.CountdownRing
 import com.rosyidputrar.taskify.feature.sandi.component.SandiAvatar
 import com.rosyidputrar.taskify.feature.sandi.component.SecretField
@@ -74,6 +76,7 @@ fun ItemDetail(item: SandiItem, now: Long, actions: SandiActions, onEdit: () -> 
     val p = item.payload
     val uri = LocalUriHandler.current
     var reveal by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -122,10 +125,21 @@ fun ItemDetail(item: SandiItem, now: Long, actions: SandiActions, onEdit: () -> 
         }
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, null); Spacer(Modifier.width(6.dp)); Text("Hapus") }
+            TextButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, null); Spacer(Modifier.width(6.dp)); Text("Hapus") }
             Spacer(Modifier.weight(1f))
             Button(onClick = onEdit) { Icon(Icons.Outlined.Edit, null); Spacer(Modifier.width(6.dp)); Text("Ubah") }
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Hapus \"${p.title.ifBlank { "Sandi" }}\"?") },
+            text = { Text("Item dipindahkan ke Sampah dan bisa dipulihkan dari sana selama ${TRASH_RETENTION_DAYS} hari.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Hapus", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Batal") } },
+        )
     }
 }
 

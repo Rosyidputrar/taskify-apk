@@ -1,8 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
-import android.app.Activity
-import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +37,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,12 +45,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
+import com.rosyidputrar.taskify.core.designsystem.component.SecureWindow
 import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.ModuleHeader
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
@@ -80,16 +77,6 @@ fun SandiScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     SecureWindow()
     SandiContent(state, viewModel, contentPadding, onBack, backButton)
-}
-
-/** FLAG_SECURE selama layar Sandi tampil: tidak ada tangkapan layar & pratinjau di Terkini. */
-@Composable
-fun SecureWindow() {
-    val activity = LocalContext.current as? Activity ?: return
-    DisposableEffect(activity) {
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-    }
 }
 
 @Composable

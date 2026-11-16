@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.RestoreFromTrash
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
@@ -46,11 +49,13 @@ import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
 import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.ModuleHeader
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.designsystem.theme.namedColor
 import com.rosyidputrar.taskify.core.domain.search.EntityRow
 import com.rosyidputrar.taskify.core.domain.search.label
 import com.rosyidputrar.taskify.core.domain.tags.PALETTE_NAMES
 import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashType
 import com.rosyidputrar.taskify.core.store.cross.TrashRepository
 import com.rosyidputrar.taskify.feature.links.EntityLine
 import org.koin.compose.viewmodel.koinViewModel
@@ -191,15 +196,16 @@ fun daysLeft(deletedAt: String?, now: Long): Int {
 fun TrashContent(state: TrashUiState, actions: TrashActions, contentPadding: PaddingValues, onBack: (() -> Unit)? = null, backButton: @Composable (() -> Unit) -> Unit = {}) {
     var confirmEmpty by rememberSaveable { mutableStateOf(false) }
     var confirmRow by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmSecret by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item(key = "header") {
             ModuleHeader(
                 TaskifyModule.Trash, "Sampah", subtitle = "Item dihapus otomatis setelah ${TrashRepository.RETENTION_DAYS} hari",
                 navigation = onBack?.let { { backButton(it) } },
-                actions = { if (state.rows.isNotEmpty()) TextButton(onClick = { confirmEmpty = true }) { Icon(Icons.Outlined.DeleteSweep, null); Spacer(Modifier.width(6.dp)); Text("Kosongkan") } },
+                actions = { if (!state.isEmpty) TextButton(onClick = { confirmEmpty = true }) { Icon(Icons.Outlined.DeleteSweep, null); Spacer(Modifier.width(6.dp)); Text("Kosongkan") } },
             )
         }
-        if (state.loaded && state.rows.isEmpty()) item(key = "empty") {
+        if (state.loaded && state.isEmpty) item(key = "empty") {
             EmptyState(TaskifyModule.Trash, "Sampah kosong", "Item yang kamu hapus akan muncul di sini dan bisa dipulihkan.")
         }
         items(state.rows, key = { it.type.value + it.id }) { r ->
@@ -215,11 +221,61 @@ fun TrashContent(state: TrashUiState, actions: TrashActions, contentPadding: Pad
                 )
             }
         }
+        if (state.secrets.isNotEmpty()) item(key = "secrets-header") {
+            Text(
+                "Sandi & Konfigurasi",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 4.dp),
+            )
+        }
+        items(state.secrets, key = { "secret-" + it.type.name + it.id }) { r ->
+            IndexCard(TaskifyModule.Trash, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp).animateItem(), contentPadding = 10.dp) {
+                Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Sama dengan EntityLine: kotak ikon 34 dp, sudut 10 dp, aksen modul Sandi.
+                    val accent = TaskifyTheme.modules.accent(TaskifyModule.Sandi)
+                    Box(Modifier.size(34.dp).background(accent.copy(alpha = 0.16f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (r.type == SecretTrashType.PasswordItem) Icons.Outlined.Key else Icons.Outlined.Settings,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(r.title, style = MaterialTheme.typography.bodyLarge)
+                        val detail = when (r.type) {
+                            // Judul item Sandi ikut terenkripsi; isinya terlihat lagi setelah dipulihkan.
+                            SecretTrashType.PasswordItem -> "Isi terenkripsi"
+                            SecretTrashType.ConfigFile -> listOfNotNull(r.type.label, r.subtitle).joinToString(" · ")
+                        }
+                        Text(detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { actions.restoreSecret(r) }) { Icon(Icons.Outlined.RestoreFromTrash, contentDescription = "Pulihkan ${r.title}") }
+                    IconButton(onClick = { confirmSecret = r.type.name + ":" + r.id }) { Icon(Icons.Outlined.DeleteForever, contentDescription = "Hapus permanen ${r.title}", tint = MaterialTheme.colorScheme.error) }
+                }
+                val deleted = r.deletedAt?.let(Dates::parseTimestampMillis)?.let { Dates.isoToLocal(Dates.millisToIso(it)) }
+                Text(
+                    listOfNotNull(deleted?.let { "dihapus ${Dates.format(it.first, "d MMM")}" }, "terhapus permanen dalam ${daysLeft(r.deletedAt, state.now)} hari").joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 46.dp),
+                )
+            }
+        }
+    }
+    confirmSecret?.let { key ->
+        val row = state.secrets.firstOrNull { it.type.name + ":" + it.id == key }
+        if (row == null) confirmSecret = null else AlertDialog(
+            onDismissRequest = { confirmSecret = null },
+            title = { Text("Hapus permanen \"${row.title}\"?") },
+            text = { Text(if (row.type == SecretTrashType.ConfigFile) "Berkas konfigurasi beserta semua versinya tidak bisa dipulihkan lagi." else "Tidak bisa dipulihkan lagi.") },
+            confirmButton = { TextButton(onClick = { confirmSecret = null; actions.destroySecret(row) }) { Text("Hapus permanen", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmSecret = null }) { Text("Batal") } },
+        )
     }
     if (confirmEmpty) AlertDialog(
         onDismissRequest = { confirmEmpty = false },
         title = { Text("Kosongkan Sampah?") },
-        text = { Text("${state.rows.size} item dihapus permanen beserta tag & tautannya. Tidak bisa dibatalkan.") },
+        text = { Text("${state.total} item dihapus permanen beserta tag & tautannya. Tidak bisa dibatalkan.") },
         confirmButton = { TextButton(onClick = { confirmEmpty = false; actions.emptyAll() }) { Text("Kosongkan", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { confirmEmpty = false }) { Text("Batal") } },
     )
