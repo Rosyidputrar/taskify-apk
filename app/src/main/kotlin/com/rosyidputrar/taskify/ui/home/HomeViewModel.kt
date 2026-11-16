@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.ui.home
 
+import com.rosyidputrar.taskify.data.AppPreferences
+import com.rosyidputrar.taskify.core.store.calendar.CalendarRepository
+import com.rosyidputrar.taskify.core.domain.home.HomeLayout
+import com.rosyidputrar.taskify.core.domain.calendar.DayActivity
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,6 +39,10 @@ data class HomeUiState(
     val loaded: Boolean = false,
     /** Perubahan yang ditolak server dan belum ditangani (Pengaturan → Sinkronisasi). */
     val rejectedChanges: Long = 0,
+    /** Aktivitas per hari untuk titik di pita minggu (3 hari lalu → 3 hari depan). */
+    val week: Map<String, DayActivity> = emptyMap(),
+    /** Susunan Beranda pilihan pengguna. */
+    val layout: HomeLayout = HomeLayout.Default,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -44,6 +52,8 @@ class HomeViewModel(
     private val tags: TagRepository,
     private val messenger: Messenger,
     private val rejectedChanges: Flow<Long> = flowOf(0L),
+    private val calendar: CalendarRepository? = null,
+    private val prefs: AppPreferences? = null,
 ) : ViewModel() {
     private val today = todayFlow().stateIn(viewModelScope, SharingStarted.Eagerly, Dates.today())
 
@@ -51,10 +61,31 @@ class HomeViewModel(
 
     val state: StateFlow<HomeUiState> = today.flatMapLatest { t ->
         val parts = combine(tasks.watchFocus(t, 6), tasks.watchSubtaskProgress(), home.watchSummary(t)) { f, p, s -> Parts(f, p, s) }
-        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), rejectedChanges) { p, streak, activity, rejected ->
-            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = rejected)
+        val extras = combine(rejectedChanges, weekActivity(t), prefs?.homeLayout ?: flowOf(HomeLayout.Default)) { r, w, l -> Triple(r, w, l) }
+        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), extras) { p, streak, activity, (rejected, week, layout) ->
+            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = rejected, week = week, layout = layout)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    /** Titik aktivitas pita minggu: jurnal/catatan/transaksi + tugas per tanggal jatuh tempo. */
+    private fun weekActivity(today: String): Flow<Map<String, DayActivity>> {
+        val cal = calendar ?: return flowOf(emptyMap())
+        val from = Dates.addDays(today, -3L)
+        val to = Dates.addDays(today, 3L)
+        return combine(cal.watchActivity(from, to), cal.watchTasksInRange(from, to)) { other, list ->
+            val byDay = list.groupBy { it.dueDate.orEmpty() }
+            (other.keys + byDay.keys).filter { it.isNotEmpty() }.associateWith { day ->
+                val base = other[day] ?: DayActivity()
+                val tasksOfDay = byDay[day].orEmpty()
+                base.copy(tasks = tasksOfDay.size, tasksDone = tasksOfDay.count { it.status == com.rosyidputrar.taskify.core.domain.tasks.TaskStatus.Done })
+            }
+        }
+    }
+
+    fun setLayout(layout: HomeLayout) {
+        val p = prefs ?: return
+        launchSafe { p.setHomeLayout(layout) }
+    }
 
     fun toggle(task: Task) {
         launchSafe {

@@ -49,6 +49,14 @@ class AppPreferences(private val context: Context) {
         }
     }
 
+    /** Susunan Beranda (urutan & visibilitas bagian / ubin). */
+    val homeLayout: Flow<com.rosyidputrar.taskify.core.domain.home.HomeLayout> =
+        context.dataStore.data.map { com.rosyidputrar.taskify.core.domain.home.HomeLayout.decode(it[HOME_LAYOUT]) }
+
+    suspend fun setHomeLayout(layout: com.rosyidputrar.taskify.core.domain.home.HomeLayout) {
+        context.dataStore.edit { it[HOME_LAYOUT] = layout.encode() }
+    }
+
     suspend fun setTheme(spec: ThemeSpec) {
         context.dataStore.edit {
             it[PALETTE] = spec.palette.name
@@ -72,5 +80,6 @@ class AppPreferences(private val context: Context) {
         val STYLE = stringPreferencesKey("theme_style")
         val PAPER = booleanPreferencesKey("theme_paper")
         val CONTRAST = stringPreferencesKey("theme_contrast")
+        val HOME_LAYOUT = stringPreferencesKey("home_layout")
     }
 }

@@ -171,7 +171,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs(get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
-    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
