@@ -26,5 +26,29 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!--
+            Halaman unduh Berkas publik. Host diisi dari PUBLIC_WEB_ORIGIN saat build. Agar tautan
+            langsung terbuka di aplikasi (tanpa dialog pilih), web perlu menyajikan
+            /.well-known/assetlinks.json dengan sidik jari sertifikat APK; tanpa itu Android tetap
+            menawarkan aplikasi ini lewat "Buka dengan" / pengaturan tautan bawaan.
+        -->
+        <activity
+            android:name=".PublicFileActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:label="Unduh berkas"
+            android:theme="@style/Theme.Taskify"
+            android:taskAffinity="com.rosyidputrar.taskify.unduh"
+            android:excludeFromRecents="false">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="${publicWebHost}" />
+                <data android:pathPrefix="/unduh" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

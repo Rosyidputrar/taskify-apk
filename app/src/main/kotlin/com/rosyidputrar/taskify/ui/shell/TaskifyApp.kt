@@ -71,6 +71,8 @@ import com.rosyidputrar.taskify.navigation.ZipRoute
 import com.rosyidputrar.taskify.navigation.ConfigFileRoute
 import com.rosyidputrar.taskify.navigation.ConfigEditRoute
 import com.rosyidputrar.taskify.navigation.SandiRoute
+import com.rosyidputrar.taskify.navigation.FilesRoute
+import com.rosyidputrar.taskify.feature.files.FilesScreen
 import com.rosyidputrar.taskify.feature.sandi.SandiScreen
 import com.rosyidputrar.taskify.feature.vault.config.ConfigEditorScreen
 import com.rosyidputrar.taskify.feature.vault.config.ConfigFileScreen
@@ -181,6 +183,7 @@ fun TaskifyApp(
         destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() ||
             destination.hasRoute<ConfigFileRoute>() || destination.hasRoute<ConfigEditRoute>() -> TaskifyModule.Vault
         destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
+        destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
@@ -381,6 +384,9 @@ private fun TaskifyNavHost(
                 onOpenSandi = { navController.navigate(SandiRoute) },
                 backButton = { BackButton(it) },
             )
+        }
+        composable<FilesRoute> {
+            FilesScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
         }
         composable<SandiRoute> {
             SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })

@@ -22,6 +22,13 @@ import com.rosyidputrar.taskify.feature.finance.financeFeatureModule
 import com.rosyidputrar.taskify.feature.vault.vaultFeatureModule
 import com.rosyidputrar.taskify.feature.attachments.attachmentsFeatureModule
 import com.rosyidputrar.taskify.feature.sandi.AccountEmail
+import com.rosyidputrar.taskify.feature.files.FilesConfig
+import com.rosyidputrar.taskify.feature.files.OnlineStatus
+import com.rosyidputrar.taskify.feature.files.filesFeatureModule
+import com.rosyidputrar.taskify.core.files.TempFileUploader
+import com.rosyidputrar.taskify.core.files.TempFilesApi
+import com.rosyidputrar.taskify.core.store.files.TempFileRepository
+import io.github.jan.supabase.SupabaseClient
 import com.rosyidputrar.taskify.feature.sandi.sandiFeatureModule
 import com.rosyidputrar.taskify.core.sandi.KeystoreTrustStore
 import com.rosyidputrar.taskify.core.sandi.SandiPrefs
@@ -105,6 +112,12 @@ private val deviceModule = module {
     single { SandiSession(get(), get(), get(APP_SCOPE)) }
     single { SandiService(get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
     single { AccountEmail { getOrNull<AuthRepository>()?.currentEmail() } }
+    single { TempFileRepository(get()) }
+    // Tanpa SupabaseClient (konfigurasi belum lengkap) halaman unduh publik tetap bisa memakai URL-nya.
+    single { TempFilesApi(getOrNull<SupabaseClient>(), AppConfig.supabaseUrl) }
+    single { TempFileUploader(androidContext(), get(), get(), get(APP_SCOPE)) }
+    single { FilesConfig(AppConfig.publicWebOrigin) }
+    single { OnlineStatus { get<NetworkMonitor>().online } }
     single { FileStore(androidContext()) }
     single { Transfers() }
     single { ReminderPrefs(get()) }
@@ -125,10 +138,10 @@ private val serverModule = module {
     single { FilesApi(get()) }
     single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get()) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get()) }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

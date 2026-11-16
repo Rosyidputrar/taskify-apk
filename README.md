@@ -49,7 +49,8 @@ core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN 
 core/designsystem    "Kertas & Tinta": palet, tipografi, kartu indeks, Dok
 core/ui              Editor Markdown kertas bergaris + pratinjau native, indikator simpan, tag & tanggal
 core/files           Lampiran: presign Edge Function `files`, unggah R2 via WorkManager (outbox),
-                     salinan offline, kompres foto, baca ZIP
+                     salinan offline, kompres foto, baca ZIP. Berkas publik: Edge Function `tempfiles`,
+                     unggah streaming langsung dari content:// (sampai 1 GB) dengan progres & batal
 core/sandi           Sesi brankas (DEK hanya di memori, kunci otomatis), ingat perangkat 30 hari
                      (Android Keystore), papan klip yang dibersihkan sendiri, rotasi kunci atomik
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
@@ -61,6 +62,9 @@ feature/notes        Catatan: grid staggered, catatan bebas / ditempel ke tangga
 feature/attachments  Bagian lampiran (foto/file) di Tugas, Jurnal, dan Transaksi
 feature/vault        Vault Kode: snippet ber-template, project dengan versi ZIP, penampil isi ZIP,
                      berkas konfigurasi .env/JSON terenkripsi berversi (nilai tersamar, banding, pulihkan)
+feature/files        Berkas: kuota 1 GB, unggah dengan masa berlaku, tautan publik (salin/bagikan,
+                     privat, cabut & buat baru), ganti nama, unduh, hapus; halaman unduh publik
+                     `/unduh/<token>` sebagai App Link tanpa login
 feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, daftar sandi, kode 2FA dengan
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
@@ -78,5 +82,13 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
 4. Database lokal disiapkan: bila akun berbeda dari pemilik sebelumnya, isinya dikosongkan dulu,
    lalu sinkronisasi PowerSync dimulai.
 5. PIN aktif → layar kunci (5 percobaan → jeda 30 detik; Lupa PIN = verifikasi password akun).
+
+### Tautan unduh publik (App Link)
+
+`PublicFileActivity` menangani `https://<host PUBLIC_WEB_ORIGIN>/unduh/<token>` tanpa melewati
+layar masuk/PIN (penerima tautan tidak perlu akun). Agar Android membukanya langsung di aplikasi,
+origin web perlu menyajikan `/.well-known/assetlinks.json` berisi package
+`com.rosyidputrar.taskify` dan sidik jari SHA-256 sertifikat penanda tangan APK. Tanpa berkas itu,
+tautan tetap terbuka di browser (halaman webapp) dan aplikasi bisa dipilih lewat "Buka dengan".
 
 Font: Fraunces, Instrument Sans, JetBrains Mono (SIL Open Font License, lihat `licenses/`).

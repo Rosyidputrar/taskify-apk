@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.net.URI
 
 plugins {
     alias(libs.plugins.taskify.android.application)
@@ -22,6 +23,9 @@ fun config(name: String): String =
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+/** Host App Link halaman unduh publik; placeholder yang tidak bisa dicocokkan bila belum diisi. */
+val publicWebHost: String = runCatching { URI(config("PUBLIC_WEB_ORIGIN")).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: "taskify.invalid"
+
 val serverConfigKeys = listOf(
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
@@ -39,6 +43,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         serverConfigKeys.forEach { key -> buildConfigField("String", key, config(key).asBuildConfigString()) }
+        // App Link halaman unduh publik: host dari PUBLIC_WEB_ORIGIN (tanpa skema/path).
+        manifestPlaceholders["publicWebHost"] = publicWebHost
     }
 
     signingConfigs {
@@ -99,6 +105,7 @@ dependencies {
     implementation(projects.feature.vault)
     implementation(projects.feature.attachments)
     implementation(projects.feature.sandi)
+    implementation(projects.feature.files)
     implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)

@@ -41,6 +41,7 @@ class SessionCoordinator(
     private val scope: CoroutineScope,
     private val attachments: com.rosyidputrar.taskify.core.files.AttachmentManager,
     private val sandi: com.rosyidputrar.taskify.core.sandi.SandiService,
+    private val tempFiles: com.rosyidputrar.taskify.core.files.TempFileUploader,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -98,6 +99,8 @@ class SessionCoordinator(
         attachments.wipe()
         // Brankas Sandi dikunci (DEK dihapus dari memori) dan kunci perangkat tepercaya dilupakan.
         sandi.wipe()
+        // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
+        tempFiles.wipe()
         database.wipe()
         auth.signOut()
     }
