@@ -151,6 +151,6 @@ class FilesViewModel(
     }
 
     override fun download(file: TempFile, target: Uri) = run("download", "Berkas tersimpan") {
-        uploader.downloadOwn(file.id, target) { p -> local.value = local.value.copy(downloadProgress = p) }
+        uploader.downloadOwn(file.id, target, file.fileName) { p -> local.value = local.value.copy(downloadProgress = p) }
     }
 }

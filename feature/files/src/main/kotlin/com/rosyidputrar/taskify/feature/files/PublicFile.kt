@@ -111,7 +111,7 @@ class PublicFileViewModel(private val token: String?, private val api: TempFiles
         _download.value = PublicDownload(running = true)
         viewModelScope.launch {
             try {
-                uploader.downloadPublic(t, target) { p -> _download.update { it.copy(progress = p) } }
+                uploader.downloadPublic(t, target, (state.value as? PublicFileState.Ready)?.info?.fileName ?: "berkas") { p -> _download.update { it.copy(progress = p) } }
                 _download.value = PublicDownload(done = true)
             } catch (e: CancellationException) {
                 throw e
