@@ -78,6 +78,7 @@ class SandiService(
     private val configs: ConfigRepository,
     val session: SandiSession,
     private val trust: TrustStore,
+    private val deviceAuth: DeviceAuthenticator,
     private val server: VaultServer?,
     private val database: TaskifyDatabase,
     private val users: UserIdProvider,
@@ -164,24 +165,44 @@ class SandiService(
         return vault.recoveryKey
     }
 
-    /** false = master password salah. */
-    suspend fun unlock(password: String, remember: Boolean): Boolean {
+    /** Hasil membuka brankas dengan master password. */
+    sealed interface UnlockOutcome {
+        data object WrongPassword : UnlockOutcome
+        /** [rememberNote]: hasil "ingat perangkat" (null = tidak diminta). */
+        data class Unlocked(val rememberNote: String?) : UnlockOutcome
+    }
+
+    suspend fun unlock(password: String, remember: Boolean): UnlockOutcome {
         val k = key.value ?: repo.getKey() ?: throw SandiUserException("Brankas belum tersinkron ke perangkat ini.")
-        val dek = withContext(Dispatchers.Default) { SandiCrypto.unlockWithPassword(k.record, password, users.require()) } ?: return false
+        val dek = withContext(Dispatchers.Default) { SandiCrypto.unlockWithPassword(k.record, password, users.require()) } ?: return UnlockOutcome.WrongPassword
         session.unlock(dek, k.record.wrappedKey)
-        if (remember) trust.remember(dek, k.record.wrappedKey)
+        afterUnlock()
+        return UnlockOutcome.Unlocked(if (remember) rememberDevice(dek, k.record.wrappedKey) else null)
+    }
+
+    /** Bungkus DEK dengan kunci Keystore yang hanya terbuka setelah verifikasi pemilik HP. */
+    private suspend fun rememberDevice(dek: com.rosyidputrar.taskify.core.domain.sandi.Dek, stamp: String): String = try {
+        if (trust.remember(dek, stamp, deviceAuth)) "Perangkat ini diingat 30 hari — buka berikutnya cukup dengan sidik jari/kunci layar."
+        else "Perangkat tidak diingat: verifikasi dibatalkan."
+    } catch (e: DeviceAuthException) {
+        "Perangkat tidak diingat: ${e.message}"
+    }
+
+    /**
+     * Buka tanpa master password bila perangkat ini diingat, kuncinya masih berlaku, dan pemilik HP
+     * lolos verifikasi. false = tidak diingat / dibatalkan.
+     * @throws DeviceAuthException bila verifikasi gagal atau kunci perangkat sudah gugur.
+     */
+    suspend fun unlockTrusted(): Boolean {
+        val k = key.value ?: repo.getKey() ?: return false
+        val dek = trust.load(k.record.wrappedKey, deviceAuth) ?: return false
+        session.unlock(dek, k.record.wrappedKey)
         afterUnlock()
         return true
     }
 
-    /** Buka tanpa master password bila perangkat ini diingat dan kuncinya masih berlaku. */
-    suspend fun unlockTrusted(): Boolean {
-        val k = key.value ?: repo.getKey() ?: return false
-        val dek = withContext(Dispatchers.Default) { trust.load(k.record.wrappedKey) } ?: return false
-        session.unlock(dek, k.record.wrappedKey)
-        afterUnlock()
-        return true
-    }
+    /** HP punya kunci layar → "ingat perangkat" bisa dipakai. */
+    fun trustAvailable(): Boolean = trust.available()
 
     fun trustMeta() = trust.meta()
     fun forgetDevice() = trust.forget()

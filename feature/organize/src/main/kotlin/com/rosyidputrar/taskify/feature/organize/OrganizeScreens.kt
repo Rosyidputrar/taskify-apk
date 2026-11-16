@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.organize
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -78,6 +79,7 @@ fun TagsContent(state: TagsUiState, contentPadding: PaddingValues, onOpenTag: (S
         item(key = "header") {
             ModuleHeader(TaskifyModule.Tags, "Tag", subtitle = "${state.tags.size} tag · lintas semua modul", navigation = onBack?.let { { backButton(it) } })
         }
+        if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Tags, rows = 5) }
         if (state.loaded && state.tags.isEmpty()) item(key = "empty") {
             EmptyState(TaskifyModule.Tags, "Belum ada tag", "Tambahkan tag di tugas, jurnal, catatan, atau transaksi — atau ketik #tag saat quick add.")
         }
@@ -123,6 +125,7 @@ fun TagContent(state: TagUiState, actions: TagActions, contentPadding: PaddingVa
                 actions = { if (tag != null) IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Edit, contentDescription = "Ubah tag") } },
             )
         }
+        if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Tags, rows = 4) }
         if (state.loaded && tag != null && state.items.isEmpty()) item(key = "empty") {
             EmptyState(TaskifyModule.Tags, "Belum ada item", "Tambahkan tag ini di tugas, jurnal, catatan, atau transaksi.")
         }
@@ -205,6 +208,7 @@ fun TrashContent(state: TrashUiState, actions: TrashActions, contentPadding: Pad
                 actions = { if (!state.isEmpty) TextButton(onClick = { confirmEmpty = true }) { Icon(Icons.Outlined.DeleteSweep, null); Spacer(Modifier.width(6.dp)); Text("Kosongkan") } },
             )
         }
+        if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Trash, rows = 4) }
         if (state.loaded && state.isEmpty) item(key = "empty") {
             EmptyState(TaskifyModule.Trash, "Sampah kosong", "Item yang kamu hapus akan muncul di sini dan bisa dipulihkan.")
         }

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -91,7 +92,7 @@ class TasksViewModel(
     override fun quickAdd(text: String) {
         val input = text.trim()
         if (input.isEmpty()) return
-        viewModelScope.launch {
+        launchSafe {
             val parsed = parseQuickAdd(input, today.value)
             val listId = (filter.value.view as? TaskView.List)?.listId
             // Di tampilan "Hari ini", tugas tanpa tanggal langsung jatuh hari ini.
@@ -111,7 +112,7 @@ class TasksViewModel(
     }
 
     override fun toggle(task: Task) {
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.toggle(task, today.value)
             val undo = outcome.undo
             if (outcome.message != null && undo != null) messenger.undoable(outcome.message!!, undo)
@@ -119,7 +120,7 @@ class TasksViewModel(
     }
 
     override fun remove(task: Task) {
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.remove(task)
             outcome.undo?.let { messenger.undoable(outcome.message ?: "Dihapus", it) }
         }
@@ -127,18 +128,18 @@ class TasksViewModel(
 
     override fun createList(name: String, color: String) {
         if (name.isBlank()) return
-        viewModelScope.launch {
+        launchSafe {
             val id = tasks.createList(name, color)
             setView(TaskView.List(id))
         }
     }
 
     override fun renameList(id: String, name: String, color: String) {
-        viewModelScope.launch { tasks.updateList(id, name, color) }
+        launchSafe { tasks.updateList(id, name, color) }
     }
 
     override fun removeList(id: String) {
-        viewModelScope.launch {
+        launchSafe {
             tasks.removeList(id)
             setView(TaskView.Smart(SmartView.All))
             messenger.show("Daftar dihapus. Tugasnya pindah ke Tanpa daftar.")

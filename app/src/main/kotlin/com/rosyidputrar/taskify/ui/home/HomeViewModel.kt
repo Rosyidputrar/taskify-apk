@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.home
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -15,7 +16,9 @@ import com.rosyidputrar.taskify.core.store.tasks.Progress
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
 import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -30,6 +33,8 @@ data class HomeUiState(
     val streak: Int = 0,
     val activity: List<ActivityItem> = emptyList(),
     val loaded: Boolean = false,
+    /** Perubahan yang ditolak server dan belum ditangani (Pengaturan → Sinkronisasi). */
+    val rejectedChanges: Long = 0,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,6 +43,7 @@ class HomeViewModel(
     private val tasks: TaskRepository,
     private val tags: TagRepository,
     private val messenger: Messenger,
+    private val rejectedChanges: Flow<Long> = flowOf(0L),
 ) : ViewModel() {
     private val today = todayFlow().stateIn(viewModelScope, SharingStarted.Eagerly, Dates.today())
 
@@ -45,13 +51,13 @@ class HomeViewModel(
 
     val state: StateFlow<HomeUiState> = today.flatMapLatest { t ->
         val parts = combine(tasks.watchFocus(t, 6), tasks.watchSubtaskProgress(), home.watchSummary(t)) { f, p, s -> Parts(f, p, s) }
-        combine(parts, home.watchJournalStreak(t), home.watchActivity(t)) { p, streak, activity ->
-            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true)
+        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), rejectedChanges) { p, streak, activity, rejected ->
+            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = rejected)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun toggle(task: Task) {
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.toggle(task, today.value)
             val undo = outcome.undo
             if (outcome.message != null && undo != null) messenger.undoable(outcome.message!!, undo)
@@ -61,7 +67,7 @@ class HomeViewModel(
     /** Catat cepat dari kartu Fokus: tanpa tanggal → hari ini. */
     fun quickAdd(text: String) {
         if (text.isBlank()) return
-        viewModelScope.launch {
+        launchSafe {
             val p = parseQuickAdd(text, today.value)
             val id = tasks.create(NewTask(p.title, dueDate = p.dueDate ?: today.value, dueTime = p.dueTime, priority = p.priority ?: 0))
             if (p.tags.isNotEmpty()) tags.addByName("task", id, p.tags)

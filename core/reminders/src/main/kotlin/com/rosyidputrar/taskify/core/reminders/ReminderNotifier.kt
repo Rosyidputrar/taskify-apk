@@ -26,9 +26,15 @@ class ReminderNotifier(private val context: Context, private val prefs: Reminder
         manager.createNotificationChannel(channel)
     }
 
-    fun canPost(): Boolean =
-        Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    /** Izin runtime (13+), saklar notifikasi aplikasi, DAN kanal pengingat tidak dimatikan. */
+    fun canPost(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return false
+        if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        val channel = context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(CHANNEL_ID)
+        return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
+    }
 
     fun show(task: Task) {
         if (!canPost()) return

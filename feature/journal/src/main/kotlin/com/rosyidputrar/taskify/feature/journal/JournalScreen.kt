@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -158,6 +159,7 @@ private fun LazyListScope.shelf(state: JournalUiState, actions: JournalActions, 
             }
         }
     }
+    if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Journal, rows = 4, lines = 2) }
     if (state.loaded && state.isEmpty) {
         item(key = "empty") {
             val filtered = state.filter.search.isNotEmpty() || state.filter.mood != null

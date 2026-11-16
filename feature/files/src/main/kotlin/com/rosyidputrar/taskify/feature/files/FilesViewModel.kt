@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.files
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -93,7 +94,7 @@ class FilesViewModel(
     override fun pick(uris: List<Uri>) {
         if (uris.isEmpty()) return
         if (!state.value.online) { messenger.show("Mengunggah butuh koneksi internet."); return }
-        viewModelScope.launch {
+        launchSafe {
             // Pemeriksaan awal saja; server tetap menegakkan kuota secara atomik
             var planned = 0L
             for (uri in uris) {
@@ -118,7 +119,7 @@ class FilesViewModel(
     private fun run(key: String, success: String?, block: suspend () -> Unit) {
         if (local.value.busy != null) return
         local.value = local.value.copy(busy = key)
-        viewModelScope.launch {
+        launchSafe {
             try {
                 block(); success?.let(messenger::show)
             } catch (e: CancellationException) {
@@ -151,6 +152,6 @@ class FilesViewModel(
     }
 
     override fun download(file: TempFile, target: Uri) = run("download", "Berkas tersimpan") {
-        uploader.downloadOwn(file.id, target) { p -> local.value = local.value.copy(downloadProgress = p) }
+        uploader.downloadOwn(file.id, target, file.fileName) { p -> local.value = local.value.copy(downloadProgress = p) }
     }
 }

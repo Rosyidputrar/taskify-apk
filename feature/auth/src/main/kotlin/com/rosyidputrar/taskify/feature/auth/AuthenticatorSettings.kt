@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -76,7 +77,7 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
 
     fun load() {
         _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             run { _state.update { it.copy(factors = auth.verifiedTotpFactors(), loading = false) } }
         }
     }
@@ -95,13 +96,13 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
 
     fun startAdd(name: String) {
         _state.update { it.copy(busy = true, error = null) }
-        viewModelScope.launch { run { _state.update { it.copy(enrollment = auth.startEnrollment(name.ifBlank { "Authenticator cadangan" }), busy = false) } } }
+        launchSafe { run { _state.update { it.copy(enrollment = auth.startEnrollment(name.ifBlank { "Authenticator cadangan" }), busy = false) } } }
     }
 
     fun confirmAdd(code: String) {
         val e = _state.value.enrollment ?: return
         _state.update { it.copy(busy = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             run {
                 auth.verify(e.factorId, code, remember = null)
                 _state.update { it.copy(enrollment = null, busy = false, message = "Authenticator ditambahkan") }
@@ -115,7 +116,7 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
     fun remove(factor: TotpFactor) {
         if (_state.value.factors.size <= 1) { _state.update { it.copy(error = "Authenticator terakhir tidak bisa dihapus — verifikasi dua langkah wajib.") }; return }
         _state.update { it.copy(busy = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             run {
                 auth.unenroll(factor.id)
                 _state.update { it.copy(busy = false, message = "Authenticator dihapus") }

@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.SecureWindow
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
@@ -142,7 +144,7 @@ fun ConfigFileContent(
                 },
             )
         }
-        if (state.busy) item(key = "busy") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) }
+        if (state.busy) item(key = "busy") { LoadingRow("Memproses…", Modifier.padding(horizontal = 20.dp), module = TaskifyModule.Vault) }
         if (state.loaded && file == null) {
             item(key = "missing") { EmptyState(TaskifyModule.Vault, "Berkas tidak ditemukan", "Mungkin sudah dihapus atau belum tersinkron ke perangkat ini.") }
             return@LazyColumn
@@ -317,7 +319,7 @@ fun ConfigEditorContent(
             return@LazyColumn
         }
         if (!state.loaded) {
-            item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(20.dp)) }
+            item(key = "loading") { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LoadingBlock(label = "Membuka konfigurasi…", module = TaskifyModule.Vault) } }
             return@LazyColumn
         }
         if (state.isNew) item(key = "meta") {

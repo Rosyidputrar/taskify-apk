@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
@@ -61,7 +62,7 @@ class NoteEditorViewModel(
 
     init {
         if (args.id != null) {
-            viewModelScope.launch {
+            launchSafe {
                 val note = repo.get(args.id)
                 _ui.value = note?.let {
                     NoteDraftUi(true, false, it.id, it.noteDate, it.title.orEmpty(), TextFieldValue(it.content, TextRange(it.content.length)), it.pinned, it.deletedAt != null)
@@ -110,7 +111,7 @@ class NoteEditorViewModel(
         saver.queue(mapOf("is_pinned" to pinned), immediate = true)
     }
 
-    fun retry() { viewModelScope.launch { saver.flush() } }
+    fun retry() { launchSafe { saver.flush() } }
     fun flush() { saver.flushLater() }
 
     fun remove(onDone: () -> Unit) {
@@ -125,14 +126,14 @@ class NoteEditorViewModel(
 
     fun restore() {
         val id = savedId.value ?: return
-        viewModelScope.launch {
+        launchSafe {
             repo.restore(id)
             _ui.update { it.copy(trashed = false) }
         }
     }
 
-    fun addTag(name: String) { savedId.value?.let { id -> viewModelScope.launch { tags.addByName(NOTE_ENTITY, id, listOf(name)) } } }
-    fun removeTag(tag: TagRef) { savedId.value?.let { id -> viewModelScope.launch { tags.remove(NOTE_ENTITY, id, tag.id) } } }
+    fun addTag(name: String) { savedId.value?.let { id -> launchSafe { tags.addByName(NOTE_ENTITY, id, listOf(name)) } } }
+    fun removeTag(tag: TagRef) { savedId.value?.let { id -> launchSafe { tags.remove(NOTE_ENTITY, id, tag.id) } } }
 
     override fun onCleared() {
         saver.flushLater()

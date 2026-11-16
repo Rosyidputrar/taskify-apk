@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.SkeletonCard
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -127,7 +129,10 @@ fun FinanceContent(
                 },
             )
         }
-        item(key = "hero") { BalanceHero(state, actions) }
+        item(key = "hero") {
+            if (state.loaded) BalanceHero(state, actions)
+            else SkeletonCard(TaskifyModule.Finance, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), lines = 3, leadingDot = false)
+        }
         stickyHeader(key = "tabs") {
             PrimaryScrollableTabRow(
                 selectedTabIndex = state.tab.ordinal,
@@ -141,7 +146,8 @@ fun FinanceContent(
             }
         }
         if (state.tab.monthly) item(key = "month") { MonthSwitcher(state, actions) }
-        when (state.tab) {
+        if (!state.loaded) item(key = "fin-skeleton") { ListSkeleton(TaskifyModule.Finance, rows = 4, lines = 2) }
+        else when (state.tab) {
             FinanceTab.Overview -> overviewTab(state, actions, onOpenTx)
             FinanceTab.Transactions -> transactionsTab(state, actions, onOpenTx, onExport)
             FinanceTab.Budget -> budgetTab(state) { dialog = it }

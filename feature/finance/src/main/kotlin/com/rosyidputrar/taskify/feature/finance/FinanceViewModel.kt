@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -162,7 +163,7 @@ class FinanceViewModel(
 
     /** Jalankan aksi tulis; galat validasi (FinanceException) tampil sebagai pesan. */
     private fun act(block: suspend () -> Unit) {
-        viewModelScope.launch {
+        launchSafe {
             try {
                 block()
             } catch (e: IllegalArgumentException) {

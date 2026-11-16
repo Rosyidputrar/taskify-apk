@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.files
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -100,7 +102,17 @@ fun FileDetail(file: TempFile, state: FilesUiState, actions: FilesActions, onDel
             }
         }
         if (state.busy != null) state.downloadProgress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) }
-            ?: LinearProgressIndicator(Modifier.fillMaxWidth())
+            ?: LoadingRow(
+                when (state.busy) {
+                    "download" -> "Mengunduh…"
+                    "delete" -> "Menghapus…"
+                    "rename" -> "Mengganti nama…"
+                    "token" -> "Membuat tautan baru…"
+                    "expiry" -> "Memperbarui masa berlaku…"
+                    else -> "Menyimpan…"
+                },
+                module = TaskifyModule.Files,
+            )
         when (fileState) {
             TempFileState.Expired -> Note("Berkas ini sudah kedaluwarsa. Tautannya tidak bekerja lagi dan berkasnya dihapus otomatis dalam beberapa saat.", true)
             TempFileState.Pending -> Note("Unggahan belum selesai. Bila tidak sedang diunggah, hapus lalu unggah ulang. Pesanan yang ditinggalkan dibersihkan otomatis.", true)

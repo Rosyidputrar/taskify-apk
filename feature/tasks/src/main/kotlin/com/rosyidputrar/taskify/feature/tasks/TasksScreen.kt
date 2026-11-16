@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -153,6 +154,8 @@ fun TasksContent(
             }
         }
 
+        // Data pertama dari database lokal belum tiba: kerangka daftar, bukan layar kosong.
+        if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Tasks, rows = 6) }
         val groups = state.groups
         val showEmpty = state.loaded && (if (filter.segment == Segment.Active) groups.isEmpty() else state.doneItems.isEmpty())
         if (showEmpty) {

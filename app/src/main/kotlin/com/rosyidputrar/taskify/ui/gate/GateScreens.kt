@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.gate
 
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,7 +46,7 @@ fun PreparingScreen() {
     Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(24.dp)) {
-                CircularProgressIndicator()
+                TaskifyLoadingIndicator(size = 48.dp)
                 Text("Menyiapkan data di perangkat…", style = MaterialTheme.typography.titleMedium)
             }
         }

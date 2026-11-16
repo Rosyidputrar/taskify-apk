@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import android.content.ClipboardManager
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -109,7 +110,7 @@ fun TikTokContent(state: TikTokUiState, actions: TikTokActions, contentPadding: 
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(onClick = { actions.extract() }, enabled = !state.loading && state.input.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (state.loading) "Mengambil…" else "Ambil") }
-                if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (state.loading) LoadingRow("Mengambil video…", module = TaskifyModule.Music)
             }
         }
         if (state.post != null) item(key = "card") { TikTokCard(state, actions, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }

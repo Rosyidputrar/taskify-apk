@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -134,7 +135,10 @@ fun ReviewContent(
                 }
             }
         }
-        val now = state.now ?: return@LazyColumn
+        val now = state.now ?: run {
+            item(key = "skeleton") { ListSkeleton(TaskifyModule.Review, rows = 4, lines = 2) }
+            return@LazyColumn
+        }
         item(key = "summary") {
             IndexCard(TaskifyModule.Review, tinted = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
                 Text(

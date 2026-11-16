@@ -1,5 +1,11 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -149,7 +155,8 @@ fun TaskifyApp(
     home: HomeSlot = { padding, name, openModule, openTask -> HomeScreen(padding, name, openModule, openTask) },
 ) {
     val navController = rememberNavController()
-    var spotlightOpen by rememberSaveable { mutableStateOf(false) }
+    val spotlight = com.rosyidputrar.taskify.ui.spotlight.rememberSpotlightSheetState()
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     var captureOpen by rememberSaveable { mutableStateOf(false) }
     var captureText by rememberSaveable { mutableStateOf("") }
     var capturePickType by rememberSaveable { mutableStateOf(false) }
@@ -157,12 +164,12 @@ fun TaskifyApp(
     fun openCapture(text: String = "", pickType: Boolean = false) {
         captureText = text
         capturePickType = pickType
-        spotlightOpen = false
+        spotlight.close()
         captureOpen = true
     }
 
     fun openEntity(type: EntityType, id: String) {
-        spotlightOpen = false
+        spotlight.close()
         when (type) {
             EntityType.Task -> navController.navigate(TasksRoute(id)) { launchSingleTop = true }
             EntityType.JournalEntry -> navController.navigate(JournalEntryRoute(id = id))
@@ -183,28 +190,28 @@ fun TaskifyApp(
         AppEvents.events.collect { event ->
             when (event) {
                 is AppEvent.OpenEntity -> openEntity(event.type, event.id)
-                is AppEvent.OpenModule -> { spotlightOpen = false; navController.navigate(event.module.route()) { launchSingleTop = true } }
-                AppEvent.OpenShare -> { spotlightOpen = false; navController.navigate(ShareRoute) { launchSingleTop = true } }
-                AppEvent.OpenSpotlight -> spotlightOpen = true
+                is AppEvent.OpenModule -> { spotlight.close(); navController.navigate(event.module.route()) { launchSingleTop = true } }
+                AppEvent.OpenShare -> { spotlight.close(); navController.navigate(ShareRoute) { launchSingleTop = true } }
+                AppEvent.OpenSpotlight -> spotlight.open()
                 is AppEvent.OpenCapture -> openCapture(event.text)
                 is AppEvent.OpenCalendar -> {
-                    spotlightOpen = false
+                    spotlight.close()
                     navController.navigateTopLevel(CalendarRoute(event.date), restore = event.date == null)
                 }
                 is AppEvent.OpenTask -> {
-                    spotlightOpen = false
+                    spotlight.close()
                     navController.navigate(TasksRoute(event.taskId)) { launchSingleTop = true }
                 }
                 is AppEvent.OpenJournal -> {
-                    spotlightOpen = false
+                    spotlight.close()
                     navController.navigate(JournalEntryRoute(event.id, event.date))
                 }
                 is AppEvent.OpenNote -> {
-                    spotlightOpen = false
+                    spotlight.close()
                     navController.navigate(NoteEditRoute(event.id, event.date))
                 }
                 is AppEvent.OpenTransaction -> {
-                    spotlightOpen = false
+                    spotlight.close()
                     navController.navigate(TransactionRoute(event.id, event.date))
                 }
             }
@@ -248,7 +255,7 @@ fun TaskifyApp(
     }
 
     val openModule: (TaskifyModule) -> Unit = { module ->
-        spotlightOpen = false
+        spotlight.close()
         when (module) {
             TaskifyModule.Home, TaskifyModule.Calendar -> navController.navigateTopLevel(module.route())
             else -> navController.navigate(module.route()) { launchSingleTop = true }
@@ -294,7 +301,7 @@ fun TaskifyApp(
                 TaskifyRail(
                     selectedKey = selectedKey,
                     onCapture = { openCapture() },
-                    onSearch = { spotlightOpen = true },
+                    onSearch = { spotlight.open() },
                     onHome = { navController.navigateTopLevel(HomeRoute) },
                     onCalendar = { navController.navigateTopLevel(CalendarRoute()) },
                     onRoom = { navController.navigateTopLevel(RoomRoute) },
@@ -324,7 +331,10 @@ fun TaskifyApp(
                 },
                 onCapture = { openCapture() },
                 onCaptureLongPress = { openCapture(pickType = true) },
-                onSwipeUp = { spotlightOpen = true },
+                // Panel Spotlight ikut tertarik sejak jari mulai bergeser ke atas.
+                onPull = { delta -> if (spotlight.dragBy(delta)) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate) },
+                onPullEnd = { velocity -> spotlight.release(velocity) },
+                onOpenSearch = { spotlight.open() },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -348,7 +358,7 @@ fun TaskifyApp(
         LaunchedEffect(messages) {
             messages.collect { message ->
                 snackbar.currentSnackbarData?.dismiss()
-                scope.launch {
+                scope.launchSafe {
                     val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel, withDismissAction = message.action == null, duration = SnackbarDuration.Short)
                     if (result == SnackbarResult.ActionPerformed) message.action?.invoke()
                 }
@@ -363,14 +373,13 @@ fun TaskifyApp(
         )
 
         Spotlight(
-            visible = spotlightOpen,
-            onDismiss = { spotlightOpen = false },
+            state = spotlight,
             onOpenModule = openModule,
             onCapture = { text -> openCapture(text) },
             themeMode = preferences.themeMode,
             onThemeModeChange = onThemeModeChange,
             onOpenEntity = ::openEntity,
-            onOpenTag = { id -> spotlightOpen = false; navController.navigate(TagRoute(id)) },
+            onOpenTag = { id -> spotlight.close(); navController.navigate(TagRoute(id)) },
         )
     }
     }
@@ -397,7 +406,17 @@ private fun TaskifyNavHost(
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     modifier: Modifier,
 ) {
-    NavHost(navController = navController, startDestination = HomeRoute, modifier = modifier) {
+    // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
+    // Lebih singkat: layar baru muncul 220 ms (sedikit membesar), yang lama hilang 120 ms.
+    NavHost(
+        navController = navController,
+        startDestination = HomeRoute,
+        modifier = modifier,
+        enterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
+        exitTransition = { fadeOut(tween(120)) },
+        popEnterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
+        popExitTransition = { fadeOut(tween(120)) },
+    ) {
         composable<HomeRoute> {
             home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } }
         }

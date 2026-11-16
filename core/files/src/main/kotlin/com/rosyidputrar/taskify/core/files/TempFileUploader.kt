@@ -53,7 +53,40 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
     private val _overlay = MutableStateFlow<Map<String, TempFile?>>(emptyMap())
     val overlay: StateFlow<Map<String, TempFile?>> = _overlay.asStateFlow()
 
-    private val running = mutableMapOf<String, Job>()
+    // Diakses dari Main (UI) dan dari scope aplikasi (Dispatchers.Default) → harus aman lintas thread.
+    private val running = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    private val _downloads = MutableStateFlow<List<DownloadJob>>(emptyList())
+    /** Unduhan Berkas yang sedang berjalan (untuk notifikasi layanan latar). */
+    val downloads: StateFlow<List<DownloadJob>> = _downloads.asStateFlow()
+
+    /**
+     * Transfer besar harus tetap jalan saat Taskify ditinggal: tanpa layanan foreground, Android
+     * membekukan/mematikan proses dalam hitungan detik dan unggahan berhenti diam-diam. Gagal
+     * memulai (mis. dipanggil saat aplikasi di latar) tidak menghentikan transfernya.
+     */
+    private fun keepAlive() {
+        runCatching { androidx.core.content.ContextCompat.startForegroundService(context, android.content.Intent(context, TransferService::class.java)) }
+    }
+
+    /** Izin baca dari pemilih dokumen dibuat bertahan selama unggah (Activity bisa dibuat ulang). */
+    private fun holdRead(uri: Uri, hold: Boolean) {
+        if (uri.scheme != "content") return
+        runCatching {
+            val flag = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (hold) context.contentResolver.takePersistableUriPermission(uri, flag) else context.contentResolver.releasePersistableUriPermission(uri, flag)
+        }
+    }
+
+    /** Salinan sementara milik Taskify sendiri (`file://` di cache, mis. dari Bagikan) dibuang setelah dipakai. */
+    private fun discardOwnCopy(uri: Uri) {
+        if (uri.scheme != "file") return
+        val path = uri.path ?: return
+        runCatching {
+            val file = java.io.File(path).canonicalFile
+            if (file.path.startsWith(context.cacheDir.canonicalPath + java.io.File.separator)) file.delete()
+        }
+    }
 
     private fun patch(key: String, f: (UploadJob) -> UploadJob) = _jobs.update { list -> list.map { if (it.key == key) f(it) else it } }
     fun dismiss(key: String) = _jobs.update { list -> list.filterNot { it.key == key } }
@@ -84,6 +117,8 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
     fun start(file: PickedFile, expiry: ExpiryOption) {
         val key = Ids.newId()
         _jobs.update { listOf(UploadJob(key, file.name, file.size)) + it }
+        holdRead(file.uri, true)
+        keepAlive()
         running[key] = scope.launch {
             var fileId: String? = null
             var phase = UploadPhase.Reserving
@@ -129,11 +164,35 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
                 if (fileId != null && phase == UploadPhase.Uploading) runCatching { remove(fileId) }
             } finally {
                 running.remove(key)
+                holdRead(file.uri, false)
+                discardOwnCopy(file.uri)
             }
         }
     }
 
     fun cancel(key: String) { running[key]?.cancel() }
+
+    /** Batalkan semua transfer (aksi "Batalkan" di notifikasi). */
+    fun cancelAll() {
+        running.values.toList().forEach { it.cancel() }
+        downloadJobs.values.toList().forEach { it.cancel() }
+    }
+
+    private val downloadJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    /** Jalankan unduhan sambil tercatat di notifikasi layanan latar (bisa dibatalkan dari sana). */
+    private suspend fun <T> tracked(name: String, block: suspend ((Float) -> Unit) -> T): T {
+        val key = Ids.newId()
+        kotlin.coroutines.coroutineContext[Job]?.let { downloadJobs[key] = it }
+        _downloads.update { it + DownloadJob(key, name) }
+        keepAlive()
+        try {
+            return block { p -> _downloads.update { list -> list.map { if (it.key == key) it.copy(progress = p) else it } } }
+        } finally {
+            downloadJobs.remove(key)
+            _downloads.update { list -> list.filterNot { it.key == key } }
+        }
+    }
 
     suspend fun change(id: String, patch: TempFilePatch): TempFile = api.update(id, patch).also { setOverlay(id, it) }
 
@@ -143,21 +202,23 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
     }
 
     /** Unduh salinan pemilik ke tujuan pilihan (SAF). */
-    suspend fun downloadOwn(id: String, target: Uri, onProgress: (Float) -> Unit) {
+    suspend fun downloadOwn(id: String, target: Uri, name: String = "berkas", onProgress: (Float) -> Unit) = tracked(name) { report ->
         val url = api.ownerDownloadUrl(id)
         withContext(Dispatchers.IO) {
-            transfers.downloadTo(url, { context.contentResolver.openOutputStream(target) ?: throw FileTransferException("Tujuan tidak bisa ditulis") }, onProgress)
+            transfers.downloadTo(url, { context.contentResolver.openOutputStream(target) ?: throw FileTransferException("Tujuan tidak bisa ditulis") }) { p -> report(p); onProgress(p) }
         }
     }
 
     /** Unduh dari tautan publik (tanpa login) ke tujuan pilihan. */
-    suspend fun downloadPublic(token: String, target: Uri, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
-        transfers.downloadTo(api.directDownloadUrl(token), { context.contentResolver.openOutputStream(target) ?: throw FileTransferException("Tujuan tidak bisa ditulis") }, onProgress)
+    suspend fun downloadPublic(token: String, target: Uri, name: String = "berkas", onProgress: (Float) -> Unit) = tracked(name) { report ->
+        withContext(Dispatchers.IO) {
+            transfers.downloadTo(api.directDownloadUrl(token), { context.contentResolver.openOutputStream(target) ?: throw FileTransferException("Tujuan tidak bisa ditulis") }) { p -> report(p); onProgress(p) }
+        }
     }
 
     /** Logout: lupakan antrean & overlay (unggahan berjalan dibatalkan). */
     fun wipe() {
-        running.values.toList().forEach { it.cancel() }
+        cancelAll()
         _jobs.value = emptyList()
         _overlay.value = emptyMap()
     }

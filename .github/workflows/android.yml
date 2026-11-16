@@ -72,3 +72,132 @@ jobs:
             **/build/reports/tests/
             app/build/outputs/roborazzi/
           if-no-files-found: ignore
+
+  # APK rilis (R8 full mode) diuji di emulator SETIAP push, tanpa bergantung pada secret keystore:
+  # crash yang hanya muncul di rilis (aturan keep, refleksi, JNI) tertangkap sebelum dibagikan.
+  release-smoke-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      POWERSYNC_URL: ${{ secrets.POWERSYNC_URL }}
+      MUSIC_API_URL: ${{ secrets.MUSIC_API_URL }}
+      TIKTOK_API_URL: ${{ secrets.TIKTOK_API_URL }}
+      PUBLIC_WEB_ORIGIN: ${{ secrets.PUBLIC_WEB_ORIGIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Keystore sementara (hanya untuk uji, dibuang setelah job)
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/smoke.jks" -storepass smoke-pass -keypass smoke-pass \
+            -alias smoke -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Taskify Smoke"
+
+      - name: Build APK rilis (R8) dengan kunci sementara
+        env:
+          RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/smoke.jks
+          RELEASE_KEYSTORE_PASSWORD: smoke-pass
+          RELEASE_KEY_ALIAS: smoke
+          RELEASE_KEY_PASSWORD: smoke-pass
+        run: ./gradlew :app:assembleRelease --console=plain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-smoke-${{ github.run_number }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 3
+
+  release-smoke:
+    needs: release-smoke-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Batas bawah (minSdk) dan Android 14 (izin notifikasi, layanan foreground bertipe, Terkini).
+        api-level: [26, 34]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk-smoke-${{ github.run_number }}
+          path: smoke-apk
+
+      - name: Aktifkan KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Uji asap APK rilis di emulator API ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: ${{ matrix.api-level >= 34 && 'google_apis' || 'default' }}
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: tools/smoke-test.sh smoke-apk/app-release.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-api${{ matrix.api-level }}-${{ github.run_number }}
+          path: build/smoke/
+          if-no-files-found: ignore
+
+  # Setiap push ke main yang lulus tes, build bertanda tangan, dan uji asap rilis → GitHub Release
+  # berisi APK rilis siap pasang (versi berikutnya terpasang menimpa yang lama, data tetap).
+  publish-release:
+    needs: [build, release-smoke]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: taskify-apk-${{ github.run_number }}
+          path: apk
+
+      - name: Terbitkan GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_number }}
+        run: |
+          APK=$(find apk -name 'app-release.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::APK rilis tidak ada — isi secret RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD."
+            exit 1
+          fi
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          TAG="v${VERSION}-build.${RUN}"
+          NAME="taskify-${VERSION}-build${RUN}.apk"
+          cp "$APK" "$NAME"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          SHA=$("$APKSIGNER" verify --print-certs "$NAME" | grep -m1 -i "SHA-256" | sed 's/.*: //')
+          {
+            echo "APK rilis Taskify ${VERSION} (build ${RUN}) dari commit ${GITHUB_SHA::7}."
+            echo
+            echo "**Cara pasang:** unduh \`${NAME}\` di HP lalu buka. Versi baru terpasang menimpa versi lama tanpa menghapus data."
+            echo
+            echo "Lulus tes unit dan uji asap APK rilis di emulator Android 8.0 & 14."
+            echo
+            echo "### Perubahan"
+            git log -1 --format=%B "$GITHUB_SHA"
+            echo
+            echo "Sidik jari sertifikat (SHA-256): \`${SHA}\`"
+          } > notes.md
+          gh release create "$TAG" "$NAME" --target "$GITHUB_SHA" --title "Taskify ${VERSION} (build ${RUN})" --notes-file notes.md --latest

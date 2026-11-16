@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.common.Rupiah
@@ -58,7 +59,7 @@ class TxEditorViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TxEditorState())
 
     init {
-        viewModelScope.launch {
+        launchSafe {
             if (args.id != null) {
                 val t = repo.getTransaction(args.id)
                 draft.value = if (t == null) TxDraft(loaded = true, missing = true) else TxDraft(
@@ -94,7 +95,7 @@ class TxEditorViewModel(
             draft.update { it.copy(error = "Buat dompet dulu di tab Kelola") }
             return
         }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val input = TxInput(d.kind, amount, d.walletId, d.toWalletId, d.categoryId, d.date, d.time, d.title, d.note)
                 if (d.id == null) {
@@ -113,7 +114,7 @@ class TxEditorViewModel(
 
     fun remove(onDone: () -> Unit) {
         val id = state.value.draft.id ?: return onDone()
-        viewModelScope.launch {
+        launchSafe {
             repo.removeTx(id)
             messenger.undoable("Transaksi dihapus") { repo.restoreTx(id) }
             onDone()

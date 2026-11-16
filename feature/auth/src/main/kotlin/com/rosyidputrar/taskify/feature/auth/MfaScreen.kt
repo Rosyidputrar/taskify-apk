@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
@@ -82,7 +84,7 @@ class MfaViewModel(private val auth: AuthRepository, private val network: Networ
 
     fun loadFactors() {
         _state.update { it.copy(loadingFactors = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val factors = auth.verifiedTotpFactors()
                 _state.update { it.copy(factors = factors, selectedFactor = factors.firstOrNull()?.id, loadingFactors = false) }
@@ -101,7 +103,7 @@ class MfaViewModel(private val auth: AuthRepository, private val network: Networ
             return
         }
         _state.update { it.copy(busy = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 auth.verify(factorId, code, remember)
                 _state.update { it.copy(busy = false) }
@@ -113,7 +115,7 @@ class MfaViewModel(private val auth: AuthRepository, private val network: Networ
 
     fun startEnrollment(name: String) {
         _state.update { it.copy(busy = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val enrollment = auth.startEnrollment(name)
                 _state.update { it.copy(busy = false, enrollment = enrollment) }
@@ -126,7 +128,7 @@ class MfaViewModel(private val auth: AuthRepository, private val network: Networ
     fun skipOffline() = auth.skipReverifyOffline()
 
     fun signOut() {
-        viewModelScope.launch { runCatching { auth.signOut() } }
+        launchSafe { runCatching { auth.signOut() } }
     }
 }
 
@@ -224,7 +226,7 @@ private fun Challenge(
     var code by rememberSaveable { mutableStateOf("") }
     var remember by rememberSaveable { mutableStateOf(true) }
     if (state.loadingFactors) {
-        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        TaskifyLoadingIndicator(size = 24.dp)
         return
     }
     if (state.factors.size > 1) {

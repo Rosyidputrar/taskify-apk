@@ -51,6 +51,9 @@ import com.rosyidputrar.taskify.core.store.files.TempFileRepository
 import io.github.jan.supabase.SupabaseClient
 import com.rosyidputrar.taskify.feature.sandi.sandiFeatureModule
 import com.rosyidputrar.taskify.core.sandi.KeystoreTrustStore
+import com.rosyidputrar.taskify.core.sandi.ActivityDeviceAuthenticator
+import com.rosyidputrar.taskify.core.sandi.DeviceAuthenticator
+import org.koin.android.ext.koin.androidApplication
 import com.rosyidputrar.taskify.core.sandi.SandiPrefs
 import com.rosyidputrar.taskify.core.sandi.SandiService
 import com.rosyidputrar.taskify.core.sandi.SandiSession
@@ -87,6 +90,9 @@ import com.rosyidputrar.taskify.ui.gate.GateViewModel
 import com.rosyidputrar.taskify.ui.settings.SettingsViewModel
 import com.rosyidputrar.taskify.ui.shell.AppViewModel
 import kotlinx.coroutines.CoroutineScope
+import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
+import com.rosyidputrar.taskify.core.data.RejectedChangeRetrier
+import com.rosyidputrar.taskify.session.DeviceLeftovers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.koin.android.ext.koin.androidContext
@@ -104,7 +110,8 @@ val serverConfig = ServerConfig(AppConfig.supabaseUrl, AppConfig.supabasePublish
 
 /** Bagian yang selalu ada, termasuk saat konfigurasi server belum diisi. */
 private val deviceModule = module {
-    single(APP_SCOPE) { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    // Error yang lolos dilaporkan (snackbar + log), bukan force close.
+    single(APP_SCOPE) { CoroutineScope(SupervisorJob() + Dispatchers.Default + UiErrors.handler) }
     single { AppPreferences(androidContext()) }
     single { DevicePrefs(androidContext()) }
     single { NetworkMonitor(androidContext()) }
@@ -128,15 +135,17 @@ private val deviceModule = module {
     single { ConfigRepository(get(), get()) }
     single { SandiPrefs(androidContext()) }
     single { SecureClipboard(androidContext(), get(APP_SCOPE)) }
-    single<TrustStore> { KeystoreTrustStore(androidContext()) }
+    single<TrustStore> { KeystoreTrustStore(androidApplication()) }
+    single<DeviceAuthenticator>(createdAtStart = true) { ActivityDeviceAuthenticator(androidApplication()) }
     single { SandiSession(get(), get(), get(APP_SCOPE)) }
-    single { SandiService(get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
+    single { SandiService(get(), get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
     single { AccountEmail { getOrNull<AuthRepository>()?.currentEmail() } }
     single { ReviewRepository(get()) }
     single { SearchRepository(get()) }
     single { TrashRepository(get()) }
     single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
+    single { DeviceLeftovers(androidContext(), get(), get()) }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
     single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
     single { MusicPlayer(androidContext(), get()) }
@@ -158,23 +167,24 @@ private val deviceModule = module {
     single { ReminderPrefs(get()) }
     single { ReminderNotifier(androidContext(), get()) }
     single { ReminderScheduler(androidContext(), get(), get()) }
-    viewModel { HomeViewModel(get(), get(), get(), get()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { GateViewModel(getOrNull(), getOrNull(), get()) }
-    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
+    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), getOrNull()) }
 }
 
 /** Bagian yang butuh server (Supabase + PowerSync). Hanya dimuat bila konfigurasi lengkap. */
 private val serverModule = module {
     single { createTaskifySupabase(serverConfig) }
     single { SupabaseConnector(get(), serverConfig.powerSyncUrl) }
+    single { RejectedChangeRetrier(get<TaskifyDatabase>(), get<SupabaseConnector>()) }
     single { AuthRepository(get(), get(), get(), get(APP_SCOPE)) }
     single { FilesApi(get()) }
     single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get(), get()) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get(), get(), get()) }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }

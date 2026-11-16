@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -113,7 +115,7 @@ class ProjectViewModel(
     val preparing: StateFlow<Boolean> = _preparing
 
     private fun act(block: suspend () -> Unit) {
-        viewModelScope.launch {
+        launchSafe {
             try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { messenger.show(e.message ?: "Gagal") }
         }
     }
@@ -242,7 +244,7 @@ fun ProjectContent(
                         Icon(Icons.Outlined.Upload, null, Modifier.size(18.dp))
                         Text(if (preparing) "Memeriksa arsip…" else "Unggah versi baru (.zip)", Modifier.padding(start = 6.dp))
                     }
-                    if (preparing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (preparing) LoadingRow("Memeriksa arsip…", module = TaskifyModule.Vault)
                 }
             }
         }

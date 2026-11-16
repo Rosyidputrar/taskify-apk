@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
@@ -59,7 +61,7 @@ class LoginViewModel(private val auth: AuthRepository, loginNames: LoginNameStor
             return
         }
         _state.value = LoginUiState(loading = true)
-        viewModelScope.launch {
+        launchSafe {
             try {
                 auth.signIn(email, password)
                 // Sukses → status sesi berubah, gerbang pindah ke verifikasi dua langkah.
@@ -123,7 +125,7 @@ fun LoginContent(greeting: String, state: LoginUiState, onSubmit: (email: String
         )
         ErrorText(state.error)
         Button(onClick = { onSubmit(email, password) }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-            if (state.loading) CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp)) else Text("Masuk")
+            if (state.loading) TaskifyLoadingIndicator(size = 24.dp, color = androidx.compose.material3.LocalContentColor.current) else Text("Masuk")
         }
     }
 }

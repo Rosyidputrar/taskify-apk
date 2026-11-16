@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -83,10 +87,7 @@ internal fun GateCard(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
 @Composable
 internal fun BusyLine(busy: String?, error: String?) {
     if (busy != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(busy, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        LoadingRow(busy, module = TaskifyModule.Sandi)
     }
     if (error != null) Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
 }
@@ -156,16 +157,30 @@ internal fun UnlockPanel(state: SandiUiState, actions: SandiActions, onQuickChec
     }
     GateCard(Icons.Outlined.Lock, "Brankas terkunci", "Masukkan master password untuk membuka. Brankas terkunci lagi otomatis saat aplikasi ditinggal.") {
         SecretField(password, { password = it; if (state.error != null) actions.clearError() }, "Master password", imeAction = ImeAction.Go,
-            onDone = { if (password.isNotEmpty()) actions.unlock(password, remember) })
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(remember, { remember = it })
+            onDone = { if (password.isNotEmpty()) actions.unlock(password, remember && state.trustAvailable) })
+        Row(
+            Modifier.fillMaxWidth().toggleable(remember, enabled = state.trustAvailable, role = Role.Checkbox, onValueChange = { remember = it }),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(remember && state.trustAvailable, onCheckedChange = null, enabled = state.trustAvailable, modifier = Modifier.padding(12.dp))
             Column {
                 Text("Ingat perangkat ini 30 hari", style = MaterialTheme.typography.bodyMedium)
-                Text("Kunci disimpan di Android Keystore; hapus kapan saja dari pengaturan.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (state.trustAvailable) "Buka berikutnya dengan sidik jari atau kunci layar HP. Hapus kapan saja dari pengaturan."
+                    else "Pasang kunci layar (PIN/pola/sandi) di HP dulu untuk memakai ini.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         BusyLine(state.busy, state.error)
-        Button(onClick = { actions.unlock(password, remember) }, enabled = password.isNotEmpty() && state.busy == null, modifier = Modifier.fillMaxWidth()) { Text("Buka brankas") }
+        Button(onClick = { actions.unlock(password, remember && state.trustAvailable) }, enabled = password.isNotEmpty() && state.busy == null, modifier = Modifier.fillMaxWidth()) { Text("Buka brankas") }
+        if (state.trustDaysLeft != null) {
+            OutlinedButton(onClick = { actions.clearError(); actions.tryTrusted() }, enabled = state.busy == null, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Fingerprint, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Buka dengan sidik jari / kunci layar")
+            }
+        }
         Row {
             TextButton(onClick = { recover = true; actions.clearError() }) { Text("Lupa master password?") }
             Spacer(Modifier.weight(1f))

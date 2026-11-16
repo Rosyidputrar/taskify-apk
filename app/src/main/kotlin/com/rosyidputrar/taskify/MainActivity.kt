@@ -5,7 +5,13 @@ import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import android.view.KeyEvent
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import com.rosyidputrar.taskify.core.auth.LockManager
+import com.rosyidputrar.taskify.ui.gate.RecentsPrivacy
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -35,12 +41,15 @@ import com.rosyidputrar.taskify.ui.shell.AppViewModel
 import com.rosyidputrar.taskify.ui.shell.TaskifyApp
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity (turunan ComponentActivity): syarat dialog BiometricPrompt untuk Sandi. */
+class MainActivity : FragmentActivity() {
 
     private val appViewModel: AppViewModel by viewModel()
     private val gateViewModel: GateViewModel by viewModel()
     private val messenger: Messenger by inject()
     private val shareInbox: com.rosyidputrar.taskify.ui.share.ShareInbox by inject()
+    private val lock: LockManager by inject()
+    private val recents = RecentsPrivacy(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -51,6 +60,11 @@ class MainActivity : ComponentActivity() {
         }
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.CREATED) {
+                lock.state.map { it.config != null }.distinctUntilChanged().collect { recents.setHidden(it) }
+            }
+        }
 
         setContent {
             val prefs by appViewModel.state.collectAsStateWithLifecycle()
@@ -85,6 +99,16 @@ class MainActivity : ComponentActivity() {
                 is GateUi.Open -> Unit // ditangani GateHost
             }
         })
+    }
+
+    override fun onPause() {
+        recents.onPause()
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        recents.onResume()
     }
 
     override fun onNewIntent(intent: Intent) {

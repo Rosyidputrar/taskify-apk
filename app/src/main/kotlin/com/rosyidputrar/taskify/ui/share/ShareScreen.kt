@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.share
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -132,7 +134,7 @@ class ShareViewModel(
     private fun act(key: String, block: suspend () -> String) {
         if (busy.value != null) return
         busy.value = key
-        viewModelScope.launch {
+        launchSafe {
             try {
                 messenger.show(block())
                 inbox.done(key)
@@ -193,7 +195,8 @@ class ShareViewModel(
             }
             FileTarget.PublicFile -> {
                 // Salinan terpisah: unggah berjalan di latar, sedangkan kotak masuk membersihkan berkasnya.
-                val keep = File(file.file.parentFile?.parentFile, "share-upload").apply { mkdirs() }.let { File(it, file.key) }
+                // Salinan ini dihapus pengunggah setelah selesai/gagal/batal (dan saat keluar akun).
+                val keep = File(file.file.parentFile?.parentFile, com.rosyidputrar.taskify.session.DeviceLeftovers.SHARE_UPLOAD_DIR).apply { mkdirs() }.let { File(it, file.key) }
                 file.file.copyTo(keep, overwrite = true)
                 tempFiles.start(PickedFile(Uri.fromFile(keep), file.name, keep.length(), file.mime), ExpiryOption.DEFAULT)
                 "Mengunggah ke Berkas (tautan 7 hari)"
@@ -272,7 +275,7 @@ fun ShareContentView(
             )
         }
         items(content.files, key = { it.key }) { f -> FileTargetCard(f, state, actions, Modifier.animateItem()) }
-        if (state.busy != null) item(key = "busy") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) }
+        state.busy?.let { b -> item(key = "busy") { LoadingRow(b, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) } }
         item(key = "finish") {
             Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { actions.finish(); onDone() }) { Text("Abaikan sisanya") }

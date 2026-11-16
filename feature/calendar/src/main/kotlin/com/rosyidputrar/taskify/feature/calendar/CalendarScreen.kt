@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.calendar
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -247,6 +248,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dayAgenda(
     onOpenTransaction: (String?, String) -> Unit,
     onOpenVault: (String, String) -> Unit,
 ) {
+    if (!state.loaded) {
+        item(key = "agenda-skeleton") { ListSkeleton(TaskifyModule.Calendar, rows = 3) }
+        return
+    }
     val a = state.selectedActivity
     val day = state.selected
     val visible = state.visible

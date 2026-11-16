@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application>
         <!-- Membagikan file lampiran ke aplikasi penampil (PDF, gambar, ZIP) tanpa izin penyimpanan. -->
@@ -14,5 +16,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/taskify_file_paths" />
         </provider>
+
+        <!-- Unggah/unduh Berkas tetap berjalan saat aplikasi ditinggal (notifikasi progres). -->
+        <service
+            android:name=".TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

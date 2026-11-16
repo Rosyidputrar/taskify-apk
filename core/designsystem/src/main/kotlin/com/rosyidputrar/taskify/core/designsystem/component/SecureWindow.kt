@@ -26,7 +26,8 @@ fun SecureWindow() {
     }
 }
 
-internal object SecureFlag {
+/** Hitungan FLAG_SECURE per window (juga dipakai di luar Compose, mis. privasi layar Terkini). */
+object SecureFlag {
     private val holders = WeakHashMap<Window, Int>()
 
     fun acquire(window: Window) {
