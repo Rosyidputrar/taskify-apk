@@ -66,6 +66,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object ShareRoute
 
+@Serializable data object MusicRoute
+
+/** Pengunduh TikTok; [input] = link yang langsung diambil (dari Bagikan). */
+@Serializable data class TikTokRoute(val input: String? = null)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -85,5 +90,7 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Review -> ReviewRoute
     TaskifyModule.Tags -> TagsRoute
     TaskifyModule.Trash -> TrashRoute
+    TaskifyModule.Music -> MusicRoute
+    TaskifyModule.TikTok -> TikTokRoute()
     else -> ModuleRoute(name)
 }

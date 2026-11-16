@@ -24,7 +24,9 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +58,8 @@ import com.rosyidputrar.taskify.core.domain.files.ExpiryOption
 import com.rosyidputrar.taskify.core.domain.files.formatBytes
 import com.rosyidputrar.taskify.core.domain.files.nextVersionLabel
 import com.rosyidputrar.taskify.core.domain.share.Share
+import com.rosyidputrar.taskify.core.domain.media.TikTok
+import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.domain.share.SharedKind
 import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.domain.vault.CodeProject
@@ -201,10 +205,22 @@ class ShareViewModel(
 }
 
 @Composable
-fun ShareScreen(contentPadding: PaddingValues, onCapture: (String) -> Unit, onDone: () -> Unit, backButton: @Composable (() -> Unit) -> Unit) {
+fun ShareScreen(contentPadding: PaddingValues, onCapture: (String) -> Unit, onDone: () -> Unit, backButton: @Composable (() -> Unit) -> Unit, onTikTok: (String) -> Unit = {}) {
     val vm: ShareViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
-    ShareContentView(state, vm, contentPadding, onCapture, onDone, backButton)
+    ShareContentView(state, vm, contentPadding, onCapture, onDone, backButton, extraTop = { text -> TikTokShareCard(text, onTikTok) })
+}
+
+/** Teks dari aplikasi TikTok → niatnya hampir pasti mengunduh: tawarkan pengunduh paling atas. */
+@Composable
+private fun TikTokShareCard(text: String, onOpen: (String) -> Unit) {
+    val link = remember(text) { TikTok.findLink(text) } ?: return
+    IndexCard(TaskifyModule.TikTok, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+        Text("Link TikTok terdeteksi", style = MaterialTheme.typography.titleMedium)
+        Text(link, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.padding(4.dp))
+        Button(onClick = { onOpen(link) }, modifier = Modifier.fillMaxWidth()) { Text("Lihat & unduh video/foto") }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -284,8 +300,16 @@ private fun FileTargetCard(file: SharedFile, state: ShareUiState, actions: Share
             }
         }
         Spacer(Modifier.padding(4.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            options.forEachIndexed { i, (label, _) -> FilterChip(selected == i, { selected = i }, label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }) }
+        Text("Simpan ke", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        options.forEachIndexed { i, (label, _) ->
+            Row(
+                Modifier.fillMaxWidth().selectable(selected == i, role = Role.RadioButton) { selected = i }.padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected == i, onClick = null)
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         Button(onClick = { options.getOrNull(selected)?.let { actions.saveFile(file, it.second) } }, enabled = state.busy == null, modifier = Modifier.fillMaxWidth()) { Text("Simpan") }
     }

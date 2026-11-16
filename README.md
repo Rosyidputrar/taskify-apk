@@ -42,7 +42,8 @@ core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, ger
                      RRULE, Markdown, simpan otomatis, insight mood, periode & ringkasan Review, kripto Sandi (PBKDF2/HKDF/AES-GCM,
                      diuji dua arah melawan crypto.ts webapp), TOTP RFC 6238, generator, parser .env/JSON
 core/store           Skema PowerSync (identik webapp) + repository Tugas, Tag, Beranda, Kalender,
-                     Jurnal, Catatan, Keuangan, Vault, Lampiran, Berkas, Review — diuji di JVM
+                     Jurnal, Catatan, Keuangan, Vault, Lampiran, Berkas, Review, Sampah, Tautan, pencarian FTS5
+                     — diuji di JVM
                      terhadap PowerSync sungguhan (SQLite + ekstensi PowerSync)
 core/data            Database Android, Supabase client, connector upload
 core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN (Keystore)
@@ -54,6 +55,8 @@ core/files           Lampiran: presign Edge Function `files`, unggah R2 via Work
                      unggah streaming langsung dari content:// (sampai 1 GB) dengan progres & batal
 core/sandi           Sesi brankas (DEK hanya di memori, kunci otomatis), ingat perangkat 30 hari
                      (Android Keystore), papan klip yang dibersihkan sendiri, rotasi kunci atomik
+core/media           Musik (Worker music-taskify + Media3: putar di latar, notifikasi, layar kunci) dan
+                     TikTok (Worker ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
@@ -68,6 +71,11 @@ feature/files        Berkas: kuota 1 GB, unggah dengan masa berlaku, tautan publ
                      `/unduh/<token>` sebagai App Link tanpa login
 feature/review       Review mingguan/bulanan: ringkasan kalimat, statistik + delta vs periode lalu,
                      grafik per hari dengan mood, kategori pengeluaran, sorotan, heatmap, tulis refleksi
+feature/links        Bagian "Tertaut" (tautan silang dua arah) di Tugas, Jurnal, Catatan, Transaksi
+feature/organize     Halaman Tag (ganti nama/warna, hapus, item per tag) dan Sampah lintas modul
+                     (pulihkan, hapus permanen, kosongkan, bersih otomatis 30 hari setelah sinkron)
+feature/media        Musik (cari, antrean, acak/ulang, lanjut otomatis, lirik, bilah mini) dan TikTok
+                     (ambil link, carousel foto, unduh video/foto/audio)
 feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, daftar sandi, kode 2FA dengan
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
@@ -85,6 +93,15 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
 4. Database lokal disiapkan: bila akun berbeda dari pemilik sebelumnya, isinya dikosongkan dulu,
    lalu sinkronisasi PowerSync dimulai.
 5. PIN aktif → layar kunci (5 percobaan → jeda 30 detik; Lupa PIN = verifikasi password akun).
+
+### Pencarian & Bagikan
+
+- Spotlight (geser dok ke atas / Ctrl+K) mencari ISI tugas, jurnal, catatan, transaksi, snippet,
+  dan project lewat indeks SQLite FTS5 lokal (trigger di tabel PowerSync, sama dengan webapp) —
+  tetap jalan offline; tag ikut dicari.
+- "Bagikan → Taskify" dari aplikasi lain: teks/tautan jadi tugas, jurnal, snippet, atau catat cepat;
+  berkas jadi lampiran jurnal, struk transaksi, versi project (ZIP), snippet, atau Berkas publik;
+  link TikTok langsung ditawarkan ke pengunduh.
 
 ### Tautan unduh publik (App Link)
 

@@ -36,6 +36,14 @@ import com.rosyidputrar.taskify.feature.organize.organizeFeatureModule
 import com.rosyidputrar.taskify.ui.shell.AppEvent
 import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.share.ShareInbox
+import com.rosyidputrar.taskify.core.media.MediaSaver
+import com.rosyidputrar.taskify.core.media.MusicClient
+import com.rosyidputrar.taskify.core.media.MusicPlayer
+import com.rosyidputrar.taskify.core.media.TikTokClient
+import com.rosyidputrar.taskify.feature.media.OnlineFlow
+import com.rosyidputrar.taskify.feature.media.TikTokConfig
+import com.rosyidputrar.taskify.feature.media.mediaFeatureModule
+import io.github.jan.supabase.auth.auth
 import com.rosyidputrar.taskify.ui.share.ShareViewModel
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
@@ -128,6 +136,14 @@ private val deviceModule = module {
     single { SearchRepository(get()) }
     single { TrashRepository(get()) }
     single { ShareInbox(androidContext()) }
+    // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
+    single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
+    single { MusicPlayer(androidContext(), get()) }
+    // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
+    single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }
+    single { TikTokConfig(AppConfig.publicWebOrigin) }
+    single { MediaSaver(androidContext()) }
+    single { OnlineFlow { get<NetworkMonitor>().online } }
     single { LinkRepository(get(), get()) }
     single { EntityOpener { type, id -> AppEvents.send(AppEvent.OpenEntity(type, id)) } }
     single { TempFileRepository(get()) }
@@ -157,10 +173,10 @@ private val serverModule = module {
     single { FilesApi(get()) }
     single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get()) }
+    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get(), get()) }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

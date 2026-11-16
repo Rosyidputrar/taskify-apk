@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -44,6 +46,7 @@ class SessionCoordinator(
     private val tempFiles: com.rosyidputrar.taskify.core.files.TempFileUploader,
     private val search: com.rosyidputrar.taskify.core.store.search.SearchRepository,
     private val trash: com.rosyidputrar.taskify.core.store.cross.TrashRepository,
+    private val music: com.rosyidputrar.taskify.core.media.MusicPlayer,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -114,6 +117,8 @@ class SessionCoordinator(
         // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
         tempFiles.wipe()
         search.clear()
+        // Musik berhenti (token akun ini tidak berlaku lagi).
+        withContext(Dispatchers.Main) { music.wipe() }
         database.wipe()
         auth.signOut()
     }

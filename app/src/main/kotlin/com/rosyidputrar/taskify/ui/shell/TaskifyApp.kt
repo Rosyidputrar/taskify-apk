@@ -78,6 +78,14 @@ import com.rosyidputrar.taskify.navigation.TagsRoute
 import com.rosyidputrar.taskify.navigation.TagRoute
 import com.rosyidputrar.taskify.navigation.TrashRoute
 import com.rosyidputrar.taskify.navigation.ShareRoute
+import com.rosyidputrar.taskify.navigation.MusicRoute
+import com.rosyidputrar.taskify.navigation.TikTokRoute
+import com.rosyidputrar.taskify.feature.media.MiniPlayer
+import com.rosyidputrar.taskify.feature.media.MusicScreen
+import com.rosyidputrar.taskify.feature.media.TikTokScreen
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.widthIn
+import kotlinx.coroutines.flow.map
 import com.rosyidputrar.taskify.ui.share.ShareScreen
 import com.rosyidputrar.taskify.feature.organize.TagScreen
 import com.rosyidputrar.taskify.feature.organize.TagsScreen
@@ -221,6 +229,8 @@ fun TaskifyApp(
         destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
         destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
         destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
+        destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
+        destination.hasRoute<TikTokRoute>() -> TaskifyModule.TikTok
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
@@ -248,10 +258,17 @@ fun TaskifyApp(
         val expanded = maxWidth >= ExpandedWidth
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        // Pemutar musik aktif → bilah mini di atas dok (ruang konten ikut ditambah).
+        val musicPlayer = remember { runCatching { org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.rosyidputrar.taskify.core.media.MusicPlayer>() }.getOrNull() }
+        val musicActive by remember(musicPlayer) {
+            musicPlayer?.state?.map { it.status != com.rosyidputrar.taskify.core.domain.media.YtStatus.Idle } ?: kotlinx.coroutines.flow.flowOf(false)
+        }.collectAsState(false)
+        val onMusic = destination?.hasRoute<MusicRoute>() == true
+        val showMini = musicActive && !immersive && !onMusic
         // Ruang di bawah konten supaya item terakhir tidak tertutup dok mengambang.
         val contentPadding = PaddingValues(
             top = statusTop,
-            bottom = navBottom + if (expanded) 24.dp else 112.dp,
+            bottom = navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
         )
 
         val host: @Composable (Modifier) -> Unit = { modifier ->
@@ -309,6 +326,17 @@ fun TaskifyApp(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 12.dp),
+            )
+        }
+
+        if (showMini) {
+            MiniPlayer(
+                onOpen = { navController.navigate(MusicRoute) { launchSingleTop = true } },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = if (expanded) 16.dp else 92.dp, start = 16.dp, end = 16.dp)
+                    .widthIn(max = 560.dp),
             )
         }
 
@@ -425,7 +453,16 @@ private fun TaskifyNavHost(
             )
         }
         composable<ShareRoute> {
-            ShareScreen(contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) })
+            ShareScreen(
+                contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
+                onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
+            )
+        }
+        composable<MusicRoute> {
+            MusicScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+        }
+        composable<TikTokRoute> { entry ->
+            TikTokScreen(contentPadding, initial = entry.toRoute<TikTokRoute>().input, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
         }
         composable<TagsRoute> {
             TagsScreen(contentPadding, onOpenTag = { navController.navigate(TagRoute(it)) }, onBack = navController.backIfPossible(), backButton = { BackButton(it) })

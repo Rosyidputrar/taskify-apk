@@ -109,6 +109,7 @@ dependencies {
     implementation(projects.feature.review)
     implementation(projects.feature.links)
     implementation(projects.feature.organize)
+    implementation(projects.feature.media)
     implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)
