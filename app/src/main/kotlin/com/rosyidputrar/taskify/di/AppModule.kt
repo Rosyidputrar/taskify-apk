@@ -146,7 +146,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
     single { com.rosyidputrar.taskify.ui.capture.CaptureDraft(androidContext()) }
-    single { DeviceLeftovers(androidContext(), get(), get(), get()) }
+    single { DeviceLeftovers(androidContext(), get(), get(), get(), get()) }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
     single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
     single { MusicPlayer(androidContext(), get()) }
@@ -168,12 +168,15 @@ private val deviceModule = module {
     single { ReminderPrefs(get()) }
     single { ReminderNotifier(androidContext(), get()) }
     single { ReminderScheduler(androidContext(), get(), get()) }
+    single { com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs(get()) }
+    single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
+    single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
     viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { GateViewModel(getOrNull(), getOrNull(), get()) }
-    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), getOrNull()) }
+    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), getOrNull(), get(), get()) }
 }
 
 /** Bagian yang butuh server (Supabase + PowerSync). Hanya dimuat bila konfigurasi lengkap. */

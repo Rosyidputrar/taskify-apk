@@ -37,6 +37,7 @@ class DeviceLeftovers(
     private val shareInbox: ShareInbox,
     private val lock: LockManager,
     private val captureDraft: com.rosyidputrar.taskify.ui.capture.CaptureDraft? = null,
+    private val contextPrefs: com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs? = null,
 ) {
     suspend fun clear() {
         // Notifikasi pengingat yang masih tampil memuat judul tugas akun lama.
@@ -45,6 +46,8 @@ class DeviceLeftovers(
         shareInbox.clear()
         // Draf sheet Tangkap yang belum disimpan.
         captureDraft?.clear()
+        // Riwayat "tagihan/anggaran sudah diberitahukan" milik akun lama.
+        contextPrefs?.forgetHistory()
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()

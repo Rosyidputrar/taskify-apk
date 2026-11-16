@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.settings
 
+import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import android.content.ClipData
 import android.text.format.Formatter
@@ -320,6 +321,44 @@ fun NotificationSection(viewModel: SettingsViewModel) {
             subtitle = "Hanya tertulis \"Ada pengingat tugas\" tanpa judulnya.",
             checked = ui.hideContent,
             onChange = viewModel::setHideContent,
+        )
+        ContextReminderSettings(viewModel)
+    }
+}
+
+/** Pengingat di luar tugas — dicek di latar (WorkManager), tetap jalan walau Taskify tidak dibuka. */
+@Composable
+private fun ContextReminderSettings(viewModel: SettingsViewModel) {
+    val c by viewModel.contextReminders.collectAsStateWithLifecycle()
+    var pickTime by remember { mutableStateOf(false) }
+    Spacer(Modifier.height(12.dp))
+    Text("Pengingat lain", style = MaterialTheme.typography.titleSmall)
+    SwitchRow(
+        title = "Tagihan jatuh tempo",
+        subtitle = "Transaksi berulang yang menunggu dicatat — langsung Catat atau Lewati dari notifikasi.",
+        checked = c.bills,
+        onChange = { v -> viewModel.setContextReminders { it.copy(bills = v) } },
+    )
+    SwitchRow(
+        title = "Anggaran hampir habis",
+        subtitle = "Saat pengeluaran mencapai batas peringatan anggaran, dan saat terlampaui.",
+        checked = c.budgets,
+        onChange = { v -> viewModel.setContextReminders { it.copy(budgets = v) } },
+    )
+    SwitchRow(
+        title = "Jaga streak jurnal",
+        subtitle = "Sekali di jam ${c.journalTime}, hanya bila streak akan putus.",
+        checked = c.journal,
+        onChange = { v -> viewModel.setContextReminders { it.copy(journal = v) } },
+    )
+    if (c.journal) {
+        TextButton(onClick = { pickTime = true }) { Text("Ubah jam pengingat jurnal (${c.journalTime})") }
+    }
+    if (pickTime) {
+        com.rosyidputrar.taskify.core.ui.TimePickerDialog(
+            c.journalTime,
+            onPick = { t -> pickTime = false; if (t != null) viewModel.setContextReminders { it.copy(journalTime = t.take(5)) } },
+            onDismiss = { pickTime = false },
         )
     }
 }

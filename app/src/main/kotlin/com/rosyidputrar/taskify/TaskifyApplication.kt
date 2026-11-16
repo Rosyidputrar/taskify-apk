@@ -36,6 +36,9 @@ class TaskifyApplication : Application() {
         // Alarm pengingat mengikuti data lokal (termasuk yang tiba lewat sync dari laptop).
         get<ReminderNotifier>().ensureChannel()
         get<ReminderScheduler>().start(get(APP_SCOPE_QUALIFIER))
+        // Tagihan jatuh tempo, anggaran, dan streak jurnal — tetap dicek walau Taskify tidak dibuka.
+        get<com.rosyidputrar.taskify.core.reminders.ContextNotifier>().ensureChannels()
+        get<com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler>().schedule()
         // Perubahan yang ditolak server diumumkan (bukan hanya tercatat di Pengaturan).
         com.rosyidputrar.taskify.session.RejectedChangesNotifier(get<com.rosyidputrar.taskify.core.data.TaskifyDatabase>().watchUploadErrorCount(), messenger, get(APP_SCOPE_QUALIFIER)).start()
         // Widget "Hari ini" mengikuti perubahan tugas (lokal maupun dari sinkron).
