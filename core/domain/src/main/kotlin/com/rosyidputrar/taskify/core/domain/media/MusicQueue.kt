@@ -18,6 +18,12 @@ data class Track(val videoId: String, val lyricsId: String, val upNext: List<Son
 
 data class TrackDetails(val lyricsId: String, val upNext: List<Song>)
 
+/** Asal audio hasil `/v1/stream/init` (atau poll): direct/R2/konverter + jenis audionya. */
+data class StreamSource(val source: String, val mimeType: String?, val itag: Int?) {
+    /** Jalur direct yang memilih opus (itag 251) — perlu dilacak, bisa gagal di perangkat tertentu. */
+    val isOpus: Boolean get() = mimeType?.contains("opus", ignoreCase = true) == true
+}
+
 enum class RepeatMode(val label: String) { Off("Ulang: mati"), All("Ulang semua"), One("Ulang satu lagu") }
 
 enum class YtStatus { Idle, Preparing, Playing, Paused, Error }
@@ -36,6 +42,8 @@ data class YtState(
     val shuffle: Boolean = false,
     val details: Map<String, TrackDetails> = emptyMap(),
     val detailsPending: List<String> = emptyList(),
+    /** Asal audio per lagu, dari respons init/poll (item 10-klien). */
+    val streams: Map<String, StreamSource> = emptyMap(),
     val continued: List<String> = emptyList(),
     val autoContinue: Boolean = true,
     val awaitingMore: Boolean = false,
@@ -52,6 +60,8 @@ sealed interface YtEvent {
     data object Preparing : YtEvent
     data class Progress(val percent: Int, val label: String) : YtEvent
     data class Ready(val videoId: String, val url: String) : YtEvent
+    /** Asal audio diketahui (init langsung / poll konverter selesai). */
+    data class StreamInfo(val videoId: String, val info: StreamSource) : YtEvent
     data object Playing : YtEvent
     data object Paused : YtEvent
     data object Ended : YtEvent
@@ -62,6 +72,8 @@ sealed interface YtEvent {
     data class PrefetchStart(val videoId: String) : YtEvent
     data class PrefetchDone(val videoId: String, val url: String) : YtEvent
     data class PrefetchFailed(val videoId: String) : YtEvent
+    /** Prefetch dibatalkan (lagu berubah) — bukan gagal, hanya tidak lagi ditunggu. */
+    data class PrefetchCancelled(val videoId: String) : YtEvent
     data object ToggleRepeat : YtEvent
     data class ToggleShuffle(val rng: Random = Random.Default) : YtEvent
     data class DetailsStart(val videoId: String) : YtEvent
@@ -154,6 +166,7 @@ object MusicQueue {
         YtEvent.Preparing -> state.copy(status = YtStatus.Preparing, percent = 0, label = "", error = "")
         is YtEvent.Progress -> if (state.status != YtStatus.Preparing) state else state.copy(percent = event.percent, label = event.label)
         is YtEvent.Ready -> state.copy(urls = state.urls + (event.videoId to event.url), percent = 100, label = "")
+        is YtEvent.StreamInfo -> state.copy(streams = state.streams + (event.videoId to event.info))
         YtEvent.Playing -> state.copy(status = YtStatus.Playing, error = "", percent = 100, label = "", awaitingMore = false)
         YtEvent.Paused -> if (state.status == YtStatus.Playing) state.copy(status = YtStatus.Paused) else state
         YtEvent.Ended -> {
@@ -174,6 +187,7 @@ object MusicQueue {
         is YtEvent.PrefetchStart -> if (event.videoId in state.prefetching) state else state.copy(prefetching = state.prefetching + event.videoId)
         is YtEvent.PrefetchDone -> state.copy(urls = state.urls + (event.videoId to event.url), prefetching = state.prefetching - event.videoId)
         is YtEvent.PrefetchFailed -> state.copy(prefetching = state.prefetching - event.videoId)
+        is YtEvent.PrefetchCancelled -> state.copy(prefetching = state.prefetching - event.videoId)
         is YtEvent.DetailsStart -> if (event.videoId in state.detailsPending) state else state.copy(detailsPending = state.detailsPending + event.videoId)
         is YtEvent.DetailsDone -> state.copy(details = state.details + (event.videoId to event.details), detailsPending = state.detailsPending - event.videoId)
         is YtEvent.DetailsFailed -> state.copy(

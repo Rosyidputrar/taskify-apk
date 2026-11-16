@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.rosyidputrar.taskify.core.domain.media.MusicQueue
 import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.StreamSource
 import com.rosyidputrar.taskify.core.domain.media.TrackDetails
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtState
@@ -48,6 +49,11 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
     private var resolveJob: Job? = null
     private var tickJob: Job? = null
     private var loadedId: String? = null
+    /** Poll prefetch per videoId — supaya bisa dibatalkan saat lagu berubah (item 9). */
+    private val prefetchJobs = mutableMapOf<String, Job>()
+
+    /** Paksa jalur konverter (diteruskan ke `MusicClient.resolveStreamInfo`, default mati). */
+    var forceConverter: Boolean = false
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -106,6 +112,7 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
 
     fun stop() {
         resolveJob?.cancel()
+        cancelPrefetchExcept(null)
         player.stop()
         player.clearMediaItems()
         loadedId = null
@@ -125,17 +132,42 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
             if (url != null) load(song, url) else resolveCurrent(song)
         }
         if (s.status == YtStatus.Playing && song != null && loadedId != song.videoId) s.urls[song.videoId]?.let { load(song, it) }
-        MusicQueue.prefetchTarget(s)?.let(::prefetch)
+        // Lagu berubah → poll prefetch lagu lain tidak lagi dibutuhkan, batalkan (item 9).
+        // Yang dipertahankan: lagu saat ini (prefetch-nya jadi sumber resolve, item 5) dan
+        // lagu berikut — dihitung dari state tanpa daftar prefetching, karena prefetchTarget
+        // mengembalikan null untuk lagu yang sudah di-prefetch (dan itu justru yang dijaga).
+        val target = MusicQueue.prefetchTarget(s)
+        val nextId = MusicQueue.prefetchTarget(s.copy(prefetching = emptyList()))
+        cancelPrefetchExcept(setOfNotNull(song?.videoId, nextId))
+        target?.let(::prefetch)
         MusicQueue.detailsTarget(s)?.let(::details)
     }
 
+    /** Batalkan semua poll prefetch kecuali yang videonya ada di [keep] (null = batalkan semua). */
+    private fun cancelPrefetchExcept(keep: Set<String>?) {
+        val it = prefetchJobs.entries.iterator()
+        while (it.hasNext()) {
+            val (id, job) = it.next()
+            if (keep == null || id !in keep) { job.cancel(); it.remove() }
+        }
+    }
+
     private fun resolveCurrent(song: Song) {
-        if (resolveJob?.isActive == true && resolvingId == song.videoId) return
-        resolveJob?.cancel()
+        if (resolveJob?.isActive == true) {
+            if (resolvingId == song.videoId) return
+            resolveJob?.cancel()
+        }
+        // Item 5: lagu ini sedang di-prefetch (jalur konverter) — jangan mulai resolve kedua
+        // (2x resolveStream + 2x loop poll > batas 60/menit, satu loop kena 429). Tunggu
+        // PrefetchDone: dispatch-nya memanggil effects() lagi, lalu URL yang sudah ada di-load.
+        if (song.videoId in _state.value.prefetching) return
+        cancelPrefetchExcept(setOf(song.videoId))
         resolvingId = song.videoId
         resolveJob = scope.launch {
             try {
-                val url = client.resolveStream(song.videoId) { p, label -> dispatch(YtEvent.Progress(p, label)) }
+                val info = client.resolveStreamInfo(song.videoId, forceConverter) { p, label -> dispatch(YtEvent.Progress(p, label)) }
+                val url = info.url ?: throw MusicException("Server musik tidak memberi URL audio.")
+                dispatch(YtEvent.StreamInfo(song.videoId, StreamSource(info.source.orEmpty(), info.mimeType, info.itag)))
                 if (_state.value.current?.videoId != song.videoId) return@launch
                 dispatch(YtEvent.Ready(song.videoId, url))
                 load(song, url)
@@ -149,11 +181,24 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
     private var resolvingId: String? = null
 
     private fun prefetch(videoId: String) {
+        if (prefetchJobs[videoId]?.isActive == true) return
         dispatch(YtEvent.PrefetchStart(videoId))
-        scope.launch {
-            runCatching { client.resolveStream(videoId) }
-                .onSuccess { dispatch(YtEvent.PrefetchDone(videoId, it)) }
+        val job = scope.launch {
+            runCatching { client.resolveStreamInfo(videoId, forceConverter) }
+                .onSuccess { info ->
+                    info.url?.let {
+                        dispatch(YtEvent.StreamInfo(videoId, StreamSource(info.source.orEmpty(), info.mimeType, info.itag)))
+                        dispatch(YtEvent.PrefetchDone(videoId, it))
+                    } ?: dispatch(YtEvent.PrefetchFailed(videoId))
+                }
                 .onFailure { if (it !is CancellationException) dispatch(YtEvent.PrefetchFailed(videoId)) }
+        }
+        prefetchJobs[videoId] = job
+        job.invokeOnCompletion { cause ->
+            if (prefetchJobs[videoId] == job) prefetchJobs.remove(videoId)
+            // Poll yang dibatalkan harus keluar dari daftar prefetching, kalau tidak state
+            // mengira lagu itu masih disiapkan dan resolve-nya tidak pernah dimulai lagi.
+            if (cause is CancellationException) dispatch(YtEvent.PrefetchCancelled(videoId))
         }
     }
 
