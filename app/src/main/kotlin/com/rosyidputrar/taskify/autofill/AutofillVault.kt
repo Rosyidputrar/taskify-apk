@@ -12,6 +12,7 @@ import com.rosyidputrar.taskify.R
 import com.rosyidputrar.taskify.core.domain.sandi.AutofillMatch
 import com.rosyidputrar.taskify.core.domain.sandi.AutofillTarget
 import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
+import com.rosyidputrar.taskify.core.domain.sandi.MatchStrength
 import com.rosyidputrar.taskify.core.sandi.SandiItem
 import com.rosyidputrar.taskify.core.sandi.SandiService
 import kotlinx.coroutines.flow.first
@@ -55,7 +56,15 @@ class AutofillVault(private val sandi: SandiService) {
 
     companion object {
         fun planSave(items: List<SandiItem>, target: AutofillTarget, username: String, password: String): SavePlan {
-            val existing = AutofillMatch.rank(items, target) { it.payload }.firstOrNull { it.payload.username == username }
+            // Hanya item yang BENAR-BENAR cocok yang boleh diperbarui: Exact, atau Domain untuk
+            // target web. Tanpa ini, aplikasi sideload dengan username sama bisa menimpa sandi
+            // item lain diam-diam (rank() dulu menyertakan kecocokan heuristik nama paket).
+            val existing = items
+                .filter {
+                    val s = AutofillMatch.strength(it.payload, target)
+                    s == MatchStrength.Exact || (target.webDomain != null && s == MatchStrength.Domain)
+                }
+                .firstOrNull { it.payload.username == username }
             if (existing != null) {
                 return if (existing.payload.password == password) SavePlan.Unchanged
                 else SavePlan.Update(existing.id, existing.payload.copy(password = password))
@@ -98,10 +107,23 @@ object AutofillDatasets {
         }.build()
     }
 
-    /** IntentSender ke activity; harus MUTABLE agar sistem bisa menambahkan AssistStructure. */
+    /**
+     * IntentSender ke activity. FILL harus MUTABLE: sistem menambahkan AssistStructure ke intent
+     * saat dataset autentikasi dipakai. SAVE tidak butuh itu → IMMUTABLE (lebih aman: intent
+     * tidak bisa diubah siapa pun setelah dibuat).
+     */
     @SuppressLint("WrongConstant")
-    fun sender(context: Context, intent: Intent, requestCode: Int): android.content.IntentSender {
-        val flags = PendingIntent.FLAG_CANCEL_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-        return PendingIntent.getActivity(context, requestCode, intent, flags).intentSender
+    fun sender(context: Context, intent: Intent, requestCode: Int, mutable: Boolean): android.content.IntentSender =
+        PendingIntent.getActivity(context, requestCode, intent, flagsFor(mutable)).intentSender
+
+    /** Bendera PendingIntent untuk [sender]: save = IMMUTABLE, fill = MUTABLE. */
+    internal fun flagsFor(mutable: Boolean): Int {
+        var flags = PendingIntent.FLAG_CANCEL_CURRENT
+        if (Build.VERSION.SDK_INT >= 31) {
+            flags = flags or if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
+        } else if (!mutable && Build.VERSION.SDK_INT >= 23) {
+            flags = flags or PendingIntent.FLAG_IMMUTABLE
+        }
+        return flags
     }
 }

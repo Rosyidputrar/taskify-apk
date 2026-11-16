@@ -24,7 +24,8 @@ import org.koin.core.component.inject
  *   paket aplikasi langsung ditawarkan (maks. 5), plus "Cari di Sandi…".
  * - Brankas terkunci: hanya "Buka Sandi" — membuka brankas (sidik jari bila perangkat diingat, atau
  *   master password) lalu memilih item. Isi brankas tidak pernah dikirim ke sistem sebelum terbuka.
- * - Sandi baru yang diketik bisa disimpan / memperbarui item lewat dialog simpan sistem.
+ * - Sandi baru yang diketik bisa disimpan / memperbarui item lewat jendela konfirmasi Sandi
+ *   (tidak pernah diam-diam, baik brankas terbuka maupun terkunci).
  */
 class TaskifyAutofillService : AutofillService(), KoinComponent {
     private val vault: AutofillVault by inject()
@@ -64,16 +65,14 @@ class TaskifyAutofillService : AutofillService(), KoinComponent {
         val password = form?.passwordValue
         if (form == null || password == null || form.target.packageName == packageName) return callback.onSuccess()
         val username = form.username?.value.orEmpty()
-        scope.launch {
-            val items = vault.unlockedItems()
-            when {
-                items != null -> runCatching { vault.save(items, form.target, username, password) }
-                    .onSuccess { callback.onSuccess() }
-                    .onFailure { callback.onFailure("Gagal menyimpan ke Sandi: ${it.message}") }
-                // Terkunci: buka Sandi dulu (activity), kredensial dititipkan di memori proses saja.
-                Build.VERSION.SDK_INT >= 28 -> callback.onSuccess(SandiAutofillActivity.saveSender(this@TaskifyAutofillService, PendingSave(form.target, username, password)))
-                else -> callback.onFailure("Buka Sandi di Taskify dulu, lalu masuk lagi untuk menyimpan sandi ini.")
-            }
+        // SELALU minta konfirmasi di SandiAutofillActivity (mode simpan): layanan tidak pernah
+        // menulis / menimpa brankas diam-diam, baik brankas terbuka maupun terkunci. Tanpa ini,
+        // aplikasi sideload dengan username sama bisa menimpa sandi item lain tanpa sepengetahuan
+        // pengguna (planSave dulu memakai rank() heuristik nama paket).
+        if (Build.VERSION.SDK_INT >= 28) {
+            callback.onSuccess(SandiAutofillActivity.saveSender(this@TaskifyAutofillService, PendingSave(form.target, username, password)))
+        } else {
+            callback.onFailure("Buka Sandi di Taskify dulu, lalu masuk lagi untuk menyimpan sandi ini.")
         }
     }
 

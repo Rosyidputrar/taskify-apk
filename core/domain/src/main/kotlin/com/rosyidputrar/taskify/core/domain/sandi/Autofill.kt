@@ -1,12 +1,14 @@
 package com.rosyidputrar.taskify.core.domain.sandi
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 /**
  * Logika Isi Otomatis (Autofill) Sandi yang tidak bergantung pada Android: mencocokkan item dengan
  * aplikasi/situs yang meminta, dan mengenali kolom nama pengguna & sandi pada formulir.
  */
 
 /** Siapa yang meminta isi otomatis: [webDomain] (dari browser) atau aplikasi [packageName]. */
-data class AutofillTarget(val packageName: String, val webDomain: String? = null) {
+data class AutofillTarget(val packageName: String, val webDomain: String? = null, val scheme: String? = null) {
     val isBrowser: Boolean get() = packageName in KNOWN_BROWSERS
 
     /** Label untuk pengguna: domain situs, atau nama paket aplikasi. */
@@ -25,32 +27,82 @@ data class AutofillTarget(val packageName: String, val webDomain: String? = null
 }
 
 /** Seberapa cocok satu item dengan [AutofillTarget]. */
-enum class MatchStrength(val score: Int) { None(0), Related(1), Domain(2), Exact(3) }
+enum class MatchStrength(val score: Int) { None(0), Domain(2), Exact(3) }
 
 object AutofillMatch {
-    /** Sufiks dua tingkat yang lazim (cukup untuk Indonesia & situs umum; bukan daftar PSL penuh). */
+    /**
+     * Sufiks dua tingkat yang lazim — CADANGAN bila daftar Public Suffix List (OkHttp) tidak bisa
+     * dipakai untuk sebuah host. Jalur utama [registrable] memakai PSL OkHttp (Mozilla PSL,
+     * termasuk bagian privat: github.io, vercel.app, pages.dev, dsb.); daftar ini hanya menambal
+     * host yang tidak lolos parse HttpUrl. Sumber: https://publicsuffix.org/list/
+     */
     private val TWO_LEVEL_SUFFIXES = setOf(
         "co.id", "ac.id", "go.id", "or.id", "web.id", "my.id", "sch.id", "net.id", "biz.id", "mil.id", "ponpes.id", "desa.id",
         "co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "org.au", "co.jp", "ne.jp", "com.sg", "com.my", "com.br",
         "co.in", "co.kr", "com.cn", "com.tw", "com.hk", "co.nz", "com.tr", "com.mx", "com.ph", "com.vn", "co.th",
+        "co.za", "com.ar", "com.pl", "com.pe", "com.eg", "com.ng", "com.sa", "com.ae",
+        // Hosting/platform: tiap subdomain pengguna adalah domain sendiri (PSL, bagian privat).
+        "github.io", "gitlab.io", "vercel.app", "netlify.app", "web.app", "firebaseapp.com",
+        "appspot.com", "azurewebsites.net", "herokuapp.com", "pages.dev", "workers.dev",
+        "cloudfront.net", "s3.amazonaws.com", "onrender.com", "fly.dev", "railway.app",
+        "glitch.me", "repl.co", "supabase.co", "notion.site", "webflow.io", "wordpress.com",
+        "blogspot.com", "blogspot.co.id", "github.dev", "codeberg.page", "neocities.org",
     )
 
     private const val ANDROID_SCHEME = "androidapp://"
+
+    private val IPV4_LITERAL = Regex("""\d{1,3}(\.\d{1,3}){3}""")
+    private val PACKAGE_SEGMENT = Regex("[A-Za-z_][A-Za-z0-9_]*")
+
+    /** True bila [host] adalah literal IP (v4/v6): bukan nama domain, tidak punya registrable. */
+    fun isIpLiteral(host: String): Boolean {
+        if (':' in host) return true // IPv6
+        if (!IPV4_LITERAL.matches(host)) return false
+        return host.split('.').all { it.toInt() <= 255 }
+    }
+
+    /** Skema URL ("https"/"http"/"androidapp"), null bila tidak ada. */
+    fun schemeOf(url: String): String? {
+        val scheme = url.trim().lowercase().substringBefore("://", "")
+        return scheme.takeIf { it.isNotEmpty() && it.all { c -> c.isLetterOrDigit() || c in "+-." } }
+    }
+
+    /** Tampilan host untuk pengguna: host berhuruf non-ASCII ditampilkan sebagai punycode (anti-homograph). */
+    fun displayHost(host: String): String {
+        if (host.all { it.code < 128 }) return host
+        return runCatching { java.net.IDN.toASCII(host) }.getOrNull() ?: host
+    }
 
     /** "https://Login.Example.com:443/a?b" → "login.example.com"; bukan URL/host → null. */
     fun host(url: String): String? {
         var s = url.trim().lowercase()
         if (s.isEmpty() || s.startsWith(ANDROID_SCHEME) || s.startsWith("android://")) return null
         s = s.substringAfter("://")
+        // Literal IPv6 "[::1]:8080" → "::1".
+        if (s.startsWith("[")) {
+            val end = s.indexOf(']')
+            if (end < 0) return null
+            return s.substring(1, end).takeIf { it.isNotEmpty() }
+        }
         s = s.substringBefore('/').substringBefore('?').substringBefore('#')
         s = s.substringAfterLast('@').substringBefore(':').trimEnd('.')
         if (s.startsWith("www.")) s = s.removePrefix("www.")
         if (s.isEmpty() || ' ' in s || !s.contains('.')) return null
+        if (s.length > 253) return null
+        // Validasi label: kosong, terlalu panjang, atau diawali/diakhiri '-' → bukan host.
+        if (s.split('.').any { it.isEmpty() || it.length > 63 || it.startsWith('-') || it.endsWith('-') || it.any { c -> c.isWhitespace() || c.code < 0x21 } }) return null
         return s
     }
 
-    /** Domain yang bisa didaftarkan: "a.b.tokopedia.co.id" → "tokopedia.co.id". */
+    /**
+     * Domain yang bisa didaftarkan: "a.b.tokopedia.co.id" → "tokopedia.co.id".
+     * Literal IP dikembalikan apa adanya (192.168.1.1 bukan "satu domain" dengan 10.0.1.1).
+     * Jalur utama memakai Public Suffix List OkHttp; fallback daftar [TWO_LEVEL_SUFFIXES].
+     */
     fun registrable(host: String): String {
+        if (isIpLiteral(host)) return host
+        val viaPsl = runCatching { "https://$host".toHttpUrlOrNull()?.topPrivateDomain() }.getOrNull()
+        if (viaPsl != null) return viaPsl
         val labels = host.split('.')
         if (labels.size <= 2) return host
         val lastTwo = labels.takeLast(2).joinToString(".")
@@ -66,13 +118,33 @@ object AutofillMatch {
             s.startsWith("android://", ignoreCase = true) -> s.substring("android://".length)
             else -> return null
         }
-        return rest.substringBefore('/').substringAfterLast('@').takeIf { it.isNotBlank() }
+        val pkg = rest.substringBefore('/').substringBefore('?').substringBefore('#')
+        // '@' bukan bagian nama paket: "androidapp://com.bca@com.evil" bukan item com.bca.
+        if (pkg.isBlank() || '@' in pkg) return null
+        if (!pkg.split('.').all { PACKAGE_SEGMENT.matches(it) }) return null
+        return pkg
     }
 
+    /**
+     * Kecocokan item dengan target.
+     *
+     * Web (ada [AutofillTarget.webDomain]): Exact bila host sama, Domain bila registrable sama.
+     * Item https TIDAK ditawarkan ke target http (skema diketahui) — sandi https tidak boleh
+     * diisi ke halaman plaintext.
+     *
+     * Aplikasi non-browser: HANYA ikatan eksplisit `androidapp://` yang boleh Exact. Heuristik
+     * nama paket (prefix/reversed/nama, dulu: Domain/Related) DIHAPUS — paket sideload seperti
+     * `com.google.evil` atau `com.tokopedia.evil` tidak boleh menerima item `google.com` /
+     * `tokopedia.com` sebagai dataset langsung. Item lain tetap bisa dipilih manual di picker
+     * (dengan dialog konfirmasi yang menampilkan paket peminta).
+     *
+     * Browser tanpa domain web (dikenal maupun tidak): tidak ada tebakan dari nama paket.
+     */
     fun strength(item: ItemPayload, target: AutofillTarget): MatchStrength {
         val web = target.webDomain?.let(::host)
         if (web != null) {
             val itemHost = host(item.url) ?: return MatchStrength.None
+            if (target.scheme == "http" && schemeOf(item.url) == "https") return MatchStrength.None
             return when {
                 itemHost == web -> MatchStrength.Exact
                 registrable(itemHost) == registrable(web) -> MatchStrength.Domain
@@ -83,13 +155,6 @@ object AutofillMatch {
         if (target.isBrowser) return MatchStrength.None
         val pkg = target.packageName.lowercase()
         packageOf(item.url)?.let { return if (it.lowercase() == pkg) MatchStrength.Exact else MatchStrength.None }
-        val itemHost = host(item.url) ?: return MatchStrength.None
-        // "tokopedia.com" ↔ com.tokopedia.tkpd ; "bca.co.id" ↔ com.bca / id.co.bca.mobile
-        val reg = registrable(itemHost).split('.')
-        val reversed = reg.reversed().joinToString(".")
-        if (pkg == reversed || pkg.startsWith("$reversed.")) return MatchStrength.Domain
-        val name = reg.first()
-        if (name.length >= 4 && pkg.split('.').any { it == name }) return MatchStrength.Related
         return MatchStrength.None
     }
 
@@ -101,8 +166,14 @@ object AutofillMatch {
             .map { it.first }
 
     /** Isi kolom URL item baru yang disimpan dari formulir. */
-    fun urlFor(target: AutofillTarget): String =
-        target.webDomain?.let(::host)?.let { "https://$it" } ?: "$ANDROID_SCHEME${target.packageName}"
+    fun urlFor(target: AutofillTarget): String {
+        val web = target.webDomain?.let(::host)
+        if (web != null) {
+            val scheme = target.scheme?.takeIf { it == "http" || it == "https" } ?: "https"
+            return "$scheme://$web"
+        }
+        return "$ANDROID_SCHEME${target.packageName}"
+    }
 }
 
 /** Satu kolom formulir, diringkas dari ViewNode Android (supaya bisa diuji tanpa Android). */

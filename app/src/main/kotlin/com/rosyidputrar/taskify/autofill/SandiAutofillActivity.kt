@@ -29,6 +29,7 @@ import com.rosyidputrar.taskify.core.domain.sandi.trustState
 import com.rosyidputrar.taskify.core.sandi.DeviceAuthException
 import com.rosyidputrar.taskify.core.sandi.SandiItem
 import com.rosyidputrar.taskify.core.sandi.SandiService
+import com.rosyidputrar.taskify.core.sandi.SandiSession
 import com.rosyidputrar.taskify.core.sandi.SandiUserException
 import com.rosyidputrar.taskify.core.sandi.VaultStatus
 import com.rosyidputrar.taskify.data.AppPreferences
@@ -43,19 +44,33 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** Kredensial dari formulir yang menunggu brankas dibuka untuk disimpan (memori proses saja). */
-data class PendingSave(val target: AutofillTarget, val username: String, val password: String)
+data class PendingSave(val target: AutofillTarget, val username: String, val password: String) {
+    /** Jangan pernah mencetak sandi ke log (data class mencetak semua field). */
+    override fun toString(): String = "PendingSave(target=$target, username=$username, password=•••)"
+}
 
 internal object PendingSaves {
     private const val TTL_MS = 10 * 60_000L
     private val map = ConcurrentHashMap<String, Pair<Long, PendingSave>>()
 
-    fun put(save: PendingSave): String {
-        val now = System.currentTimeMillis()
+    private fun purgeExpired(now: Long = System.currentTimeMillis()) {
         map.entries.removeIf { now - it.value.first > TTL_MS }
-        return UUID.randomUUID().toString().also { map[it] = now to save }
     }
 
-    fun take(token: String?): PendingSave? = token?.let { map.remove(it) }?.takeIf { System.currentTimeMillis() - it.first <= TTL_MS }?.second
+    fun put(save: PendingSave): String {
+        purgeExpired()
+        return UUID.randomUUID().toString().also { map[it] = System.currentTimeMillis() to save }
+    }
+
+    fun take(token: String?): PendingSave? {
+        purgeExpired()
+        return token?.let { map.remove(it) }?.takeIf { System.currentTimeMillis() - it.first <= TTL_MS }?.second
+    }
+
+    /** Hapus semua kredensial tertunda — dipanggil saat brankas dikunci. */
+    fun clear() {
+        map.clear()
+    }
 }
 
 enum class AutofillMode { Fill, Save }
@@ -131,6 +146,9 @@ class AutofillViewModel(
                         saveTarget = st.pending?.let { p -> matches.firstOrNull { it.payload.username == p.username } },
                     )
                 }
+                // Brankas dikunci (lagi) selagi jendela ini terbuka: kredensial tertunda yang
+                // belum diambil jangan bertahan melewati kunci.
+                if (phase == VaultPhase.Locked) PendingSaves.clear()
                 if (canDevice && !autoPrompted) {
                     autoPrompted = true
                     unlockWithDevice()
@@ -151,17 +169,25 @@ class AutofillViewModel(
 
     fun unlockWithDevice() = run {
         try {
-            sandi.unlockTrusted()
+            // unlockTrusted() mengembalikan false (bukan exception) bila tidak ada kunci / kunci
+            // perangkat gagal dibaca: jangan diam — beri tahu pengguna.
+            if (!sandi.unlockTrusted()) {
+                _state.update { it.copy(error = "Tidak bisa membuka dengan sidik jari / kunci layar. Coba master password.") }
+            }
         } catch (e: DeviceAuthException) {
             _state.update { it.copy(error = e.message) }
         }
     }
 
-    fun query(text: String) = _state.update { it.copy(query = text) }
+    fun query(text: String) {
+        sandi.session.touch() // interaksi picker menunda kunci idle
+        _state.update { it.copy(query = text) }
+    }
 
     /** Simpan kredensial tertunda; [onDone] dipanggil setelah berhasil. */
     fun save(onDone: () -> Unit) {
         val p = _state.value.pending ?: return
+        sandi.session.touch()
         run {
             vault.save(_state.value.items, p.target, p.username, p.password)
             _state.update { it.copy(saved = true) }
@@ -238,6 +264,14 @@ class SandiAutofillActivity : FragmentActivity() {
 
     private fun fill(item: SandiItem) {
         val f = form ?: return
+        // TOCTOU: dataset snapshot dari buildResponse() bisa sudah basi — brankas mungkin sudah
+        // terkunci antara layanan membangun daftar dan pengguna memilih item. Periksa ulang di
+        // sini, dan tolak (bukan isi) bila brankas sudah tidak terbuka.
+        if (!canFillNow(sandi.session)) {
+            finishWith(RESULT_CANCELED, null)
+            return
+        }
+        sandi.session.touch()
         val dataset = AutofillDatasets.item(this, f, item.payload)
         finishWith(RESULT_OK, Intent().putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, dataset))
     }
@@ -258,13 +292,19 @@ class SandiAutofillActivity : FragmentActivity() {
         private const val EXTRA_TOKEN = "token"
 
         fun fillSender(context: Context) =
-            AutofillDatasets.sender(context, Intent(context, SandiAutofillActivity::class.java).setAction(ACTION_FILL), 1)
+            AutofillDatasets.sender(context, Intent(context, SandiAutofillActivity::class.java).setAction(ACTION_FILL), 1, mutable = true)
 
         fun saveSender(context: Context, save: PendingSave) = AutofillDatasets.sender(
             context,
             Intent(context, SandiAutofillActivity::class.java).setAction(ACTION_SAVE).putExtra(EXTRA_TOKEN, PendingSaves.put(save)),
-            2,
+            2, mutable = false,
         )
+
+        /**
+         * Predikat yang dipakai [SandiAutofillActivity.fill]: brankas harus MASIH terbuka saat
+         * item dipilih (TOCTOU). `false` bila terkunci atau sudah lewat batas kunci otomatis.
+         */
+        internal fun canFillNow(session: SandiSession): Boolean = session.openForAutofill() != null
 
         /** Item yang dipilih manual tetapi tidak cocok dengan target → minta konfirmasi (anti-phishing). */
         fun needsConfirm(item: SandiItem, target: AutofillTarget): Boolean =

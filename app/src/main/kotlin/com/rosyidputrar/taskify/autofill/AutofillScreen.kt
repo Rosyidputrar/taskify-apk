@@ -70,7 +70,7 @@ fun AutofillContent(state: AutofillUiState, actions: AutofillActions) {
                 Text("SANDI · ISI OTOMATIS", style = TaskifyTextStyles.indexLabel, color = accent)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (state.mode == AutofillMode.Save) "Simpan ke Sandi?" else "Isi untuk ${state.target.label}",
+                    if (state.mode == AutofillMode.Save) "Simpan ke Sandi?" else "Isi untuk ${AutofillMatch.displayHost(state.target.label)}",
                     style = MaterialTheme.typography.headlineSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -100,14 +100,29 @@ fun AutofillContent(state: AutofillUiState, actions: AutofillActions) {
         }
     }
     confirm?.let { item ->
+        // Host non-ASCII ditampilkan sebagai punycode: "gооgle.com" (huruf Cyrillic) tidak boleh
+        // terlihat sama dengan "google.com" di dialog konfirmasi anti-phishing.
+        val itemOrigin = AutofillMatch.host(item.payload.url)?.let(AutofillMatch::displayHost)
+            ?: AutofillMatch.packageOf(item.payload.url) ?: "alamat lain"
+        val targetLabel = AutofillMatch.displayHost(state.target.label)
+        val homograph = (item.payload.url + state.target.label).any { it.code >= 128 }
         AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text("Alamat tidak cocok") },
             text = {
-                Text(
-                    "“${item.payload.title}” tersimpan untuk ${AutofillMatch.host(item.payload.url) ?: AutofillMatch.packageOf(item.payload.url) ?: "alamat lain"}, " +
-                        "bukan ${state.target.label}. Pastikan ini bukan halaman palsu sebelum mengisi sandi.",
-                )
+                Column {
+                    Text(
+                        "“${item.payload.title}” tersimpan untuk $itemOrigin, " +
+                            "bukan $targetLabel. Pastikan ini bukan halaman palsu sebelum mengisi sandi.",
+                    )
+                    if (homograph) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Alamat ini memakai huruf non-ASCII yang bisa terlihat mirip huruf Latin. Periksa ejaannya huruf per huruf.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             },
             confirmButton = { TextButton(onClick = { confirm = null; actions.pick(item) }) { Text("Tetap isi") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Batal") } },
@@ -230,7 +245,8 @@ private fun SavePanel(state: AutofillUiState, actions: AutofillActions) {
         )
         Field("Alamat", AutofillMatch.urlFor(state.target))
         Field("Nama pengguna", p.username.ifBlank { "—" })
-        Field("Sandi", "•".repeat(p.password.length.coerceIn(8, 16)))
+        // Jumlah bullet TETAP: panjang sandi tidak boleh bocor dari panel konfirmasi.
+        Field("Sandi", "•".repeat(8))
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
