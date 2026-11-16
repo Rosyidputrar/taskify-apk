@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.calendar
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -135,6 +137,9 @@ fun CalendarContent(
     onOpenTransaction: (id: String?, date: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Finance) },
     onOpenVault: (kind: String, id: String) -> Unit = { _, _ -> onOpenModule(TaskifyModule.Vault) },
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticCalendarActions(actions, haptics) }
     val listState = rememberLazyListState()
     // Grid bulan adalah item ke-2; setelah tergulir keluar, strip minggu muncul di atas.
     val collapsed by remember { derivedStateOf { listState.firstVisibleItemIndex >= 3 } }
@@ -394,3 +399,11 @@ private fun AgendaRow(
     }
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticCalendarActions(private val a: CalendarActions, private val h: TaskifyHaptics) : CalendarActions by a {
+    override fun select(date: String) { h.tick(); a.select(date) }
+    override fun shift(months: Long) { h.tick(); a.shift(months) }
+    override fun goToday() { h.tick(); a.goToday() }
+    override fun toggleKind(kind: CalendarKind) { h.tick(); a.toggleKind(kind) }
+    override fun quickAdd(text: String) { if (text.isNotBlank()) h.success(); a.quickAdd(text) }
+}

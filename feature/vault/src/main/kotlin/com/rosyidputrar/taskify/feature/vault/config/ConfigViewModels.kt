@@ -126,6 +126,9 @@ data class ConfigEditorUiState(
     val error: String? = null,
 ) {
     val unchanged get() = !isNew && text == baseText
+
+    /** Ada ketikan yang akan hilang bila editor ditinggalkan. */
+    val dirty get() = loaded && if (isNew) name.isNotBlank() || text.isNotBlank() || note.isNotBlank() else text != baseText || note.isNotBlank()
 }
 
 interface ConfigEditorActions {

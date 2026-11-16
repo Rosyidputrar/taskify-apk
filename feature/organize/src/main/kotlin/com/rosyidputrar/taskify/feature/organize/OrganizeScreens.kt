@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.organize
 
+import com.rosyidputrar.taskify.core.store.cross.SecretTrashRow
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -197,6 +201,9 @@ fun daysLeft(deletedAt: String?, now: Long): Int {
 
 @Composable
 fun TrashContent(state: TrashUiState, actions: TrashActions, contentPadding: PaddingValues, onBack: (() -> Unit)? = null, backButton: @Composable (() -> Unit) -> Unit = {}) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticTrashActions(actions, haptics) }
     var confirmEmpty by rememberSaveable { mutableStateOf(false) }
     var confirmRow by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmSecret by rememberSaveable { mutableStateOf<String?>(null) }
@@ -295,3 +302,8 @@ fun TrashContent(state: TrashUiState, actions: TrashActions, contentPadding: Pad
     }
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticTrashActions(private val a: TrashActions, private val h: TaskifyHaptics) : TrashActions by a {
+    override fun restore(row: EntityRow) { h.success(); a.restore(row) }
+    override fun restoreSecret(row: SecretTrashRow) { h.success(); a.restoreSecret(row) }
+}

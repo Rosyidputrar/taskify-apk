@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +60,11 @@ import org.koin.core.parameter.parametersOf
 fun JournalEditorScreen(args: JournalEditorArgs, onBack: () -> Unit) {
     val vm: JournalEditorViewModel = koinViewModel(key = "journal-editor-$args") { parametersOf(args) }
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // Item yang dibuka → shortcut launcher "terakhir dibuka" (aplikasi yang memutuskan boleh/tidak).
+    LaunchedEffect(ui.id, ui.loaded, ui.title) {
+        val id = ui.id
+        if (ui.loaded && id != null && !ui.trashed) com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.report("journal_entry", id, ui.title)
+    }
     val saveState by vm.saveState.collectAsStateWithLifecycle()
     val tags by vm.tagState.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.flush() }

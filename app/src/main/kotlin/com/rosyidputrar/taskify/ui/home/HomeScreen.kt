@@ -1,5 +1,19 @@
 package com.rosyidputrar.taskify.ui.home
 
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.FilledTonalButton
+import com.rosyidputrar.taskify.core.domain.home.HomeTile
+import com.rosyidputrar.taskify.core.domain.home.HomeSection
+import com.rosyidputrar.taskify.core.domain.home.HomeLayout
+import com.rosyidputrar.taskify.core.domain.calendar.DayActivity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.semantics.contentDescription
 import com.rosyidputrar.taskify.core.designsystem.component.SkeletonCard
 import androidx.compose.ui.platform.LocalDensity
@@ -75,7 +89,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    HomeContent(state, displayName, contentPadding, onOpenModule, onOpenTask, viewModel::toggle, viewModel::quickAdd)
+    HomeContent(state, displayName, contentPadding, onOpenModule, onOpenTask, viewModel::toggle, viewModel::quickAdd, viewModel::setLayout)
 }
 
 @Composable
@@ -87,47 +101,70 @@ fun HomeContent(
     onOpenTask: (String) -> Unit,
     onToggle: (Task) -> Unit,
     onQuickAdd: (String) -> Unit,
+    onLayoutChange: (HomeLayout) -> Unit = {},
 ) {
     val today = state.today
+    val layout = state.layout
+    var arranging by rememberSaveable { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { TodayHeader(today, homeGreeting(Dates.greeting(), displayName)) }
+        item(key = "header") { TodayHeader(today, homeGreeting(Dates.greeting(), displayName), onArrange = { arranging = true }) }
         if (state.rejectedChanges > 0) {
             item(key = "rejected") { RejectedChangesBanner(state.rejectedChanges, onOpen = { onOpenModule(TaskifyModule.Settings) }) }
         }
-        item { WeekRibbon(today, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
+        val sections = layout.visibleSections
         if (!state.loaded) {
+            if (HomeSection.Week in sections) item(key = "week") { WeekRibbon(today, state.week, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
             // Data pertama dari database lokal belum tiba: kerangka Fokus, ringkasan, dan lini waktu.
             item(key = "skeleton") { HomeSkeleton() }
             return@LazyColumn
         }
-        item { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
-        item { SummaryBento(state, onOpenModule) }
-        item {
-            Text(
-                "Aktivitas hari ini",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 20.dp).semantics { heading() },
-            )
-        }
-        if (state.loaded && state.activity.isEmpty()) {
-            item {
+        if (sections.isEmpty()) {
+            item(key = "all-hidden") {
                 EmptyState(
-                    TaskifyModule.Calendar,
-                    title = "Lini waktu masih kosong",
-                    message = "Tugas, jurnal, catatan, dan transaksi hari ini akan tersusun di sini menurut jamnya.",
+                    TaskifyModule.Home,
+                    title = "Beranda dikosongkan",
+                    message = "Semua bagian sedang disembunyikan. Ketuk ikon susun di atas untuk menampilkannya lagi.",
                 )
             }
         }
-        items(state.activity, key = { "${it.kind}-${it.id}" }) { item ->
-            TimelineRow(item, onClick = {
-                when (item.kind) {
-                    ActivityKind.Task -> onOpenTask(item.id)
-                    ActivityKind.Journal -> AppEvents.send(AppEvent.OpenJournal(id = item.id))
-                    ActivityKind.Note -> AppEvents.send(AppEvent.OpenNote(id = item.id))
-                    ActivityKind.Transaction -> AppEvents.send(AppEvent.OpenTransaction(id = item.id))
-                }
-            })
+        sections.forEach { section ->
+            when (section) {
+                HomeSection.Week -> item(key = "week") { WeekRibbon(today, state.week, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
+                HomeSection.Focus -> item(key = "focus") { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
+                HomeSection.Summary -> if (layout.visibleTiles.isNotEmpty()) item(key = "summary") { SummaryBento(state, layout.visibleTiles, onOpenModule) }
+                HomeSection.Activity -> activitySection(state, onOpenTask)
+            }
         }
+    }
+    if (arranging) HomeLayoutSheet(layout, onLayoutChange, onDismiss = { arranging = false })
+}
+
+private fun LazyListScope.activitySection(state: HomeUiState, onOpenTask: (String) -> Unit) {
+    item(key = "activity-title") {
+        Text(
+            "Aktivitas hari ini",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 20.dp).semantics { heading() },
+        )
+    }
+    if (state.activity.isEmpty()) {
+        item(key = "activity-empty") {
+            EmptyState(
+                TaskifyModule.Calendar,
+                title = "Lini waktu masih kosong",
+                message = "Tugas, jurnal, catatan, dan transaksi hari ini akan tersusun di sini menurut jamnya.",
+            )
+        }
+    }
+    items(state.activity, key = { "${it.kind}-${it.id}" }) { item ->
+        TimelineRow(item, onClick = {
+            when (item.kind) {
+                ActivityKind.Task -> onOpenTask(item.id)
+                ActivityKind.Journal -> AppEvents.send(AppEvent.OpenJournal(id = item.id))
+                ActivityKind.Note -> AppEvents.send(AppEvent.OpenNote(id = item.id))
+                ActivityKind.Transaction -> AppEvents.send(AppEvent.OpenTransaction(id = item.id))
+            }
+        })
     }
 }
 
@@ -168,11 +205,16 @@ private fun RejectedChangesBanner(count: Long, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun TodayHeader(today: String, greeting: String) {
+private fun TodayHeader(today: String, greeting: String, onArrange: () -> Unit) {
     val date = Dates.parse(today)
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) {
-        IndexTab(TaskifyModule.Home, text = greeting)
-        Spacer(Modifier.height(12.dp))
+    Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { IndexTab(TaskifyModule.Home, text = greeting) }
+            IconButton(onClick = onArrange) {
+                Icon(Icons.Outlined.Tune, contentDescription = "Susun Beranda", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Text(Dates.format(today, "EEEE"), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             "${date.dayOfMonth} ${Dates.format(today, "MMMM")}",
@@ -180,31 +222,68 @@ private fun TodayHeader(today: String, greeting: String) {
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))
-        RuledLine()
+        Box(Modifier.padding(end = 12.dp)) { RuledLine() }
     }
 }
 
-/** Strip 7 hari (3 hari lalu → 3 hari depan). Ketuk hari → Kalender. */
+/**
+ * Strip 7 hari (3 hari lalu → 3 hari depan). Ketuk hari → Kalender. Titik di bawah tanggal =
+ * ada tugas / jurnal / catatan / transaksi hari itu (warna modul masing-masing).
+ */
 @Composable
-private fun WeekRibbon(today: String, onSelect: (String) -> Unit) {
+private fun WeekRibbon(today: String, week: Map<String, DayActivity>, onSelect: (String) -> Unit) {
     val days = (-3L..3L).map { Dates.addDays(today, it) }
+    val modules = TaskifyTheme.modules
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(days, key = { it }) { day ->
             val isToday = day == today
+            val activity = week[day] ?: DayActivity()
+            val dots = weekDots(activity)
+            val description = buildString {
+                append(Dates.format(day, "EEEE, d MMMM"))
+                if (isToday) append(", hari ini")
+                dots.forEach { (kind, count) -> append(", $count ${kind.label}") }
+            }
             Surface(
                 onClick = { onSelect(day) },
                 shape = MaterialTheme.shapes.medium,
                 color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { contentDescription = description },
             ) {
-                Column(Modifier.width(52.dp).padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.width(52.dp).padding(top = 10.dp, bottom = 8.dp).clearAndSetSemantics {},
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(Dates.format(day, "EEE"), style = MaterialTheme.typography.labelMedium)
                     Text(Dates.parse(day).dayOfMonth.toString(), style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(4.dp))
+                    // Tinggi tetap: hari tanpa aktivitas tidak membuat pita "meloncat".
+                    Row(Modifier.height(6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        dots.forEach { (kind, _) ->
+                            val color = if (isToday) MaterialTheme.colorScheme.onPrimary else modules.accent(kind.module)
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+private enum class DotKind(val label: String, val module: TaskifyModule) {
+    Tasks("tugas", TaskifyModule.Tasks),
+    Journal("jurnal", TaskifyModule.Journal),
+    Notes("catatan", TaskifyModule.Notes),
+    Money("transaksi", TaskifyModule.Finance),
+}
+
+private fun weekDots(a: DayActivity): List<Pair<DotKind, Int>> = listOfNotNull(
+    a.tasks.takeIf { it > 0 }?.let { DotKind.Tasks to it },
+    a.journal.takeIf { it > 0 }?.let { DotKind.Journal to it },
+    a.notes.takeIf { it > 0 }?.let { DotKind.Notes to it },
+    a.transactions.takeIf { it > 0 }?.let { DotKind.Money to it },
+)
 
 @Composable
 private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: (String) -> Unit, onQuickAdd: (String) -> Unit, onSeeAll: () -> Unit) {
@@ -235,6 +314,12 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                     }
                 }
                 state.progress[top.id]?.takeIf { it.total > 0 }?.let { ProgressRing(it.done, it.total, accent, size = 40.dp, stroke = 4.dp, showLabel = true) }
+            }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = { AppEvents.send(AppEvent.OpenFocus(top.id)) }) {
+                Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Mulai fokus")
             }
             val rest = state.focus.drop(1).take(4)
             val largeFont = LocalDensity.current.fontScale > 1.3f
@@ -272,41 +357,52 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
 private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String, val icon: ImageVector? = null)
 
 @Composable
-private fun SummaryBento(state: HomeUiState, onOpenModule: (TaskifyModule) -> Unit) {
+private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModule: (TaskifyModule) -> Unit) {
     val s = state.summary
     val mood = s.moodToday?.roundToInt()?.coerceIn(1, 5)
-    val tiles = listOf(
-        Tile(TaskifyModule.Tasks, "Tugas hari ini", "${s.tasksTodayDone}/${s.tasksToday}", if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat"),
-        Tile(TaskifyModule.Journal, "Mood hari ini", moodLabel(mood) ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", moodIcon(mood)),
-        Tile(TaskifyModule.Finance, "Keluar hari ini", Rupiah.compact(s.expenseToday).let { if (s.expenseToday == 0L) "Rp 0" else "Rp $it" }, "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}"),
-        Tile(TaskifyModule.Review, "Streak jurnal", "${state.streak}", "hari berturut-turut"),
-    )
+    val tiles = visible.map { tile ->
+        when (tile) {
+            HomeTile.Tasks -> Tile(TaskifyModule.Tasks, tile.label, "${s.tasksTodayDone}/${s.tasksToday}", if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat")
+            HomeTile.Mood -> Tile(TaskifyModule.Journal, tile.label, moodLabel(mood) ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", moodIcon(mood))
+            HomeTile.Spending -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.expenseToday), "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}")
+            HomeTile.Streak -> Tile(TaskifyModule.Review, tile.label, "${state.streak}", "hari berturut-turut")
+            HomeTile.Balance -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.balance), if (s.balance < 0) "lebih banyak keluar" else "total semua dompet")
+            HomeTile.Income -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.incomeMonth), "keluar Rp ${Rupiah.compact(s.expenseMonth)}")
+        }
+    }
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Max)) {
-                row.forEach { tile ->
-                    IndexCard(
-                        tile.module,
-                        onClick = { onOpenModule(tile.module) },
-                        onClickLabel = "Buka ${tile.module.label}",
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        contentPadding = 14.dp,
-                    ) {
-                        Text(tile.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            tile.icon?.let {
-                                Icon(it, contentDescription = null, tint = TaskifyTheme.modules.accent(tile.module), modifier = Modifier.size(26.dp))
-                                Spacer(Modifier.width(6.dp))
-                            }
-                            Text(tile.value, style = if (tile.value.length > 8) MaterialTheme.typography.titleLarge else TaskifyTextStyles.numeric, maxLines = 1)
-                        }
-                        Text(tile.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                row.forEach { tile -> BentoTile(tile, onOpenModule) }
+                // Jumlah ubin ganjil: ubin terakhir tetap selebar setengah supaya grid rapi.
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
 }
+
+@Composable
+private fun RowScope.BentoTile(tile: Tile, onOpenModule: (TaskifyModule) -> Unit) {
+    IndexCard(
+        tile.module,
+        onClick = { onOpenModule(tile.module) },
+        onClickLabel = "Buka ${tile.module.label}",
+        modifier = Modifier.weight(1f).fillMaxHeight(),
+        contentPadding = 14.dp,
+    ) {
+        Text(tile.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            tile.icon?.let {
+                Icon(it, contentDescription = null, tint = TaskifyTheme.modules.accent(tile.module), modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(tile.value, style = if (tile.value.length > 8) MaterialTheme.typography.titleLarge else TaskifyTextStyles.numeric, maxLines = 1)
+        }
+        Text(tile.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun rupiahShort(amount: Long): String = if (amount == 0L) "Rp 0" else "Rp ${Rupiah.compact(amount)}"
 
 /** Baris lini waktu: kolom jam (monospace), rel warna modul, judul. */
 @Composable

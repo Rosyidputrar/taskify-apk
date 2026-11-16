@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Konfigurasi layanan Isi Otomatis Sandi; "Setelan" di sistem membuka Taskify. -->
+<autofill-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.rosyidputrar.taskify.MainActivity" />

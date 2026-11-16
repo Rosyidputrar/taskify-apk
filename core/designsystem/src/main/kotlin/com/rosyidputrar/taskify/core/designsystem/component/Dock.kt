@@ -40,10 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
@@ -80,7 +78,7 @@ fun TaskifyDock(
     onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     Column(
         modifier.draggable(
             rememberDraggableState { delta -> onPull(delta) },
@@ -112,15 +110,15 @@ fun TaskifyDock(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                leading.forEach { DockItem(it, it.key == selectedKey) { onSelect(it) } }
+                leading.forEach { DockItem(it, it.key == selectedKey) { if (it.key != selectedKey) haptics.tick(); onSelect(it) } }
                 CaptureButton(
-                    onClick = onCapture,
+                    onClick = { haptics.tap(); onCapture() },
                     onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.longPress()
                         onCaptureLongPress()
                     },
                 )
-                trailing.forEach { DockItem(it, it.key == selectedKey) { onSelect(it) } }
+                trailing.forEach { DockItem(it, it.key == selectedKey) { if (it.key != selectedKey) haptics.tick(); onSelect(it) } }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import androidx.lifecycle.SavedStateHandle
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+private const val KEY_DRAFT = "tx_draft"
+private const val KEY_BASELINE = "tx_baseline"
 
 /** Transaksi yang ada ([id]) atau baru di [date] / dompet [walletId]. */
 data class TxEditorArgs(val id: String? = null, val date: String? = null, val walletId: String? = null)
@@ -41,6 +45,22 @@ data class TxDraft(
     val linked: String? = null,
 ) {
     val amount: Long? get() = Rupiah.parse(amountText)
+
+    /** Bagian yang bisa diubah pengguna — pembanding "ada perubahan?". */
+    internal fun editable() = listOf(kind, amountText, walletId, toWalletId, categoryId, date, time, title, note)
+
+    /** Disimpan ke SavedStateHandle: draf bertahan saat sistem mematikan proses. */
+    internal fun toSaved(): ArrayList<String?> = arrayListOf(
+        id, kind.name, amountText, walletId, toWalletId, categoryId, date, time, title, note, linked,
+    )
+
+    internal companion object {
+        fun fromSaved(v: List<String?>): TxDraft = TxDraft(
+            loaded = true, id = v[0], kind = TxKind.entries.firstOrNull { it.name == v[1] } ?: TxKind.Expense, amountText = v[2].orEmpty(),
+            walletId = v[3].orEmpty(), toWalletId = v[4], categoryId = v[5], date = v[6].orEmpty(), time = v[7], title = v[8].orEmpty(),
+            note = v[9].orEmpty(), linked = v[10],
+        )
+    }
 }
 
 data class TxEditorState(val draft: TxDraft = TxDraft(), val wallets: List<Wallet> = emptyList(), val categories: List<Category> = emptyList())
@@ -49,8 +69,21 @@ class TxEditorViewModel(
     private val args: TxEditorArgs,
     private val repo: FinanceRepository,
     private val messenger: Messenger,
+    private val saved: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
     private val draft = MutableStateFlow(TxDraft())
+
+    /** Isian saat editor dibuka; dibandingkan dengan isian sekarang untuk "Simpan perubahan?". */
+    private var baseline: List<Any?>? = null
+
+    /** Ada ketikan yang akan hilang bila editor ditinggalkan. */
+    val dirty: Boolean get() {
+        val d = state.value.draft
+        val base = baseline?.toMutableList() ?: return false
+        // Dompet default diisi otomatis setelah daftar dompet tiba — bukan perubahan pengguna.
+        if (base[2] == "") base[2] = state.value.wallets.firstOrNull()?.id ?: ""
+        return d.loaded && !d.missing && d.editable() != base
+    }
 
     val state: StateFlow<TxEditorState> = combine(draft, repo.watchWallets(includeArchived = false), repo.watchCategories()) { d, w, c ->
         // Dompet default = dompet aktif pertama, begitu daftar dompet tersedia.
@@ -59,7 +92,11 @@ class TxEditorViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TxEditorState())
 
     init {
-        launchSafe {
+        val restored = saved.get<ArrayList<String?>>(KEY_DRAFT)?.let { runCatching { TxDraft.fromSaved(it) }.getOrNull() }
+        if (restored != null) {
+            draft.value = restored
+            baseline = saved.get<ArrayList<String?>>(KEY_BASELINE)?.let { runCatching { TxDraft.fromSaved(it).editable() }.getOrNull() }
+        } else launchSafe {
             if (args.id != null) {
                 val t = repo.getTransaction(args.id)
                 draft.value = if (t == null) TxDraft(loaded = true, missing = true) else TxDraft(
@@ -74,10 +111,21 @@ class TxEditorViewModel(
             } else {
                 draft.value = TxDraft(loaded = true, date = args.date ?: Dates.today(), walletId = args.walletId.orEmpty())
             }
+            markBaseline()
         }
     }
 
-    fun update(block: (TxDraft) -> TxDraft) = draft.update { block(it).copy(error = null) }
+    /** Patokan "belum diubah" = isian setelah dimuat (dompet default ikut diisi bila belum ada). */
+    private fun markBaseline() {
+        val d = draft.value
+        baseline = d.editable()
+        saved[KEY_BASELINE] = d.toSaved()
+    }
+
+    fun update(block: (TxDraft) -> TxDraft) {
+        draft.update { block(it).copy(error = null) }
+        saved[KEY_DRAFT] = draft.value.toSaved()
+    }
 
     fun setKind(kind: TxKind) = update { it.copy(kind = kind, categoryId = if (kind == it.kind) it.categoryId else null) }
 

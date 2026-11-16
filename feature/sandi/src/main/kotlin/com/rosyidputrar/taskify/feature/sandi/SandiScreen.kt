@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
 import androidx.compose.runtime.remember
@@ -95,6 +98,16 @@ fun SandiContent(
     backButton: @Composable (() -> Unit) -> Unit = {},
     clock: State<Long>? = null,
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticSandiActions(actions, haptics) }
+    // Master password salah / gagal → getar penolakan; brankas terbuka → getar berhasil.
+    LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
+    var wasLocked by remember { mutableStateOf(state.status is VaultStatus.Locked) }
+    LaunchedEffect(state.status is VaultStatus.Unlocked) {
+        if (state.status is VaultStatus.Unlocked && wasLocked) haptics.success()
+        wasLocked = state.status is VaultStatus.Locked
+    }
     val fixedClock = remember(state.now) { mutableLongStateOf(state.now) }
     val liveClock = clock ?: fixedClock
     val now: () -> Long = remember(liveClock) { { liveClock.value } }
@@ -290,4 +303,13 @@ fun CodeRow(item: SandiItem, now: () -> Long, actions: SandiActions, modifier: M
             CountdownRing(w.remainingMs / (w.period * 1000f), secs, size = 38.dp)
         }
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticSandiActions(private val a: SandiActions, private val h: TaskifyHaptics) : SandiActions by a {
+    override fun setTab(tab: SandiTab) { h.tick(); a.setTab(tab) }
+    override fun copy(what: String, text: String, secret: Boolean) { h.success(); a.copy(what, text, secret) }
+    override fun copyCode(item: SandiItem, code: String) { h.success(); a.copyCode(item, code) }
+    override fun lock() { h.tap(); a.lock() }
+    override fun regenerate() { h.tick(); a.regenerate() }
 }

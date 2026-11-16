@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -154,6 +155,9 @@ fun LockContent(
 ) {
     var forgotOpen by rememberSaveable { mutableStateOf(false) }
     var secondsLeft by remember { mutableLongStateOf(0L) }
+    val haptics = rememberHaptics()
+    // PIN salah / terlalu banyak percobaan → getar penolakan.
+    LaunchedEffect(state.message, state.cooldownUntil) { if (state.message != null || state.cooldownUntil != null) haptics.error() }
 
     LaunchedEffect(state.cooldownUntil) {
         val until = state.cooldownUntil ?: return@LaunchedEffect
@@ -234,6 +238,8 @@ fun PinSetupContent(onDone: (pin: String, autoLockMinutes: Int) -> Unit, onCance
     var first by rememberSaveable { mutableStateOf<String?>(null) }
     var entered by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+    val haptics = rememberHaptics()
+    LaunchedEffect(error) { if (error != null) haptics.error() }
     var autoLock by rememberSaveable { mutableStateOf(LockPolicy.DEFAULT_AUTO_LOCK_MINUTES) }
     val confirming = first != null
 

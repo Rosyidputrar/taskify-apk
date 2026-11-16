@@ -149,6 +149,53 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
   nama untuk TalkBack, dan layar utama direkam pada ukuran huruf 160% (`a11y_font160_*.png`).
   Label tab, angka uang, dan ubin statistik mengecil sendiri alih-alih terpotong.
 
+### Tema
+
+Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **kontras** (Standar/Sedang/Tinggi).
+- Palet siap pakai: Kertas & Tinta (desain asli), Laut, Hutan, Senja, Lavender, Sakura, Grafit, dan
+  Material You (warna wallpaper, Android 12+).
+- **Kustom** lewat Studio tema: warna dasar (contoh cepat, hue + kekuatan warna, atau hex), gaya palet
+  (Seimbang, Cerah, Ekspresif, Kalem, Setia warna, Monokrom), dan "nuansa kertas" (permukaan krem/arang
+  khas Taskify). Pratinjau terang & gelap langsung, plus strip palet tonal.
+- Semua peran warna diturunkan dari satu warna dasar lewat ruang warna HCT (port material-color-utilities);
+  warna modul diselaraskan ke warna utama dengan tone terkunci. ThemeEngineTest memeriksa setiap palet ×
+  kontras × terang/gelap dan ratusan tema kustom dari warna ekstrem: teks/latar utama & warna modul ≥ 4.5:1.
+
+### Mode Fokus & Beranda
+
+- **Mode Fokus (Pomodoro)** — dari tombol *Mulai fokus* di kartu Fokus Beranda, tombol *Fokus* di
+  detail tugas, atau tile Quick Settings *Fokus*. Fokus 15/25/45/60 menit → istirahat 5 menit,
+  istirahat panjang 15 menit tiap 4 putaran. Checklist subtask tampil di layar fokus; layar tetap
+  menyala selama hitung mundur.
+- Tanpa foreground service: notifikasi berjalan memakai hitung mundur bawaan sistem dan akhir fase
+  dibangunkan AlarmManager (Jeda/Lanjut, Lewati, Berhenti langsung dari notifikasi). Status disimpan
+  sebagai jam dinding, jadi tetap benar walau aplikasi ditutup paksa.
+- Opsional **Jangan Ganggu** selama fase fokus (perlu akses di Setelan sistem). Hanya dimatikan lagi
+  bila Taskify yang menyalakannya.
+- Riwayat fokus disimpan di tabel lokal `focus_sessions` (tidak disinkronkan; ikut terhapus saat
+  Keluar) dan tampil di Review sebagai *Waktu fokus*.
+- **Susun Beranda** (ikon di samping sapaan): urutkan atau sembunyikan pita minggu, Fokus, Ringkasan,
+  dan Aktivitas; pilih ubin ringkasan (termasuk *Saldo semua dompet* dan *Masuk bulan ini*). Pita
+  minggu menampilkan titik tugas/jurnal/catatan/transaksi per hari.
+
+### Isi otomatis Sandi
+
+Sandi bisa dijadikan layanan Isi Otomatis Android (Sandi → Pengaturan brankas → *Jadikan Sandi
+layanan isi otomatis*).
+
+- **Cocok berdasarkan alamat**: di browser dicocokkan dengan domain situs (persis, atau domain
+  induk yang sama: `accounts.google.com` ↔ `google.com`); di aplikasi dengan paket
+  (`androidapp://com.bca`) atau domain terbalik (`tokopedia.com` ↔ `com.tokopedia.tkpd`). Domain
+  mirip seperti `google.com.evil.io` tidak dianggap cocok. Item lain bisa dipilih manual lewat
+  *Cari di Sandi…*, dengan peringatan "Alamat tidak cocok" lebih dulu.
+- **Brankas terkunci**: hanya baris *Buka Sandi* yang ditawarkan, tanpa isi brankas. Brankas dibuka
+  dengan sidik jari / kunci layar (bila perangkat diingat) atau master password, lalu pilih item.
+  Brankas yang sudah lewat batas kunci otomatis dikunci, bukan dipakai, walau Taskify di latar.
+- **Simpan sandi baru**: setelah masuk di aplikasi lain, sistem menawarkan *Simpan ke Taskify
+  Sandi*. Item dengan nama pengguna sama diperbarui; selain itu dibuat item baru. Saat terkunci,
+  kredensial hanya dititipkan di memori proses sampai brankas dibuka.
+- Jendela isi otomatis memakai `FLAG_SECURE` dan tidak muncul di Recents.
+
 ### Pengaturan
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —

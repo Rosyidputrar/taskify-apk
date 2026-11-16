@@ -133,6 +133,30 @@ object Totp {
         },
     )
 
+    /**
+     * URI `otpauth://totp/Penerbit:akun?secret=…` (format Key URI Google Authenticator) — untuk
+     * memindahkan kunci ke aplikasi authenticator lain lewat QR. Kebalikan dari [parseInput].
+     */
+    fun otpauthUri(config: TotpConfig, issuer: String, account: String): String {
+        fun enc(text: String) = java.net.URLEncoder.encode(text, "UTF-8").replace("+", "%20")
+        val i = issuer.trim().replace(":", "")
+        val a = account.trim()
+        val label = when {
+            i.isNotEmpty() && a.isNotEmpty() -> enc(i) + ":" + enc(a)
+            i.isNotEmpty() -> enc(i)
+            else -> enc(a.ifEmpty { "Taskify" })
+        }
+        val secret = config.secret.uppercase().replace(Regex("[\\s=-]"), "")
+        val query = buildList {
+            add("secret=$secret")
+            if (i.isNotEmpty()) add("issuer=" + enc(i))
+            add("algorithm=${config.algorithm.name}")
+            add("digits=${config.digits}")
+            add("period=${config.period}")
+        }
+        return "otpauth://totp/$label?" + query.joinToString("&")
+    }
+
     /** Kunci base32 saja, atau URI `otpauth://totp/Issuer:akun?secret=…`. */
     fun parseInput(text: String): TotpInput? {
         val trimmed = text.trim()

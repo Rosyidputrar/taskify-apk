@@ -1,5 +1,10 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.domain.focus.formatMinutes
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
@@ -103,6 +108,9 @@ fun ReviewContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticReviewActions(actions, haptics) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Review)
     val cur = state.ranges.current
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
@@ -162,6 +170,17 @@ fun ReviewContent(
                     Stat(Icons.Outlined.EditNote, TaskifyModule.Journal, "Hari berjurnal", "${now.journalDays}/${state.elapsed}", null, Modifier.weight(1f),
                         hint = now.moodAvg?.let { "mood ${"%.1f".format(it).replace('.', ',')} · ${moodLabel(it)?.lowercase()}" } ?: "belum ada mood")
                 }
+                val f = state.focus
+                Stat(
+                    Icons.Outlined.Timer, TaskifyModule.Tasks, "Waktu fokus",
+                    if (f.minutes == 0L) "–" else formatMinutes(f.minutes),
+                    Review.percentChange(f.minutes, state.focusBefore.minutes), Modifier.fillMaxWidth(),
+                    hint = when {
+                        f.sessions == 0 -> "belum ada sesi Mode Fokus"
+                        f.topTask != null -> "${f.sessions} sesi · terbanyak: ${f.topTask} (${formatMinutes(f.topTaskMinutes)})"
+                        else -> "${f.sessions} sesi"
+                    },
+                )
             }
         }
         item(key = "daily") {
@@ -310,4 +329,11 @@ private fun Highlight(icon: ImageVector, module: TaskifyModule, label: String, v
         }
         if (onClick != null) Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticReviewActions(private val a: ReviewActions, private val h: TaskifyHaptics) : ReviewActions by a {
+    override fun setPeriod(period: ReviewPeriod) { h.tick(); a.setPeriod(period) }
+    override fun shift(dir: Int) { h.tick(); a.shift(dir) }
+    override fun goToday() { h.tick(); a.goToday() }
 }

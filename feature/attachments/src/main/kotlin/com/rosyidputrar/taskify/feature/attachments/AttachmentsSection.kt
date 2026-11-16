@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.attachments
 
+import com.rosyidputrar.taskify.core.designsystem.component.ConfirmDeleteDialog
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -121,6 +122,7 @@ private fun AttachmentRow(att: Attachment, actions: AttachmentActions, previewFi
     val progressFlow = remember(att.id) { runCatching { actions.progress(att) }.getOrElse { emptyFlow() } }
     val progress: UploadProgress? by progressFlow.collectAsState(initial = null)
     var menu by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(att.mimeType ?: "application/octet-stream")) { uri -> uri?.let { actions.saveTo(att, it) } }
     val context = LocalContext.current
     val local = previewFile ?: remember(att.id, att.status) { if (actions.hasLocalCopy(att)) File(File(context.filesDir, "attachments"), att.id) else null }
@@ -152,8 +154,16 @@ private fun AttachmentRow(att: Attachment, actions: AttachmentActions, previewFi
                         DropdownMenuItem(text = { Text("Buka") }, onClick = { menu = false; actions.open(att) })
                         DropdownMenuItem(text = { Text("Simpan ke perangkat…") }, onClick = { menu = false; save.launch(att.fileName) })
                         if (att.status != AttachmentStatus.Uploaded) DropdownMenuItem(text = { Text("Batalkan unggahan") }, onClick = { menu = false; actions.cancel(att) })
-                        DropdownMenuItem(text = { Text("Hapus") }, onClick = { menu = false; actions.remove(att) })
+                        DropdownMenuItem(text = { Text("Hapus") }, onClick = { menu = false; confirmDelete = true })
                     }
+                }
+                if (confirmDelete) {
+                    ConfirmDeleteDialog(
+                        title = "Hapus lampiran?",
+                        message = "${att.fileName} dihapus dari perangkat ini dan dari server. Tidak bisa dibatalkan.",
+                        onConfirm = { confirmDelete = false; actions.remove(att) },
+                        onDismiss = { confirmDelete = false },
+                    )
                 }
             }
             val running = progress?.running == true

@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.domain.journal.JournalEntry
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -91,6 +95,9 @@ fun JournalContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticJournalActions(actions, haptics) }
     val trash = state.filter.trash
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item {
@@ -313,4 +320,13 @@ private fun InsightCard(title: String, subtitle: String?, icon: ImageVector? = n
             content()
         }
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticJournalActions(private val a: JournalActions, private val h: TaskifyHaptics) : JournalActions by a {
+    override fun setTab(tab: JournalTab) { h.tick(); a.setTab(tab) }
+    override fun setMood(mood: Int?) { h.tick(); a.setMood(mood) }
+    override fun toggleTrash() { h.tick(); a.toggleTrash() }
+    override fun setRange(days: Int) { h.tick(); a.setRange(days) }
+    override fun restore(entry: JournalEntry) { h.success(); a.restore(entry) }
 }

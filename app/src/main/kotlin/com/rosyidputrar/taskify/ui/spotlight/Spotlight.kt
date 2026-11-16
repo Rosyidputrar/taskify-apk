@@ -1,13 +1,12 @@
 package com.rosyidputrar.taskify.ui.spotlight
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.ui.unit.Velocity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.mutableFloatStateOf
@@ -131,7 +130,7 @@ fun Spotlight(
     onOpenEntity: (EntityType, String) -> Unit = { _, _ -> },
     onOpenTag: (String) -> Unit = {},
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     var screenHeight by remember { mutableFloatStateOf(0f) }
     Box(
         Modifier.fillMaxSize().onSizeChanged {
@@ -201,7 +200,7 @@ fun Spotlight(
             modifier = Modifier
                 .nestedScroll(nested)
                 .draggable(
-                    rememberDraggableState { delta -> if (state.dragBy(delta)) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate) },
+                    rememberDraggableState { delta -> if (state.dragBy(delta)) haptics.threshold() },
                     Orientation.Vertical,
                     onDragStopped = { velocity -> state.release(velocity) },
                 ),

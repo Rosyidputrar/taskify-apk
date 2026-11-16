@@ -1,5 +1,16 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.ui.focus.FocusScreen
+import com.rosyidputrar.taskify.navigation.FocusRoute
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
@@ -145,18 +156,21 @@ private const val KEY_PIN = "pin"
 /** Lebar minimum untuk tata letak rail + dua panel (tablet, Chromebook, lanskap lebar). */
 private val ExpandedWidth = 840.dp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskifyApp(
     preferences: AppPreferences.Snapshot,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    onHapticsChange: (Boolean) -> Unit = {},
+    onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit = {},
     displayName: String? = null,
     messages: Flow<UiMessage> = emptyFlow(),
     home: HomeSlot = { padding, name, openModule, openTask -> HomeScreen(padding, name, openModule, openTask) },
 ) {
     val navController = rememberNavController()
     val spotlight = com.rosyidputrar.taskify.ui.spotlight.rememberSpotlightSheetState()
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     var captureOpen by rememberSaveable { mutableStateOf(false) }
     var captureText by rememberSaveable { mutableStateOf("") }
     var capturePickType by rememberSaveable { mutableStateOf(false) }
@@ -192,6 +206,7 @@ fun TaskifyApp(
                 is AppEvent.OpenEntity -> openEntity(event.type, event.id)
                 is AppEvent.OpenModule -> { spotlight.close(); navController.navigate(event.module.route()) { launchSingleTop = true } }
                 AppEvent.OpenShare -> { spotlight.close(); navController.navigate(ShareRoute) { launchSingleTop = true } }
+                is AppEvent.OpenFocus -> { spotlight.close(); navController.navigate(FocusRoute(event.taskId)) { launchSingleTop = true } }
                 AppEvent.OpenSpotlight -> spotlight.open()
                 is AppEvent.OpenCapture -> openCapture(event.text)
                 is AppEvent.OpenCalendar -> {
@@ -245,7 +260,7 @@ fun TaskifyApp(
     }
     LaunchedEffect(currentModule) { currentModule?.let { com.rosyidputrar.taskify.widget.ModuleShortcuts.report(shortcutContext, it) } }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() } == true
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() || it.hasRoute<FocusRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -274,11 +289,14 @@ fun TaskifyApp(
             musicPlayer?.state?.map { it.status != com.rosyidputrar.taskify.core.domain.media.YtStatus.Idle } ?: kotlinx.coroutines.flow.flowOf(false)
         }.collectAsState(false)
         val onMusic = destination?.hasRoute<MusicRoute>() == true
-        val showMini = musicActive && !immersive && !onMusic
+        // Keyboard tampil → dok & pemutar mini disembunyikan, area konten berhenti di atas keyboard
+        // (edge-to-edge membuat jendela tidak lagi mengecil sendiri).
+        val imeVisible = WindowInsets.isImeVisible
+        val showMini = musicActive && !immersive && !onMusic && !imeVisible
         // Ruang di bawah konten supaya item terakhir tidak tertutup dok mengambang.
         val contentPadding = PaddingValues(
             top = statusTop,
-            bottom = navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
+            bottom = if (imeVisible) 16.dp else navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
         )
 
         val host: @Composable (Modifier) -> Unit = { modifier ->
@@ -292,6 +310,8 @@ fun TaskifyApp(
                 onCapture = { openCapture() },
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
+                onHapticsChange = onHapticsChange,
+                onThemeChange = onThemeChange,
                 modifier = modifier,
             )
         }
@@ -306,12 +326,17 @@ fun TaskifyApp(
                     onCalendar = { navController.navigateTopLevel(CalendarRoute()) },
                     onRoom = { navController.navigateTopLevel(RoomRoute) },
                 )
-                host(Modifier.weight(1f))
+                host(Modifier.weight(1f).imePadding())
             }
         } else {
-            host(Modifier.fillMaxSize())
+            host(Modifier.fillMaxSize().imePadding())
         }
-        if (!expanded && !immersive) {
+        AnimatedVisibility(
+            visible = !expanded && !immersive && !imeVisible,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(200)) { it / 2 },
+            exit = fadeOut(tween(100)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
             val modules = TaskifyTheme.modules
             val home = DockDestination(KEY_HOME, "Hari Ini", TaskifyModule.Home.icon, modules.accent(TaskifyModule.Home))
             val calendar = DockDestination(KEY_CALENDAR, "Kalender", TaskifyModule.Calendar.icon, modules.accent(TaskifyModule.Calendar))
@@ -332,11 +357,10 @@ fun TaskifyApp(
                 onCapture = { openCapture() },
                 onCaptureLongPress = { openCapture(pickType = true) },
                 // Panel Spotlight ikut tertarik sejak jari mulai bergeser ke atas.
-                onPull = { delta -> if (spotlight.dragBy(delta)) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate) },
+                onPull = { delta -> if (spotlight.dragBy(delta)) haptics.threshold() },
                 onPullEnd = { velocity -> spotlight.release(velocity) },
                 onOpenSearch = { spotlight.open() },
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 12.dp),
             )
@@ -360,16 +384,29 @@ fun TaskifyApp(
                 snackbar.currentSnackbarData?.dismiss()
                 scope.launchSafe {
                     val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel, withDismissAction = message.action == null, duration = SnackbarDuration.Short)
-                    if (result == SnackbarResult.ActionPerformed) message.action?.invoke()
+                    if (result == SnackbarResult.ActionPerformed) {
+                        haptics.tap()
+                        message.action?.invoke()
+                    }
                 }
             }
         }
+        // Selalu di atas keyboard, dok, dan pemutar mini — "Urungkan" tidak pernah tertutup.
         SnackbarHost(
             snackbar,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = if (expanded) 16.dp else if (immersive) 64.dp else 96.dp, start = 16.dp, end = 16.dp),
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                .padding(
+                    bottom = when {
+                        imeVisible -> 8.dp
+                        expanded -> 16.dp + if (showMini) 68.dp else 0.dp
+                        immersive -> 64.dp
+                        else -> 96.dp + if (showMini) 68.dp else 0.dp
+                    },
+                    start = 16.dp,
+                    end = 16.dp,
+                ),
         )
 
         Spotlight(
@@ -404,6 +441,8 @@ private fun TaskifyNavHost(
     onCapture: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    onHapticsChange: (Boolean) -> Unit,
+    onThemeChange: (com.rosyidputrar.taskify.core.designsystem.theme.ThemeSpec) -> Unit,
     modifier: Modifier,
 ) {
     // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
@@ -478,6 +517,14 @@ private fun TaskifyNavHost(
             ShareScreen(
                 contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
                 onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
+            )
+        }
+        composable<FocusRoute> { entry ->
+            FocusScreen(
+                taskId = entry.toRoute<FocusRoute>().taskId,
+                contentPadding = contentPadding,
+                backButton = { BackButton(it) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable<MusicRoute> {
@@ -583,6 +630,10 @@ private fun TaskifyNavHost(
                 pinnedModule = preferences.pinnedModule,
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
+                haptics = preferences.haptics,
+                onHapticsChange = onHapticsChange,
+                theme = preferences.theme,
+                onThemeChange = onThemeChange,
                 onBack = navController.backIfPossible(),
                 onOpenModule = { navController.navigate(it.route()) },
             )

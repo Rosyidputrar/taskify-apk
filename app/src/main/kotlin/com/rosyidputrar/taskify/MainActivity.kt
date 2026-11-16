@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify
 
+import com.rosyidputrar.taskify.core.designsystem.component.LocalHapticsEnabled
+import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Intent
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
@@ -49,6 +51,7 @@ class MainActivity : FragmentActivity() {
     private val messenger: Messenger by inject()
     private val shareInbox: com.rosyidputrar.taskify.ui.share.ShareInbox by inject()
     private val lock: LockManager by inject()
+    private val focus: com.rosyidputrar.taskify.focus.FocusController by inject()
     private val recents = RecentsPrivacy(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,8 +73,10 @@ class MainActivity : FragmentActivity() {
             val prefs by appViewModel.state.collectAsStateWithLifecycle()
             val gate by gateViewModel.ui.collectAsStateWithLifecycle()
             val snapshot = prefs ?: return@setContent
-            TaskifyTheme(darkTheme = snapshot.themeMode.isDark()) {
-                AppGate(gate, snapshot)
+            CompositionLocalProvider(LocalHapticsEnabled provides snapshot.haptics) {
+                TaskifyTheme(darkTheme = snapshot.themeMode.isDark(), spec = snapshot.theme) {
+                    AppGate(gate, snapshot)
+                }
             }
         }
     }
@@ -86,6 +91,8 @@ class MainActivity : FragmentActivity() {
                 messages = messenger.messages,
                 onThemeModeChange = appViewModel::setThemeMode,
                 onPinnedModuleChange = appViewModel::setPinnedModule,
+                onHapticsChange = appViewModel::setHaptics,
+                onThemeChange = appViewModel::setTheme,
             )
         }
         GateHost(gate, shell = shell, gateScreen = { target ->
@@ -109,6 +116,8 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         recents.onResume()
+        // Fase Mode Fokus yang habis selagi proses mati (alarm terlewat) disusulkan diam-diam.
+        lifecycleScope.launch { focus.catchUp(alert = false) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -121,6 +130,7 @@ class MainActivity : FragmentActivity() {
             ACTION_CAPTURE -> AppEvents.send(AppEvent.OpenCapture())
             ACTION_SEARCH -> AppEvents.send(AppEvent.OpenSpotlight)
             ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar())
+            ACTION_FOCUS -> AppEvents.send(AppEvent.OpenFocus())
             Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> {
                 // Salin isi selagi izin baca dari aplikasi pengirim masih berlaku, lalu buka layar Bagikan.
                 lifecycleScope.launch { if (shareInbox.receive(intent)) AppEvents.send(AppEvent.OpenShare) }
@@ -128,6 +138,8 @@ class MainActivity : FragmentActivity() {
             com.rosyidputrar.taskify.widget.ModuleShortcuts.ACTION_OPEN_MODULE ->
                 com.rosyidputrar.taskify.widget.ModuleShortcuts.moduleOf(intent)?.let { AppEvents.send(AppEvent.OpenModule(it)) }
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
+            com.rosyidputrar.taskify.widget.EntityShortcuts.ACTION_OPEN_ENTITY ->
+                com.rosyidputrar.taskify.widget.EntityShortcuts.entityOf(intent)?.let { (type, id) -> AppEvents.send(AppEvent.OpenEntity(type, id)) }
         }
     }
 
@@ -147,5 +159,6 @@ class MainActivity : FragmentActivity() {
         const val ACTION_CAPTURE = "com.rosyidputrar.taskify.action.CAPTURE"
         const val ACTION_SEARCH = "com.rosyidputrar.taskify.action.SEARCH"
         const val ACTION_CALENDAR = "com.rosyidputrar.taskify.action.CALENDAR"
+        const val ACTION_FOCUS = "com.rosyidputrar.taskify.action.FOCUS"
     }
 }

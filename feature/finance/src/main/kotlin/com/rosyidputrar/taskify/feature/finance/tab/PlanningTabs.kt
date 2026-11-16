@@ -157,7 +157,7 @@ fun LazyListScope.recurringTab(state: FinanceUiState, actions: FinanceActions, o
     if (state.due.isNotEmpty()) item(key = "rec-due") { DueCard(state.due, state.today, actions) }
     if (state.loaded && items.isEmpty()) {
         item(key = "rec-empty") {
-            EmptyState(TaskifyModule.Finance, "Belum ada transaksi berulang", "Gaji, langganan, cicilan, tagihan listrik — catat sekali, Taskify mengingatkan atau mencatatnya otomatis.")
+            EmptyState(TaskifyModule.Finance, "Belum ada transaksi berulang", "Gaji, langganan, cicilan, tagihan listrik — catat sekali, Taskify mengirim notifikasi saat jatuh tempo (Catat / Lewati) atau mencatatnya otomatis — walau aplikasi tidak dibuka.")
         }
     }
     items(items, key = { "r-${it.id}" }) { r -> RecurringRow(r, state.today, actions) { onDialog(FinanceDialog.RecurringForm(r)) } }

@@ -135,14 +135,25 @@ object TaskifySchema {
         localOnly = true,
     )
 
+    /**
+     * LOCAL-ONLY: riwayat Mode Fokus (Pomodoro) perangkat ini — belum ada tabelnya di server/webapp,
+     * jadi tidak disinkronkan. Dibaca Review ("Waktu fokus"); ikut terhapus saat Keluar.
+     */
+    val focusSessions = Table(
+        name = "focus_sessions",
+        columns = listOf(t("task_id"), t("task_title"), t("day"), t("started_at"), t("ended_at"), i("minutes")),
+        indexes = listOf(idx("focus_sessions_day", "day")),
+        localOnly = true,
+    )
+
     val all: List<Table> = listOf(
         userSettings, tags, taggings, entityLinks, taskLists, tasks, journalEntries, notes, wallets, categories, debts,
         recurringTransactions, transactions, budgets, snippets, codeProjects, attachments, pwKeys, pwItems, pwTotpLog,
-        configFiles, configVersions, tempFiles, uploadErrors,
+        configFiles, configVersions, tempFiles, uploadErrors, focusSessions,
     )
 
     val schema = Schema(all)
 
     /** Tabel tersinkron (tanpa local-only) — urutan sama dengan EXPORT_TABLES webapp. */
-    val syncedTableNames: List<String> = all.filterNot { it.name == "upload_errors" }.map { it.name }
+    val syncedTableNames: List<String> = all.filterNot { it.options.localOnly }.map { it.name }
 }

@@ -49,7 +49,28 @@ class SettingsViewModel(
     private val messenger: com.rosyidputrar.taskify.core.designsystem.component.Messenger,
     private val context: android.content.Context,
     private val retrier: com.rosyidputrar.taskify.core.data.RejectedChangeRetrier? = null,
+    private val contextPrefs: com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs? = null,
+    private val contextScheduler: com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler? = null,
 ) : ViewModel() {
+
+    /** Pengingat di luar tugas: tagihan, anggaran, streak jurnal. */
+    data class ContextUi(val bills: Boolean = true, val budgets: Boolean = true, val journal: Boolean = true, val journalTime: String = "20:00")
+
+    private val _context = MutableStateFlow(readContext())
+    val contextReminders: StateFlow<ContextUi> = _context.asStateFlow()
+
+    private fun readContext() = contextPrefs?.let { ContextUi(it.bills, it.budgets, it.journal, it.journalTime) } ?: ContextUi()
+
+    fun setContextReminders(update: (ContextUi) -> ContextUi) {
+        val p = contextPrefs ?: return
+        val next = update(_context.value)
+        p.bills = next.bills
+        p.budgets = next.budgets
+        p.journal = next.journal
+        p.journalTime = next.journalTime
+        _context.value = readContext()
+        contextScheduler?.schedule()
+    }
 
     private val _retrying = MutableStateFlow(false)
     /** "Coba lagi" perubahan yang ditolak sedang berjalan. */

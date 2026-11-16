@@ -3,7 +3,7 @@
     <shortcut
         android:shortcutId="capture"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_capture"
         android:shortcutShortLabel="@string/shortcut_capture_short"
         android:shortcutLongLabel="@string/shortcut_capture_long">
         <intent
@@ -14,7 +14,7 @@
     <shortcut
         android:shortcutId="search"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_search"
         android:shortcutShortLabel="@string/shortcut_search_short"
         android:shortcutLongLabel="@string/shortcut_search_long">
         <intent
@@ -25,7 +25,7 @@
     <shortcut
         android:shortcutId="calendar"
         android:enabled="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@drawable/ic_shortcut_calendar"
         android:shortcutShortLabel="@string/shortcut_calendar_short"
         android:shortcutLongLabel="@string/shortcut_calendar_long">
         <intent

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.content.ActivityNotFoundException
@@ -60,7 +61,7 @@ import com.rosyidputrar.taskify.core.domain.auth.translateMfaError
 import com.rosyidputrar.taskify.feature.auth.component.AuthScaffold
 import com.rosyidputrar.taskify.feature.auth.component.CodeInput
 import com.rosyidputrar.taskify.feature.auth.component.ErrorText
-import com.rosyidputrar.taskify.feature.auth.component.QrCode
+import com.rosyidputrar.taskify.core.designsystem.component.QrCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -174,6 +175,9 @@ class MfaActions(
 
 @Composable
 fun MfaContent(status: GateStatus, state: MfaUiState, online: Boolean, actions: MfaActions) {
+    val haptics = rememberHaptics()
+    // Kode authenticator salah → getar penolakan.
+    LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
     val (title, subtitle) = headings(status)
     val enrolling = status == GateStatus.Enroll
 

@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import androidx.compose.material.icons.outlined.Timer
+import com.rosyidputrar.taskify.core.designsystem.component.FocusLauncher
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.Surface
 import android.Manifest
@@ -101,6 +104,9 @@ fun TaskDetailSheet(taskId: String, today: String, onDismiss: () -> Unit) {
     val viewModel: TaskDetailViewModel = koinViewModel(key = "task-$taskId") { parametersOf(taskId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    LaunchedEffect(state.task?.id, state.task?.title) {
+        state.task?.takeIf { it.deletedAt == null }?.let { com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.report("task", it.id, it.title) }
+    }
     // Ketikan judul/catatan yang belum tersimpan ikut disimpan saat sheet ditutup dengan cara apa pun.
     val close = { viewModel.flushEdits(); onDismiss() }
     ModalBottomSheet(onDismissRequest = close, sheetState = sheet) {
@@ -141,6 +147,14 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
         Row(verticalAlignment = Alignment.CenterVertically) {
             IndexTab(TaskifyModule.Tasks, text = if (task.isRecurring) "Tugas berulang" else "Tugas")
             Spacer(Modifier.weight(1f))
+            if (!inTrash && task.status != TaskStatus.Done && FocusLauncher.available) {
+                // Mode Fokus untuk tugas ini (Pomodoro + checklist subtask).
+                TextButton(onClick = { onClose(); FocusLauncher.open(task.id) }) {
+                    Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Fokus")
+                }
+            }
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Tutup") }
         }
         if (inTrash) {

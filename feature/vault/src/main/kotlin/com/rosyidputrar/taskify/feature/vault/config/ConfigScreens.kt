@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import androidx.activity.compose.BackHandler
+import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.SecureWindow
@@ -117,6 +121,9 @@ fun ConfigFileContent(
     onOpenSandi: () -> Unit,
     backButton: @Composable (() -> Unit) -> Unit,
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticConfigFileActions(actions, haptics) }
     val file = state.file
     var menu by remember { mutableStateOf(false) }
     var meta by rememberSaveable { mutableStateOf(false) }
@@ -289,7 +296,18 @@ fun ConfigEditorScreen(fileId: String?, projectId: String?, contentPadding: Padd
     val state by vm.state.collectAsStateWithLifecycle()
     // Editor selalu menampilkan teks polos konfigurasi.
     SecureWindow()
-    ConfigEditorContent(state, vm, contentPadding, onBack, onSaved, onOpenSandi, backButton)
+    var confirmLeave by remember { mutableStateOf(false) }
+    val back = { if (state.dirty && !state.saving) confirmLeave = true else onBack() }
+    BackHandler(onBack = back)
+    ConfigEditorContent(state, vm, contentPadding, back, onSaved, onOpenSandi, backButton)
+    if (confirmLeave) {
+        DiscardChangesDialog(
+            if (state.isNew) "konfigurasi baru ini" else "\"${state.name}\"",
+            onSave = { confirmLeave = false; vm.save(onSaved) },
+            onDiscard = { confirmLeave = false; onBack() },
+            onDismiss = { confirmLeave = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -363,4 +381,12 @@ fun ConfigEditorContent(
             }
         }
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticConfigFileActions(private val a: ConfigFileActions, private val h: TaskifyHaptics) : ConfigFileActions by a {
+    override fun select(versionId: String) { h.tick(); a.select(versionId) }
+    override fun copyValue(key: String, value: String) { h.success(); a.copyValue(key, value) }
+    override fun copyRaw(text: String) { h.success(); a.copyRaw(text) }
+    override fun restore(version: DecryptedVersion) { h.success(); a.restore(version) }
 }

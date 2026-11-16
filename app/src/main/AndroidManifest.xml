@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Opsional Mode Fokus: menyalakan "Jangan Ganggu" (izin diberikan pengguna di Setelan). -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
     <application
         android:name=".TaskifyApplication"
         android:allowBackup="false"
@@ -78,5 +81,62 @@
                 <data android:pathPrefix="/unduh" />
             </intent-filter>
         </activity>
+        <!-- Tile Quick Settings "Tangkap". -->
+        <service
+            android:name=".widget.CaptureTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_capture"
+            android:label="@string/tile_capture_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <!-- Mode Fokus: tile Quick Settings + alarm akhir fase & tombol notifikasi. -->
+        <service
+            android:name=".focus.FocusTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_focus"
+            android:label="@string/tile_focus_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
+        <receiver
+            android:name=".focus.FocusReceiver"
+            android:exported="true">
+            <!-- Alarm hilang setelah kejadian ini → pasang ulang dari sesi tersimpan (lihat FocusReceiver). -->
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <!-- Sandi sebagai layanan Isi Otomatis Android. -->
+        <service
+            android:name=".autofill.TaskifyAutofillService"
+            android:exported="true"
+            android:label="@string/autofill_label"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/autofill_service" />
+        </service>
+        <activity
+            android:name=".autofill.SandiAutofillActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Taskify"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

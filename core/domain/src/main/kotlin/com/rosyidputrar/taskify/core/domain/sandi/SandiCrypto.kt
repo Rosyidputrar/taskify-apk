@@ -389,6 +389,10 @@ data class ItemPayload(
     val favorite: Boolean = false,
     val totp: TotpConfig? = null,
 ) {
+    /** Jangan pernah mencetak sandi / secret TOTP ke log (data class mencetak semua field). */
+    override fun toString(): String =
+        "ItemPayload(title=$title, url=$url, username=$username, password=•••, notes=$notes, favorite=$favorite, totp=${if (totp == null) null else "•••"})"
+
     fun toJson(): JsonObject = buildJsonObject {
         put("title", title); put("url", url); put("username", username); put("password", password); put("notes", notes)
         put("favorite", favorite)

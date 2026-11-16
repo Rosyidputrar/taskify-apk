@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
@@ -132,12 +133,11 @@ fun SnippetEditorScreen(id: String?, onBack: () -> Unit) {
     BackHandler(onBack = back)
     SnippetEditorContent(d, vm::edit, back, save = { vm.save(onBack) }, remove = { vm.remove(onBack) })
     if (confirmLeave) {
-        AlertDialog(
-            onDismissRequest = { confirmLeave = false },
-            title = { Text("Buang perubahan?") },
-            text = { Text("Perubahan pada snippet ini belum disimpan.") },
-            confirmButton = { Button(onClick = { vm.save(onBack); confirmLeave = false }) { Text("Simpan") } },
-            dismissButton = { TextButton(onClick = { confirmLeave = false; onBack() }) { Text("Buang") } },
+        DiscardChangesDialog(
+            "snippet ini",
+            onSave = { vm.save(onBack); confirmLeave = false },
+            onDiscard = { confirmLeave = false; onBack() },
+            onDismiss = { confirmLeave = false },
         )
     }
 }

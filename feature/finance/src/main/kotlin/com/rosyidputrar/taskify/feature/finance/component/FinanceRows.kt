@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance.component
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -101,6 +102,10 @@ fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier
         return
     }
     val state = rememberSwipeToDismissBoxState()
+    val haptics = rememberHaptics()
+    LaunchedEffect(state.targetValue) {
+        if (state.targetValue != SwipeToDismissBoxValue.Settled) haptics.threshold()
+    }
     LaunchedEffect(state.currentValue) {
         if (state.currentValue == SwipeToDismissBoxValue.EndToStart) {
             onDelete()

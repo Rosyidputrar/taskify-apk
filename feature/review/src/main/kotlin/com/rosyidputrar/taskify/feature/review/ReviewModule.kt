@@ -4,5 +4,5 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val reviewFeatureModule = module {
-    viewModel { ReviewViewModel(get(), get()) }
+    viewModel { ReviewViewModel(get(), get(), getOrNull()) }
 }

@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.review
 
+import kotlinx.coroutines.flow.flowOf
+import com.rosyidputrar.taskify.core.store.focus.FocusStats
+import com.rosyidputrar.taskify.core.store.focus.FocusRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.domain.finance.CategoryKind
@@ -35,6 +38,9 @@ data class ReviewUiState(
     val bigExpense: BigExpense? = null,
     val bestMood: BestMood? = null,
     val heat: Map<String, HeatDay> = emptyMap(),
+    /** Mode Fokus (riwayat lokal perangkat ini). */
+    val focus: FocusStats = FocusStats(),
+    val focusBefore: FocusStats = FocusStats(),
 ) {
     val isCurrent get() = today in ranges.current
     val elapsed get() = Review.elapsedDays(ranges.current, today)
@@ -51,7 +57,11 @@ interface ReviewActions {
 private data class Selection(val period: ReviewPeriod, val anchor: String?)
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ReviewViewModel(private val repo: ReviewRepository, private val finance: FinanceRepository) : ViewModel(), ReviewActions {
+class ReviewViewModel(
+    private val repo: ReviewRepository,
+    private val finance: FinanceRepository,
+    private val focus: FocusRepository? = null,
+) : ViewModel(), ReviewActions {
     private val selection = MutableStateFlow(Selection(ReviewPeriod.Week, null))
 
     val state: StateFlow<ReviewUiState> = combine(selection, todayFlow()) { s, t -> s to t }
@@ -60,9 +70,12 @@ class ReviewViewModel(private val repo: ReviewRepository, private val finance: F
             val cur = ranges.current
             val stats = combine(repo.watchStats(cur), repo.watchStats(ranges.previous)) { a, b -> a to b }
             val highlights = combine(repo.watchBigExpense(cur), repo.watchBestMood(cur)) { a, b -> a to b }
-            combine(stats, repo.watchDaily(cur), finance.watchCategoryBreakdown(cur.from, cur.to, CategoryKind.Expense), highlights, repo.watchHeatmap(Review.heatRange(today))) { (now, before), daily, cats, (big, mood), heat ->
+            val focusStats = focus?.let { f -> combine(f.watchStats(cur.from, cur.to), f.watchStats(ranges.previous.from, ranges.previous.to)) { a, b -> a to b } }
+                ?: flowOf(FocusStats() to FocusStats())
+            val main = combine(stats, repo.watchDaily(cur), finance.watchCategoryBreakdown(cur.from, cur.to, CategoryKind.Expense), highlights, repo.watchHeatmap(Review.heatRange(today))) { (now, before), daily, cats, (big, mood), heat ->
                 ReviewUiState(s.period, today, ranges, now, before, Review.fillDays(cur, daily), cats.take(5), big, mood, heat)
             }
+            combine(main, focusStats) { st, (f, fb) -> st.copy(focus = f, focusBefore = fb) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReviewUiState())
 

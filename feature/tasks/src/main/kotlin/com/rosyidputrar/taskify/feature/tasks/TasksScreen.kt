@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +88,9 @@ fun TasksContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val viewModel = remember(viewModel, haptics) { HapticTasksActions(viewModel, haptics) }
     var detailId by rememberSaveable(openTaskId) { mutableStateOf(openTaskId) }
     var listDialog by rememberSaveable { mutableStateOf<String?>(null) } // "new" atau id daftar
     val filter = state.filter
@@ -243,3 +249,10 @@ fun TasksContent(
     }
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticTasksActions(private val a: TasksActions, private val h: TaskifyHaptics) : TasksActions by a {
+    override fun quickAdd(text: String) { if (text.isNotBlank()) h.success(); a.quickAdd(text) }
+    override fun setSegment(segment: Segment) { h.tick(); a.setSegment(segment) }
+    override fun setView(view: TaskView) { h.tick(); a.setView(view) }
+    override fun toggleHighPriority() { h.tick(); a.toggleHighPriority() }
+}

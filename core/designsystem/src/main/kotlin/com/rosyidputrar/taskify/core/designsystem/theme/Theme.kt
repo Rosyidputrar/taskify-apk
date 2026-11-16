@@ -1,5 +1,10 @@
 package com.rosyidputrar.taskify.core.designsystem.theme
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -25,14 +30,21 @@ fun ThemeMode.isDark(): Boolean = when (this) {
     ThemeMode.Dark -> true
 }
 
-/** Warna modul sesuai tema aktif. */
+/**
+ * Warna modul sesuai tema aktif. Desain asli memakai warna racikan manual; tema lain
+ * menyelaraskannya ke warna utama lewat [ThemeEngine.moduleAccent] (dihitung sekali per tema).
+ */
 @Immutable
-class ModuleColors(private val dark: Boolean) {
+class ModuleColors(private val dark: Boolean, spec: ThemeSpec = ThemeSpec.Default, primary: Color = Color.Unspecified) {
+    private val accents: Map<TaskifyModule, Color> = TaskifyModule.entries.associateWith { m ->
+        if (spec.isHandcrafted || primary == Color.Unspecified) (if (dark) m.dark else m.light) else ThemeEngine.moduleAccent(m, spec, dark, primary)
+    }
+
     /** Warna aksen modul: ikon, teks penanda, isi tab. */
-    fun accent(module: TaskifyModule): Color = if (dark) module.dark else module.light
+    fun accent(module: TaskifyModule): Color = accents.getValue(module)
 
     /** Teks/ikon di atas [accent]. */
-    fun onAccent(module: TaskifyModule): Color = if (dark) TaskifyModule.onDark else TaskifyModule.onLight
+    fun onAccent(module: TaskifyModule): Color = ThemeEngine.onModuleAccent(dark)
 
     /** Tint lembut untuk latar kartu modul. */
     fun tint(module: TaskifyModule, surface: Color): Color = lerp(surface, accent(module), if (dark) 0.16f else 0.10f)
@@ -46,6 +58,7 @@ class ModuleColors(private val dark: Boolean) {
 }
 
 val LocalModuleColors = staticCompositionLocalOf { ModuleColors(dark = false) }
+val LocalThemeSpec = staticCompositionLocalOf { ThemeSpec.Default }
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
 
 private val TaskifyShapes = Shapes(
@@ -59,14 +72,24 @@ private val TaskifyShapes = Shapes(
 @Composable
 fun TaskifyTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    spec: ThemeSpec = ThemeSpec.Default,
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val dynamic = if (spec.palette == ThemePalette.Dinamis && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        null
+    }
+    val scheme = remember(spec, darkTheme, dynamic) { ThemeEngine.scheme(spec, darkTheme, dynamic) }
+    val modules = remember(spec, darkTheme, scheme.primary) { ModuleColors(darkTheme, spec, scheme.primary) }
     CompositionLocalProvider(
-        LocalModuleColors provides ModuleColors(darkTheme),
+        LocalModuleColors provides modules,
         LocalIsDarkTheme provides darkTheme,
+        LocalThemeSpec provides spec,
     ) {
         MaterialTheme(
-            colorScheme = if (darkTheme) DarkScheme else LightScheme,
+            colorScheme = scheme,
             typography = TaskifyTypography,
             shapes = TaskifyShapes,
             content = content,
@@ -80,4 +103,7 @@ object TaskifyTheme {
 
     val isDark: Boolean
         @Composable @ReadOnlyComposable get() = LocalIsDarkTheme.current
+
+    val spec: ThemeSpec
+        @Composable @ReadOnlyComposable get() = LocalThemeSpec.current
 }
