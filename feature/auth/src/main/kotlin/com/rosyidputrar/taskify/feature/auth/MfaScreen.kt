@@ -60,7 +60,7 @@ import com.rosyidputrar.taskify.core.domain.auth.translateMfaError
 import com.rosyidputrar.taskify.feature.auth.component.AuthScaffold
 import com.rosyidputrar.taskify.feature.auth.component.CodeInput
 import com.rosyidputrar.taskify.feature.auth.component.ErrorText
-import com.rosyidputrar.taskify.feature.auth.component.QrCode
+import com.rosyidputrar.taskify.core.designsystem.component.QrCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

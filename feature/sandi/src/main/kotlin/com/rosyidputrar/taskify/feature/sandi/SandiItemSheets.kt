@@ -1,5 +1,11 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.domain.sandi.TotpConfig
+import com.rosyidputrar.taskify.core.designsystem.component.QrCode
+import androidx.compose.ui.window.SecureFlagPolicy
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -114,6 +120,7 @@ fun ItemDetail(item: SandiItem, now: Long, actions: SandiActions, onEdit: () -> 
                     IconButton(onClick = { actions.copyCode(item, w.code) }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin kode") }
                 }
             }
+            TotpKeyRow(cfg, issuer = p.title.ifBlank { displayHost(p.url) }, account = p.username, actions = actions)
         }
         val safe = safeUrl(p.url)
         if (p.url.isNotBlank()) FieldRow("Alamat", p.url, extra = {
@@ -139,6 +146,52 @@ fun ItemDetail(item: SandiItem, now: Long, actions: SandiActions, onEdit: () -> 
                 TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Hapus", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Batal") } },
+        )
+    }
+}
+
+/**
+ * Kunci rahasia 2FA (yang menghasilkan kode tiap 30 dtk): tersembunyi sampai diminta, bisa
+ * disalin (papan klip dibersihkan otomatis), atau ditampilkan sebagai QR `otpauth://` untuk
+ * dipindahkan ke aplikasi authenticator lain. Tidak disimpan di saved-state (`remember` biasa).
+ */
+@Composable
+internal fun TotpKeyRow(cfg: TotpConfig, issuer: String, account: String, actions: SandiActions) {
+    var reveal by remember(cfg.secret) { mutableStateOf(false) }
+    var qr by remember(cfg.secret) { mutableStateOf(false) }
+    FieldRow(
+        "Kunci 2FA",
+        if (reveal) Totp.formatSecret(cfg.secret) else "•••• •••• •••• ••••",
+        mono = true,
+        extra = {
+            IconButton(onClick = { reveal = !reveal; actions.touch() }) {
+                Icon(if (reveal) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = if (reveal) "Sembunyikan kunci 2FA" else "Tampilkan kunci 2FA")
+            }
+            IconButton(onClick = { qr = true; actions.touch() }) { Icon(Icons.Outlined.QrCode2, contentDescription = "Tampilkan QR kunci 2FA") }
+        },
+    ) { actions.copy("Kunci 2FA", cfg.secret) }
+    Text(
+        "${cfg.digits} digit · tiap ${cfg.period} dtk · ${cfg.algorithm.name}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (qr) {
+        AlertDialog(
+            onDismissRequest = { qr = false },
+            // Jendela dialog sendiri: tetap tidak bisa di-screenshot / direkam.
+            properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
+            title = { Text("QR kunci 2FA") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    QrCode(Totp.otpauthUri(cfg, issuer, account), size = 220.dp, description = "Kode QR kunci 2FA ${issuer.ifBlank { account }}")
+                    Text(
+                        "Pindai dengan aplikasi authenticator lain untuk memindahkan akun ini. Siapa pun yang melihat QR ini bisa membuat kode 2FA-nya — jangan tunjukkan ke orang lain.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { qr = false }) { Text("Tutup") } },
         )
     }
 }

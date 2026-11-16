@@ -1,4 +1,4 @@
-package com.rosyidputrar.taskify.feature.auth.component
+package com.rosyidputrar.taskify.core.designsystem.component
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
@@ -22,7 +22,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
  * server. Selalu hitam di atas putih supaya terbaca kamera di tema gelap sekalipun.
  */
 @Composable
-fun QrCode(content: String, modifier: Modifier = Modifier, size: Dp = 200.dp) {
+fun QrCode(content: String, modifier: Modifier = Modifier, size: Dp = 200.dp, description: String = "Kode QR untuk aplikasi authenticator") {
     val matrix = remember(content) {
         QRCodeWriter().encode(
             content,
@@ -32,7 +32,7 @@ fun QrCode(content: String, modifier: Modifier = Modifier, size: Dp = 200.dp) {
             mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 2),
         )
     }
-    Canvas(modifier.size(size).semantics { contentDescription = "Kode QR untuk aplikasi authenticator" }) {
+    Canvas(modifier.size(size).semantics { contentDescription = description }) {
         drawRect(Color.White)
         val cell = this.size.width / matrix.width
         for (y in 0 until matrix.height) {
