@@ -52,6 +52,14 @@ berdampingan dengan versi rilis, tidak bisa menimpanya, dan tidak bisa membaca d
 memakai paket `com.rosyidputrar.taskify`; unggah dulu semua perubahan (Pengaturan › Sinkronisasi),
 lalu uninstall sebelum memasang APK rilis.
 
+### Unduh APK (GitHub Releases)
+
+Setiap push ke `main` yang lulus tes unit, build rilis bertanda tangan, dan uji asap di emulator
+otomatis diterbitkan sebagai **GitHub Release** (`v1.0.0-build.<nomor run>`) berisi satu berkas
+`taskify-<versi>-build<N>.apk` — unduh di HP lalu pasang; versi baru menimpa yang lama tanpa
+menghapus data. Bisa juga dipicu manual dari tab Actions (Run workflow, branch `main`). Butuh
+keempat secret keystore rilis; tanpa itu job rilis gagal dengan pesan yang jelas.
+
 ### Uji asap APK rilis
 
 Setiap push, CI membangun APK rilis (R8 full mode, sama persis dengan yang dibagikan) dengan

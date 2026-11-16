@@ -155,13 +155,17 @@ class KeystoreTrustStore(private val app: Application) : TrustStore {
         } catch (e: KeyPermanentlyInvalidatedException) {
             forget()
             throw DeviceAuthException("Kunci layar atau sidik jari HP berubah, jadi perangkat ini perlu diingat ulang. Buka dengan master password.")
-        } catch (e: UserNotAuthenticatedException) {
-            // Verifikasi tidak diterima kunci (mis. biometrik lemah di Android lama): kunci tetap disimpan,
-            // pengguna bisa mencoba lagi dengan PIN/pola layar.
-            throw DeviceAuthException(keystoreMessage(e))
-        } catch (e: Exception) {
+        } catch (e: javax.crypto.AEADBadTagException) {
+            // Data terbungkus rusak / tidak cocok dengan kuncinya → tidak akan pernah terbuka.
             forget()
             throw DeviceAuthException(keystoreMessage(e))
+        } catch (e: Exception) {
+            // Keystore menolak operasi tanpa verifikasi yang sah (diuji di emulator: muncul sebagai
+            // IllegalBlockSizeException, bukan UserNotAuthenticatedException). Kunci TETAP disimpan —
+            // tetap terkunci verifikasi — sehingga pengguna cukup mencoba lagi, tidak perlu mengingat ulang.
+            throw DeviceAuthException(
+                if (e is UserNotAuthenticatedException || e is javax.crypto.IllegalBlockSizeException) keystoreMessage(UserNotAuthenticatedException()) else keystoreMessage(e),
+            )
         }
     }
 

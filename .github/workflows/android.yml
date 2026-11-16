@@ -154,3 +154,50 @@ jobs:
           name: smoke-api${{ matrix.api-level }}-${{ github.run_number }}
           path: build/smoke/
           if-no-files-found: ignore
+
+  # Setiap push ke main yang lulus tes, build bertanda tangan, dan uji asap rilis → GitHub Release
+  # berisi APK rilis siap pasang (versi berikutnya terpasang menimpa yang lama, data tetap).
+  publish-release:
+    needs: [build, release-smoke]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: taskify-apk-${{ github.run_number }}
+          path: apk
+
+      - name: Terbitkan GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_number }}
+        run: |
+          APK=$(find apk -name 'app-release.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::APK rilis tidak ada — isi secret RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD."
+            exit 1
+          fi
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          TAG="v${VERSION}-build.${RUN}"
+          NAME="taskify-${VERSION}-build${RUN}.apk"
+          cp "$APK" "$NAME"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          SHA=$("$APKSIGNER" verify --print-certs "$NAME" | grep -m1 -i "SHA-256" | sed 's/.*: //')
+          {
+            echo "APK rilis Taskify ${VERSION} (build ${RUN}) dari commit ${GITHUB_SHA::7}."
+            echo
+            echo "**Cara pasang:** unduh \`${NAME}\` di HP lalu buka. Versi baru terpasang menimpa versi lama tanpa menghapus data."
+            echo
+            echo "Lulus tes unit dan uji asap APK rilis di emulator Android 8.0 & 14."
+            echo
+            echo "### Perubahan"
+            git log -1 --format=%B "$GITHUB_SHA"
+            echo
+            echo "Sidik jari sertifikat (SHA-256): \`${SHA}\`"
+          } > notes.md
+          gh release create "$TAG" "$NAME" --target "$GITHUB_SHA" --title "Taskify ${VERSION} (build ${RUN})" --notes-file notes.md --latest
