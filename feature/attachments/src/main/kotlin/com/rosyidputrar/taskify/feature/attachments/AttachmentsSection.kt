@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.attachments
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -94,8 +95,7 @@ fun AttachmentsContent(items: List<Attachment>, busy: String?, actions: Attachme
         items.forEach { att -> AttachmentRow(att, actions, localFile(att)) }
         busy?.let {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LinearProgressIndicator(Modifier.weight(1f))
-                Text(it, style = MaterialTheme.typography.labelMedium)
+                LoadingRow(it)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

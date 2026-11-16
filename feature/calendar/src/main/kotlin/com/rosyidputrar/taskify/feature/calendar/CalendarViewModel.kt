@@ -90,7 +90,7 @@ class CalendarViewModel(
 
     val state: StateFlow<CalendarUiState> = combine(monthData, agenda, selected, visible, today) { m, a, s, v, t ->
         CalendarUiState(t, m.month, s, m.grid, m.activity, m.tasksByDay, a, v, loaded = true)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState(selected = selected.value, month = firstOfMonth(selected.value)))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState(selected = selected.value, month = firstOfMonth(selected.value), grid = buildMonthGrid(firstOfMonth(selected.value))))
 
     fun select(date: String) { selected.value = date }
 

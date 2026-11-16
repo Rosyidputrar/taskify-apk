@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,7 +112,7 @@ fun JournalEditorContent(
     attachments: @Composable (entryId: String) -> Unit = {},
 ) {
     if (!ui.loaded) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Journal)
         return
     }
     if (ui.missing) {

@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.home
 
+import androidx.compose.ui.semantics.contentDescription
+import com.rosyidputrar.taskify.core.designsystem.component.SkeletonCard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
@@ -93,6 +95,11 @@ fun HomeContent(
             item(key = "rejected") { RejectedChangesBanner(state.rejectedChanges, onOpen = { onOpenModule(TaskifyModule.Settings) }) }
         }
         item { WeekRibbon(today, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
+        if (!state.loaded) {
+            // Data pertama dari database lokal belum tiba: kerangka Fokus, ringkasan, dan lini waktu.
+            item(key = "skeleton") { HomeSkeleton() }
+            return@LazyColumn
+        }
         item { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
         item { SummaryBento(state, onOpenModule) }
         item {
@@ -121,6 +128,21 @@ fun HomeContent(
                 }
             })
         }
+    }
+}
+
+@Composable
+private fun HomeSkeleton() {
+    Column(
+        Modifier.padding(horizontal = 20.dp).semantics(mergeDescendants = true) { contentDescription = "Memuat ringkasan hari ini…" },
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SkeletonCard(TaskifyModule.Tasks, lines = 4)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SkeletonCard(TaskifyModule.Tasks, Modifier.weight(1f), lines = 1, leadingDot = false)
+            SkeletonCard(TaskifyModule.Journal, Modifier.weight(1f), lines = 1, leadingDot = false)
+        }
+        repeat(3) { SkeletonCard(TaskifyModule.Calendar, lines = 1) }
     }
 }
 

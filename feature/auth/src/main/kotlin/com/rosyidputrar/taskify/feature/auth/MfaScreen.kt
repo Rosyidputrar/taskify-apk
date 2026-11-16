@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.content.ActivityNotFoundException
 import android.content.ClipData
@@ -225,7 +226,7 @@ private fun Challenge(
     var code by rememberSaveable { mutableStateOf("") }
     var remember by rememberSaveable { mutableStateOf(true) }
     if (state.loadingFactors) {
-        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        TaskifyLoadingIndicator(size = 24.dp)
         return
     }
     if (state.factors.size > 1) {

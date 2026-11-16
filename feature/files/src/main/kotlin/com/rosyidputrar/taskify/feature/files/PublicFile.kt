@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.files
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -146,7 +147,7 @@ fun PublicFileContent(state: PublicFileState, download: PublicDownload, actions:
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (state) {
                     PublicFileState.Loading -> Row(Modifier.padding(vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)); Text("Memeriksa tautan…")
+                        LoadingRow("Memeriksa tautan…", module = TaskifyModule.Files)
                     }
                     PublicFileState.Missing -> {
                         Icon(Icons.Outlined.LinkOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -181,7 +182,7 @@ private fun ReadyBody(state: PublicFileState.Ready, download: PublicDownload, ac
     Spacer(Modifier.height(6.dp))
     when {
         download.running -> {
-            download.progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) } ?: LinearProgressIndicator(Modifier.fillMaxWidth())
+            download.progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) } ?: LoadingRow("Mengunduh…", module = TaskifyModule.Files)
             Text("Mengunduh…", style = MaterialTheme.typography.labelMedium)
         }
         download.done -> Row(verticalAlignment = Alignment.CenterVertically) {

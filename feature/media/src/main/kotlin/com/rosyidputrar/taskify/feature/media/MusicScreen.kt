@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.selection.toggleable
@@ -150,7 +152,7 @@ private fun NowPlaying(state: MusicUiState, actions: MusicActions) {
                 IconButton(onClick = actions::toggleShuffle) { Icon(Icons.Rounded.Shuffle, contentDescription = if (p.shuffle) "Acak: hidup" else "Acak: mati", tint = if (p.shuffle) accent else MaterialTheme.colorScheme.onSurfaceVariant) }
                 IconButton(onClick = actions::prev, enabled = state.online) { Icon(Icons.Rounded.SkipPrevious, contentDescription = "Sebelumnya", modifier = Modifier.size(32.dp)) }
                 FilledIconButton(onClick = actions::togglePlay, modifier = Modifier.size(64.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = accent, contentColor = TaskifyTheme.modules.onAccent(TaskifyModule.Music))) {
-                    if (p.status == YtStatus.Preparing) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = TaskifyTheme.modules.onAccent(TaskifyModule.Music))
+                    if (p.status == YtStatus.Preparing) TaskifyLoadingIndicator(size = 28.dp, color = TaskifyTheme.modules.onAccent(TaskifyModule.Music))
                     else Icon(if (p.status == YtStatus.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = if (p.status == YtStatus.Playing) "Jeda" else "Putar", modifier = Modifier.size(36.dp))
                 }
                 IconButton(onClick = actions::next, enabled = state.online) { Icon(Icons.Rounded.SkipNext, contentDescription = "Berikutnya", modifier = Modifier.size(32.dp)) }
@@ -182,7 +184,7 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
             }
             if (!state.online) Text("Tidak ada koneksi — pencarian & pemutaran butuh internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
             s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (s.loading && s.results.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (s.loading && s.results.isEmpty()) LoadingBlock(Modifier.fillMaxWidth(), label = "Mencari lagu…", module = TaskifyModule.Music)
         }
     }
     if (s.searched && !s.loading && s.results.isEmpty() && s.error == null) item(key = "none") {
@@ -231,7 +233,7 @@ private fun Lyrics(state: MusicUiState) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
         when {
             state.player.current == null -> EmptyState(TaskifyModule.Music, "Belum ada lagu", "Lirik muncul di sini saat lagu diputar.")
-            l.loading -> LinearProgressIndicator(Modifier.fillMaxWidth())
+            l.loading -> LoadingBlock(Modifier.fillMaxWidth(), label = "Memuat lirik…", module = TaskifyModule.Music)
             l.error != null -> Text(l.error, color = MaterialTheme.colorScheme.error)
             l.text.isNullOrBlank() -> Text("Lagu ini tidak punya lirik (atau belum tersedia).", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else -> Text(l.text, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = SerifFamily), lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.2f)
@@ -263,7 +265,7 @@ fun MiniPlayerBar(state: MusicUiState, actions: MusicActions, onOpen: () -> Unit
                     Text(MusicQueue.barStatus(p, state.online), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = actions::togglePlay) {
-                    if (p.status == YtStatus.Preparing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    if (p.status == YtStatus.Preparing) TaskifyLoadingIndicator(size = 24.dp, module = TaskifyModule.Music)
                     else Icon(if (p.status == YtStatus.Playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = if (p.status == YtStatus.Playing) "Jeda" else "Putar", tint = accent)
                 }
                 IconButton(onClick = actions::next) { Icon(Icons.Rounded.SkipNext, contentDescription = "Berikutnya") }

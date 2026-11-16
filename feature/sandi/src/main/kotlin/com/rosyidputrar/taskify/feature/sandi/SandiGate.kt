@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.selection.toggleable
@@ -86,10 +87,7 @@ internal fun GateCard(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
 @Composable
 internal fun BusyLine(busy: String?, error: String?) {
     if (busy != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(busy, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        LoadingRow(busy, module = TaskifyModule.Sandi)
     }
     if (error != null) Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
 }

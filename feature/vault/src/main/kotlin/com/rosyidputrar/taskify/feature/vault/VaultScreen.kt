@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -152,6 +153,7 @@ private fun LazyListScope.configs(state: VaultUiState, actions: VaultActions, on
             }
         }
     }
+    if (!state.loaded) item(key = "c-skeleton") { ListSkeleton(TaskifyModule.Vault, rows = 3) }
     if (state.loaded && state.configs.isEmpty()) item(key = "c-empty") {
         EmptyState(
             TaskifyModule.Vault,
@@ -197,6 +199,7 @@ private fun LazyListScope.snippets(state: VaultUiState, actions: VaultActions, o
             }
         }
     }
+    if (!state.loaded) item(key = "s-skeleton") { ListSkeleton(TaskifyModule.Vault, rows = 4, lines = 2) }
     if (state.loaded && state.snippets.isEmpty()) {
         item(key = "s-empty") {
             EmptyState(
@@ -250,6 +253,7 @@ private fun LazyListScope.projects(state: VaultUiState, actions: VaultActions, o
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
         )
     }
+    if (!state.loaded) item(key = "p-skeleton") { ListSkeleton(TaskifyModule.Vault, rows = 3) }
     if (state.loaded && state.projects.isEmpty()) {
         item(key = "p-empty") {
             EmptyState(TaskifyModule.Vault, "Belum ada project", "Arsipkan source code sebagai ZIP per versi — dicek dulu dari .env, node_modules, dan .git sebelum diunggah.")

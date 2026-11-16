@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.activity.compose.BackHandler
@@ -144,7 +145,7 @@ fun SnippetEditorScreen(id: String?, onBack: () -> Unit) {
 @Composable
 fun SnippetEditorContent(d: SnippetDraft, edit: ((SnippetDraft) -> SnippetDraft) -> Unit, back: () -> Unit, save: () -> Unit, remove: () -> Unit, initialPreview: Boolean = false) {
     if (!d.loaded) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Vault)
         return
     }
     val colors = MaterialTheme.colorScheme

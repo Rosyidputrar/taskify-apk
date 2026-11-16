@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -203,7 +204,7 @@ fun ZipViewerContent(state: ZipViewerState, back: () -> Unit, open: (TreeNode) -
         when {
             state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator()
+                    TaskifyLoadingIndicator(module = TaskifyModule.Vault)
                     Text("Mengambil arsip…", style = MaterialTheme.typography.bodyMedium)
                 }
             }

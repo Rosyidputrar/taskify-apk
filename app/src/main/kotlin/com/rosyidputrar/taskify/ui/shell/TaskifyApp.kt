@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.Box
@@ -402,7 +406,17 @@ private fun TaskifyNavHost(
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     modifier: Modifier,
 ) {
-    NavHost(navController = navController, startDestination = HomeRoute, modifier = modifier) {
+    // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
+    // Lebih singkat: layar baru muncul 220 ms (sedikit membesar), yang lama hilang 120 ms.
+    NavHost(
+        navController = navController,
+        startDestination = HomeRoute,
+        modifier = modifier,
+        enterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
+        exitTransition = { fadeOut(tween(120)) },
+        popEnterTransition = { fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220, delayMillis = 40), initialScale = 0.98f) },
+        popExitTransition = { fadeOut(tween(120)) },
+    ) {
         composable<HomeRoute> {
             home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } }
         }

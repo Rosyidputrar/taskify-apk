@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.feature.links.LinksSection
 import com.rosyidputrar.taskify.core.domain.files.EntityType
 import androidx.activity.compose.BackHandler
@@ -109,7 +110,7 @@ fun NoteEditorContent(
     links: @Composable (noteId: String) -> Unit = {},
 ) {
     if (!ui.loaded) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Notes)
         return
     }
     if (ui.missing) {

@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.files
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -143,6 +145,7 @@ fun FilesContent(
         }
         items(state.jobs, key = { "j-" + it.key }) { job -> JobRow(job, actions, Modifier.animateItem()) }
         val listed = state.listed
+        if (!state.loaded) item(key = "skeleton") { ListSkeleton(TaskifyModule.Files, rows = 4) }
         if (state.loaded && listed.isEmpty() && state.jobs.isEmpty()) item(key = "empty") {
             EmptyState(TaskifyModule.Files, "Belum ada berkas", "Unggah berkas untuk mendapatkan tautan yang bisa dibuka siapa saja, tanpa login.")
         }
@@ -185,7 +188,7 @@ private fun JobRow(job: UploadJob, actions: FilesActions, modifier: Modifier = M
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
-                    job.phase.active -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+                    job.phase.active -> TaskifyLoadingIndicator(size = 28.dp, module = TaskifyModule.Files)
                     job.phase == UploadPhase.Failed -> Icon(Icons.Outlined.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(28.dp))
                     else -> Icon(Icons.Outlined.CheckCircle, null, tint = namedColor("emerald"), modifier = Modifier.size(28.dp))
                 }

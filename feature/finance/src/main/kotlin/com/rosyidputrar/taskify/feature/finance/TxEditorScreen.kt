@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -112,7 +113,7 @@ private val QUICK = listOf(5_000L, 10_000L, 50_000L, 100_000L)
 fun TxEditorContent(state: TxEditorState, today: String, actions: TxEditorActions, attachments: @Composable (txId: String) -> Unit = {}) {
     val d = state.draft
     if (!d.loaded) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Finance)
         return
     }
     val colors = MaterialTheme.colorScheme

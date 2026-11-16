@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.share
 
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -274,7 +275,7 @@ fun ShareContentView(
             )
         }
         items(content.files, key = { it.key }) { f -> FileTargetCard(f, state, actions, Modifier.animateItem()) }
-        if (state.busy != null) item(key = "busy") { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) }
+        state.busy?.let { b -> item(key = "busy") { LoadingRow(b, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) } }
         item(key = "finish") {
             Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { actions.finish(); onDone() }) { Text("Abaikan sisanya") }

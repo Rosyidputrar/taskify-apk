@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
+import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.State
@@ -135,7 +137,7 @@ fun SandiContent(
         }
         when (state.status) {
             VaultStatus.Loading -> item(key = "loading") {
-                Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LoadingBlock(label = "Membuka brankas…", module = TaskifyModule.Sandi) }
             }
             VaultStatus.NoVault -> {
                 if (state.rejectedKeyCreation) item(key = "b-key") { Banner(KEY_REJECTED_MESSAGE, actions::dismissRejectedKey) }
@@ -215,6 +217,8 @@ private fun LazyListScope.vaultList(state: SandiUiState, actions: SandiActions, 
         )
     }
     val list = state.filtered
+    // Item didekripsi setelah brankas terbuka — kerangka selama proses itu.
+    if (!state.items.ready) item(key = "skeleton") { ListSkeleton(TaskifyModule.Sandi, rows = 5, label = "Mendekripsi isi brankas…") }
     if (state.items.ready && list.isEmpty()) item(key = "empty") {
         EmptyState(
             TaskifyModule.Sandi,
@@ -261,6 +265,7 @@ private fun LazyListScope.codes(state: SandiUiState, actions: SandiActions, now:
         }
     }
     val list = state.withTotp
+    if (!state.items.ready) item(key = "codes-skeleton") { ListSkeleton(TaskifyModule.Sandi, rows = 3, label = "Mendekripsi isi brankas…") }
     if (state.items.ready && list.isEmpty()) item(key = "codes-empty") {
         EmptyState(TaskifyModule.Sandi, "Belum ada kode 2FA", "Tambahkan kunci 2FA saat mengubah sandi, atau pakai \"Cek kunci cepat\" untuk menempel kunci dari situs.")
     }

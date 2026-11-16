@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -130,6 +131,7 @@ fun NotesContent(
                 }
             }
         }
+        if (!state.loaded) full("skeleton") { ListSkeleton(TaskifyModule.Notes, rows = 4, lines = 2) }
         if (state.loaded && state.isEmpty) {
             full("empty") {
                 val filtered = state.filter.search.isNotEmpty() || state.filter.scope != NoteScope.All
