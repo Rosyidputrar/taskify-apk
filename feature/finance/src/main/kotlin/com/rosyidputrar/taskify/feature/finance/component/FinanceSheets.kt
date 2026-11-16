@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.finance.component
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -239,7 +241,7 @@ fun RecurringSheet(
             DateField("Sampai", endOn, today, { endOn = it }, allowClear = true, placeholder = "selamanya")
         }
         rule?.let { Text(describeRule(it, startOn), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.toggleable(autoPost, role = Role.Switch) { autoPost = it }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Catat otomatis", style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -247,7 +249,7 @@ fun RecurringSheet(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = autoPost, onCheckedChange = { autoPost = it })
+            Switch(checked = autoPost, onCheckedChange = null)
         }
         OutlinedTextField(note, { note = it }, label = { Text("Catatan (opsional)") }, modifier = Modifier.fillMaxWidth())
     }
@@ -259,7 +261,7 @@ fun KindSelector(kind: TxKind, onChange: (TxKind) -> Unit) {
     val options = listOf(TxKind.Expense to "Keluar", TxKind.Income to "Masuk", TxKind.Transfer to "Transfer")
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { i, (k, label) ->
-            SegmentedButton(selected = kind == k, onClick = { onChange(k) }, shape = SegmentedButtonDefaults.itemShape(i, options.size), label = { Text(label) })
+            SegmentedButton(selected = kind == k, onClick = { onChange(k) }, shape = SegmentedButtonDefaults.itemShape(i, options.size), label = { FitText(label) })
         }
     }
 }
@@ -283,7 +285,7 @@ fun DebtSheet(wallets: List<Wallet>, today: String, onDismiss: () -> Unit, onSav
     ) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             DebtDirection.entries.forEachIndexed { i, d ->
-                SegmentedButton(selected = direction == d, onClick = { direction = d }, shape = SegmentedButtonDefaults.itemShape(i, 2), label = { Text(d.label) })
+                SegmentedButton(selected = direction == d, onClick = { direction = d }, shape = SegmentedButtonDefaults.itemShape(i, 2), label = { FitText(d.label) })
             }
         }
         OutlinedTextField(who, { who = it }, label = { Text(if (direction == DebtDirection.Lent) "Dipinjamkan ke" else "Pinjam dari") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -374,7 +376,7 @@ fun CategorySheet(category: Category?, kind: CategoryKind, onDismiss: () -> Unit
         if (category == null) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 CategoryKind.entries.forEachIndexed { i, c ->
-                    SegmentedButton(selected = k == c, onClick = { k = c }, shape = SegmentedButtonDefaults.itemShape(i, 2), label = { Text(c.label) })
+                    SegmentedButton(selected = k == c, onClick = { k = c }, shape = SegmentedButtonDefaults.itemShape(i, 2), label = { FitText(c.label) })
                 }
             }
         }

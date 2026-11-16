@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -74,7 +77,7 @@ fun GeneratorPanel(state: SandiUiState, actions: SandiActions) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             Generator.Mode.entries.forEachIndexed { i, m ->
                 SegmentedButton(selected = g.mode == m, onClick = { actions.setGenerator(g.copy(mode = m)) }, shape = SegmentedButtonDefaults.itemShape(i, 2),
-                    label = { Text(if (m == Generator.Mode.Password) "Sandi acak" else "Frasa kata") })
+                    label = { FitText(if (m == Generator.Mode.Password) "Sandi acak" else "Frasa kata") })
             }
         }
         Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
@@ -118,9 +121,9 @@ fun GeneratorPanel(state: SandiUiState, actions: SandiActions) {
 
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked, onChange)
+        Switch(checked, onCheckedChange = null)
     }
 }
 

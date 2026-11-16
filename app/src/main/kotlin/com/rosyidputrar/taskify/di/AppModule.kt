@@ -135,6 +135,7 @@ private val deviceModule = module {
     single { ReviewRepository(get()) }
     single { SearchRepository(get()) }
     single { TrashRepository(get()) }
+    single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
     single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
@@ -162,7 +163,7 @@ private val deviceModule = module {
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { GateViewModel(getOrNull(), getOrNull(), get()) }
-    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(getOrNull(), getOrNull(), get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
 }
 
 /** Bagian yang butuh server (Supabase + PowerSync). Hanya dimuat bila konfigurasi lengkap. */

@@ -8,4 +8,5 @@ val authFeatureModule = module {
     viewModel { LoginViewModel(get(), get()) }
     viewModel { MfaViewModel(get(), get()) }
     viewModel { LockViewModel(get(), get(), get()) }
+    viewModel { AuthenticatorsViewModel(get()) }
 }

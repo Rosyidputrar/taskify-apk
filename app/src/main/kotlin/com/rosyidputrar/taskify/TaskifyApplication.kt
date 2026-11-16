@@ -26,5 +26,7 @@ class TaskifyApplication : Application() {
         // Alarm pengingat mengikuti data lokal (termasuk yang tiba lewat sync dari laptop).
         get<ReminderNotifier>().ensureChannel()
         get<ReminderScheduler>().start(get(APP_SCOPE_QUALIFIER))
+        // Widget "Hari ini" mengikuti perubahan tugas (lokal maupun dari sinkron).
+        com.rosyidputrar.taskify.widget.WidgetUpdater(this, get(), get(), get(APP_SCOPE_QUALIFIER)).start()
     }
 }

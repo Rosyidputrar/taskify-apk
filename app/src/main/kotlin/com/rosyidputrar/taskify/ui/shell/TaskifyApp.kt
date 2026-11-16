@@ -183,6 +183,7 @@ fun TaskifyApp(
         AppEvents.events.collect { event ->
             when (event) {
                 is AppEvent.OpenEntity -> openEntity(event.type, event.id)
+                is AppEvent.OpenModule -> { spotlightOpen = false; navController.navigate(event.module.route()) { launchSingleTop = true } }
                 AppEvent.OpenShare -> { spotlightOpen = false; navController.navigate(ShareRoute) { launchSingleTop = true } }
                 AppEvent.OpenSpotlight -> spotlightOpen = true
                 is AppEvent.OpenCapture -> openCapture(event.text)
@@ -213,6 +214,7 @@ fun TaskifyApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val pinned = preferences.pinnedModule
+    val shortcutContext = androidx.compose.ui.platform.LocalContext.current
     val currentModule: TaskifyModule? = when {
         destination == null -> null
         destination.hasRoute<HomeRoute>() -> TaskifyModule.Home
@@ -234,6 +236,7 @@ fun TaskifyApp(
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
+    LaunchedEffect(currentModule) { currentModule?.let { com.rosyidputrar.taskify.widget.ModuleShortcuts.report(shortcutContext, it) } }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
     val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() } == true
     val selectedKey = when (currentModule) {
@@ -562,6 +565,7 @@ private fun TaskifyNavHost(
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
                 onBack = navController.backIfPossible(),
+                onOpenModule = { navController.navigate(it.route()) },
             )
         }
         composable<ModuleRoute> { entry ->

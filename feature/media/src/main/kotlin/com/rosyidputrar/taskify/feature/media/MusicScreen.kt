@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -108,7 +111,7 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
         if (state.player.status != YtStatus.Idle) item(key = "now") { NowPlaying(state, actions) }
         item(key = "tabs") {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
-                MusicTab.entries.forEachIndexed { i, t -> SegmentedButton(state.tab == t, { actions.setTab(t) }, SegmentedButtonDefaults.itemShape(i, MusicTab.entries.size), label = { Text(t.label) }) }
+                MusicTab.entries.forEachIndexed { i, t -> SegmentedButton(state.tab == t, { actions.setTab(t) }, SegmentedButtonDefaults.itemShape(i, MusicTab.entries.size), label = { FitText(t.label) }) }
             }
         }
         when (state.tab) {
@@ -156,9 +159,9 @@ private fun NowPlaying(state: MusicUiState, actions: MusicActions) {
                         tint = if (p.repeat != RepeatMode.Off) accent else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().toggleable(p.autoContinue, role = Role.Switch) { actions.toggleAutoContinue() }) {
                 Text("Lanjutkan otomatis dengan lagu serupa", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                Switch(p.autoContinue, { actions.toggleAutoContinue() })
+                Switch(p.autoContinue, onCheckedChange = null)
             }
             OutlinedButton(onClick = actions::stop) { Icon(Icons.Rounded.Close, null); Spacer(Modifier.width(6.dp)); Text("Hentikan & kosongkan antrean") }
         }

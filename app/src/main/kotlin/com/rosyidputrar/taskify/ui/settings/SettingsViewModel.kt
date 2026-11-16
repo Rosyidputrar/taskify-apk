@@ -44,7 +44,37 @@ class SettingsViewModel(
     private val notifier: ReminderNotifier,
     private val scheduler: ReminderScheduler,
     private val reminderPrefs: ReminderPrefs,
+    private val exporter: com.rosyidputrar.taskify.core.store.cross.ExportRepository,
+    private val messenger: com.rosyidputrar.taskify.core.designsystem.component.Messenger,
+    private val context: android.content.Context,
 ) : ViewModel() {
+
+    private val _exporting = MutableStateFlow(false)
+    val exporting: StateFlow<Boolean> = _exporting.asStateFlow()
+
+    fun show(message: String) = messenger.show(message)
+
+    /** Ekspor semua data lokal (termasuk Sampah) ke JSON di lokasi pilihan pengguna — jalan offline. */
+    fun export(target: android.net.Uri) {
+        if (_exporting.value) return
+        _exporting.value = true
+        viewModelScope.launch {
+            try {
+                val rows = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(target)?.use { out ->
+                        exporter.export(out, auth?.currentUserId(), com.rosyidputrar.taskify.BuildConfig.VERSION_NAME)
+                    } ?: error("Tujuan tidak bisa ditulis")
+                }
+                messenger.show("$rows baris diekspor")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                messenger.show("Ekspor gagal: ${e.message}")
+            } finally {
+                _exporting.value = false
+            }
+        }
+    }
 
     data class NotificationUi(val canPost: Boolean = false, val exactAlarms: Boolean = false, val hideContent: Boolean = false)
 

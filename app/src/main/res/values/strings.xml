@@ -7,4 +7,6 @@
     <string name="shortcut_search_long">Cari di Taskify</string>
     <string name="shortcut_calendar_short">Kalender</string>
     <string name="shortcut_calendar_long">Buka Kalender</string>
+    <string name="widget_today_label">Taskify · Hari ini</string>
+    <string name="widget_today_description">Tugas hari ini &amp; terlambat, centang langsung, tombol Tangkap</string>
 </resources>

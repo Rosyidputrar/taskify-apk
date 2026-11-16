@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -320,7 +321,7 @@ fun ConfigEditorContent(
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     ConfigFormat.entries.forEachIndexed { i, f ->
-                        SegmentedButton(selected = state.format == f, onClick = { actions.setFormat(f) }, shape = SegmentedButtonDefaults.itemShape(i, ConfigFormat.entries.size), label = { Text(f.label) })
+                        SegmentedButton(selected = state.format == f, onClick = { actions.setFormat(f) }, shape = SegmentedButtonDefaults.itemShape(i, ConfigFormat.entries.size), label = { FitText(f.label) })
                     }
                 }
                 OutlinedTextField(state.environment, actions::setEnvironment, label = { Text("Lingkungan (opsional)") }, placeholder = { Text("production") }, singleLine = true, modifier = Modifier.fillMaxWidth())

@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
                 // Salin isi selagi izin baca dari aplikasi pengirim masih berlaku, lalu buka layar Bagikan.
                 lifecycleScope.launch { if (shareInbox.receive(intent)) AppEvents.send(AppEvent.OpenShare) }
             }
+            com.rosyidputrar.taskify.widget.ModuleShortcuts.ACTION_OPEN_MODULE ->
+                com.rosyidputrar.taskify.widget.ModuleShortcuts.moduleOf(intent)?.let { AppEvents.send(AppEvent.OpenModule(it)) }
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
         }
     }

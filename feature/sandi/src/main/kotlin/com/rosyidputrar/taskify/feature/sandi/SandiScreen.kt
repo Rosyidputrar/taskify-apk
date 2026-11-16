@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import android.app.Activity
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
@@ -152,7 +153,7 @@ fun SandiContent(
                 item(key = "tabs") {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
                         SandiTab.entries.forEachIndexed { i, t ->
-                            SegmentedButton(selected = state.tab == t, onClick = { actions.setTab(t) }, shape = SegmentedButtonDefaults.itemShape(i, SandiTab.entries.size), label = { Text(t.label) })
+                            SegmentedButton(selected = state.tab == t, onClick = { actions.setTab(t) }, shape = SegmentedButtonDefaults.itemShape(i, SandiTab.entries.size), label = { FitText(t.label) })
                         }
                     }
                 }

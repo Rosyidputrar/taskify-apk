@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance.component
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -141,12 +142,10 @@ fun WalletCard(wallet: Wallet, selected: Boolean, onClick: () -> Unit, modifier:
                     Text(wallet.type.label.uppercase(), style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text(
+            FitText(
                 Rupiah.format(wallet.balance),
                 style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily),
                 color = if (wallet.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = 0.6f)))
         }

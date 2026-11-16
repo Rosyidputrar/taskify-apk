@@ -40,8 +40,9 @@ android {
 
     defaultConfig {
         applicationId = "com.rosyidputrar.taskify"
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI: nomor run GitHub Actions → setiap APK bisa dipasang menimpa yang sebelumnya.
+        versionCode = config("VERSION_CODE").toIntOrNull() ?: 1
+        versionName = "1.0.0"
         serverConfigKeys.forEach { key -> buildConfigField("String", key, config(key).asBuildConfigString()) }
         // App Link halaman unduh publik: host dari PUBLIC_WEB_ORIGIN (tanpa skema/path).
         manifestPlaceholders["publicWebHost"] = publicWebHost
@@ -110,6 +111,8 @@ dependencies {
     implementation(projects.feature.links)
     implementation(projects.feature.organize)
     implementation(projects.feature.media)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
     implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)

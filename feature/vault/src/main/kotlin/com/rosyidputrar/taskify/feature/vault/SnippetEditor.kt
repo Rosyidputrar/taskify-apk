@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -172,7 +173,7 @@ fun SnippetEditorContent(d: SnippetDraft, edit: ((SnippetDraft) -> SnippetDraft)
                 }
                 SingleChoiceSegmentedButtonRow {
                     listOf("Tulis" to false, "Lihat" to true).forEachIndexed { i, (label, v) ->
-                        SegmentedButton(selected = preview == v, onClick = { preview = v }, shape = SegmentedButtonDefaults.itemShape(i, 2), icon = {}, label = { Text(label) })
+                        SegmentedButton(selected = preview == v, onClick = { preview = v }, shape = SegmentedButtonDefaults.itemShape(i, 2), icon = {}, label = { FitText(label) })
                     }
                 }
             }

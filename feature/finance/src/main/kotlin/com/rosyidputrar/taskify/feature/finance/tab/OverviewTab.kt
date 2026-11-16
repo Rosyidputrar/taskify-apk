@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance.tab
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -161,8 +162,8 @@ private fun StatTile(label: String, value: Long, icon: ImageVector, tint: androi
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = modifier.semantics(mergeDescendants = true) { contentDescription = "$label ${Rupiah.format(value)}" }) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (value == 0L) "Rp 0" else "Rp $text", style = MaterialTheme.typography.titleMedium, color = if (signed) tint else MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            FitText(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FitText(if (value == 0L) "Rp 0" else "Rp $text", style = MaterialTheme.typography.titleMedium, color = if (signed) tint else MaterialTheme.colorScheme.onSurface)
         }
     }
 }

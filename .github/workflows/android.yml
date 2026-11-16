@@ -22,6 +22,7 @@ jobs:
       TIKTOK_API_URL: ${{ secrets.TIKTOK_API_URL }}
       PUBLIC_WEB_ORIGIN: ${{ secrets.PUBLIC_WEB_ORIGIN }}
       RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +51,12 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --console=plain
+
+      - name: Sidik jari sertifikat rilis (untuk assetlinks.json)
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep -i "SHA-256" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

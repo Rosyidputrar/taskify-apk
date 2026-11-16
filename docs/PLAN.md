@@ -283,6 +283,13 @@ Biometric · Glance (widget) · DataStore.
 | **10. Lintas modul** | FTS5 Spotlight, Share Target & capture, halaman Tag, Sampah, Musik, TikTok | |
 | **11. Pengaturan & rilis** | Pengaturan lengkap, ekspor, widget & shortcut, aksesibilitas (TalkBack, font besar), APK rilis bertanda tangan | APK rilis |
 
+### Status
+
+Tahap 0–11 selesai (tiap tahap di branch `tahap-*` masing-masing, bertumpuk berurutan; branch
+`tahap-11-pengaturan-rilis` berisi seluruh aplikasi). Yang masih perlu dilakukan di luar kode:
+uji di perangkat nyata dengan server produksi, isi secret keystore rilis, dan pasang
+`/.well-known/assetlinks.json` di origin web untuk App Link `/unduh/<token>`.
+
 ### Pengujian
 - Uji unit JVM untuk semua logika murni di `core/domain` & `core/crypto`, termasuk **vektor uji
   lintas platform** yang dibangkitkan dari kode webapp.

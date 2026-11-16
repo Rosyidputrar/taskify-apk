@@ -39,6 +39,12 @@ import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.ThemeMode
 import com.rosyidputrar.taskify.ui.placeholder.BackButton
 import org.koin.compose.viewmodel.koinViewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.feature.auth.AuthenticatorSettings
 
 @Composable
 fun SettingsScreen(
@@ -48,8 +54,11 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
     onBack: (() -> Unit)?,
+    onOpenModule: (TaskifyModule) -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
+    val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+    val exportTo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(viewModel::export) }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = contentPadding,
@@ -65,6 +74,9 @@ fun SettingsScreen(
         }
         if (viewModel.hasAccount) item { AccountSection(viewModel) }
         item { SecuritySection(viewModel) }
+        if (viewModel.hasAccount) item {
+            SettingsSection("Verifikasi dua langkah") { AuthenticatorSettings(onMessage = viewModel::show) }
+        }
         item { NotificationSection(viewModel) }
         if (viewModel.hasAccount) item { SyncSection(viewModel) }
         item {
@@ -111,13 +123,21 @@ fun SettingsScreen(
                 AppConfig.entries.forEach { entry -> ConfigRow(entry) }
             }
         }
-        item {
-            SettingsSection("Segera hadir") {
-                listOf(
-                    "Ekspor data & hapus data perangkat",
-                    "Kelola authenticator (tambah cadangan, hapus)",
-                ).forEach {
-                    Text("• $it", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 3.dp))
+        if (viewModel.hasAccount) item {
+            SettingsSection("Data, tag & Sampah") {
+                Text("Ekspor semua data", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Satu file JSON berisi seluruh data di perangkat ini (termasuk Sampah), format sama dengan ekspor webapp. Jalan offline; isi lampiran tetap di server.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { exportTo.launch("taskify-ekspor-${Dates.today()}.json") }, enabled = !exporting) {
+                    Text(if (exporting) "Mengekspor…" else "Ekspor JSON")
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onOpenModule(TaskifyModule.Tags) }) { Text("Kelola tag") }
+                    OutlinedButton(onClick = { onOpenModule(TaskifyModule.Trash) }) { Text("Buka Sampah") }
                 }
             }
         }

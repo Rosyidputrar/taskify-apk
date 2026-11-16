@@ -16,6 +16,8 @@ sealed interface AppEvent {
     data class OpenNote(val id: String? = null, val date: String? = null) : AppEvent
     /** Buka editor transaksi: transaksi [id], atau transaksi baru di [date]. */
     data class OpenTransaction(val id: String? = null, val date: String? = null) : AppEvent
+    /** Shortcut launcher modul. */
+    data class OpenModule(val module: com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule) : AppEvent
     /** Kotak masuk "Bagikan ke Taskify" sudah terisi. */
     data object OpenShare : AppEvent
     /** Buka entitas lintas modul (hasil pencarian, tag, tautan, Sampah). */

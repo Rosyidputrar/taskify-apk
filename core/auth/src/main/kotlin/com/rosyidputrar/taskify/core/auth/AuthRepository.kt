@@ -137,6 +137,9 @@ class AuthRepository(
         TotpEnrollment(factor.id, factor.data.secret, factor.data.uri)
     }
 
+    /** Hapus authenticator (butuh sesi aal2). Pemanggil wajib mencegah menghapus yang terakhir (MFA wajib). */
+    suspend fun unenroll(factorId: String) = guard { auth.mfa.unenroll(factorId) }
+
     /** Konfirmasi ulang tidak bisa diperiksa tanpa internet → lewati untuk pembukaan ini. */
     fun skipReverifyOffline() {
         val userId = auth.currentUserOrNull()?.id ?: auth.currentSessionOrNull()?.let { subjectOf(it.accessToken) } ?: return

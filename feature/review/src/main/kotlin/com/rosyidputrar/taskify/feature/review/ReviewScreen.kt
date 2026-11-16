@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -121,7 +122,7 @@ fun ReviewContent(
             Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     ReviewPeriod.entries.forEachIndexed { i, p ->
-                        SegmentedButton(state.period == p, { actions.setPeriod(p) }, SegmentedButtonDefaults.itemShape(i, 2), label = { Text(p.label) })
+                        SegmentedButton(state.period == p, { actions.setPeriod(p) }, SegmentedButtonDefaults.itemShape(i, 2), label = { FitText(p.label) })
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

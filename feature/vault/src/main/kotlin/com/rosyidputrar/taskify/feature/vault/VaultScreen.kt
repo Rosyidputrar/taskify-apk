@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -117,7 +118,7 @@ fun VaultContent(
         item(key = "tabs") {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
                 VaultTab.entries.forEachIndexed { i, t ->
-                    SegmentedButton(selected = state.tab == t, onClick = { actions.setTab(t) }, shape = SegmentedButtonDefaults.itemShape(i, VaultTab.entries.size), label = { Text(t.label) })
+                    SegmentedButton(selected = state.tab == t, onClick = { actions.setTab(t) }, shape = SegmentedButtonDefaults.itemShape(i, VaultTab.entries.size), label = { FitText(t.label) })
                 }
             }
         }

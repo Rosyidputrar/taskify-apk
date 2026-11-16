@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.files
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -105,13 +107,13 @@ fun FileDetail(file: TempFile, state: FilesUiState, actions: FilesActions, onDel
             TempFileState.Ready -> {
                 HorizontalDivider()
                 Text("Tautan", style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.toggleable(file.isPublic, enabled = editable, role = Role.Switch) { actions.setPublic(file, it) }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if (file.isPublic) "Siapa pun yang punya tautan bisa mengunduh" else "Privat", style = MaterialTheme.typography.bodyLarge)
                         Text(if (file.isPublic) "Matikan untuk menghentikan tautan sementara tanpa menghapus berkas." else "Tautan tidak bekerja sampai diaktifkan lagi.",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(file.isPublic, { actions.setPublic(file, it) }, enabled = editable)
+                    Switch(file.isPublic, onCheckedChange = null, enabled = editable)
                 }
                 if (shareable) {
                     val url = actions.link(file)

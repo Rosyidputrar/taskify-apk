@@ -27,10 +27,26 @@ Dibaca saat build dari environment variable (CI: GitHub Secrets) atau `local.pro
 | `TIKTOK_API_URL` | tidak | Unduh TikTok (kosong = disembunyikan) |
 | `PUBLIC_WEB_ORIGIN` | tidak | Tautan publik Berkas & header `Origin` ke Worker |
 
-APK rilis bertanda tangan dibuat otomatis bila secret `RELEASE_KEYSTORE_BASE64`,
-`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, dan `RELEASE_KEY_PASSWORD` diisi. Tanpa itu CI
-tetap menghasilkan APK debug yang ditandatangani kunci debug tetap (`app/debug.keystore`, bukan
-rahasia), sehingga build berikutnya bisa dipasang menimpa yang lama tanpa uninstall.
+### APK rilis bertanda tangan
+
+APK rilis (`versionName` 1.0.0, `versionCode` = nomor run GitHub Actions) dibuat otomatis bila
+empat secret ini diisi: `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`,
+`RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`. Buat keystore sekali saja dan SIMPAN BAIK-BAIK —
+kehilangan keystore = pembaruan APK tidak bisa dipasang menimpa versi lama:
+
+```bash
+keytool -genkeypair -keystore taskify-release.jks -alias taskify -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 taskify-release.jks   # isi untuk secret RELEASE_KEYSTORE_BASE64
+```
+
+Langkah CI "Sidik jari sertifikat rilis" menulis SHA-256 sertifikat ke ringkasan run; itulah
+nilai `sha256_cert_fingerprints` untuk `assetlinks.json` (lihat bagian App Link di bawah,
+format huruf besar dipisah titik dua).
+
+Tanpa secret itu CI tetap menghasilkan APK debug yang ditandatangani kunci debug tetap
+(`app/debug.keystore`, bukan rahasia), sehingga build berikutnya bisa dipasang menimpa yang lama
+tanpa uninstall. APK debug dan rilis memakai kunci berbeda: pindah dari debug ke rilis perlu
+uninstall sekali (unggah dulu semua perubahan — lihat Pengaturan › Sinkronisasi).
 
 ## Struktur
 
@@ -93,6 +109,24 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
 4. Database lokal disiapkan: bila akun berbeda dari pemilik sebelumnya, isinya dikosongkan dulu,
    lalu sinkronisasi PowerSync dimulai.
 5. PIN aktif → layar kunci (5 percobaan → jeda 30 detik; Lupa PIN = verifikasi password akun).
+
+### Widget, shortcut & aksesibilitas
+
+- Widget layar utama **Hari ini**: tugas jatuh tempo hari ini & terlambat dengan centang langsung,
+  plus tombol Tangkap. Bila kunci PIN aktif, widget hanya menampilkan jumlah tugas (judul tetap di
+  balik PIN). Diperbarui otomatis saat tugas berubah, termasuk dari sinkron.
+- Tekan lama ikon: Tangkap, Cari, Kalender, dan modul yang paling sering dibuka (shortcut dinamis).
+- Aksesibilitas diuji otomatis (`AccessibilityTest`): setiap elemen yang bisa diketuk wajib punya
+  nama untuk TalkBack, dan layar utama direkam pada ukuran huruf 160% (`a11y_font160_*.png`).
+  Label tab, angka uang, dan ubin statistik mengecil sendiri alih-alih terpotong.
+
+### Pengaturan
+
+Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —
+yang terakhir tidak bisa dihapus karena MFA wajib — dan lupakan perangkat ini), notifikasi
+pengingat, sinkronisasi & penyimpanan (perubahan yang ditolak server bisa disalin & dibersihkan),
+ekspor semua data ke JSON (format sama dengan webapp, termasuk Sampah, jalan offline), tautan ke
+Tag & Sampah, tampilan, dok, status konfigurasi server, dan versi.
 
 ### Pencarian & Bagikan
 
