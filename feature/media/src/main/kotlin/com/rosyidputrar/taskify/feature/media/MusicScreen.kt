@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
@@ -102,6 +104,9 @@ fun SongArt(url: String, size: Dp, modifier: Modifier = Modifier) {
 
 @Composable
 fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: PaddingValues, onBack: (() -> Unit)? = null, backButton: @Composable (() -> Unit) -> Unit = {}) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticMusicActions(actions, haptics) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item(key = "header") {
             ModuleHeader(TaskifyModule.Music, "Musik", subtitle = "Cari lagu, putar di latar, lirik", navigation = onBack?.let { { backButton(it) } })
@@ -276,3 +281,15 @@ fun MiniPlayerBar(state: MusicUiState, actions: MusicActions, onOpen: () -> Unit
     }
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticMusicActions(private val a: MusicActions, private val h: TaskifyHaptics) : MusicActions by a {
+    override fun setTab(tab: MusicTab) { h.tick(); a.setTab(tab) }
+    override fun setFilter(f: SearchFilter) { h.tick(); a.setFilter(f) }
+    override fun play(index: Int) { h.tap(); a.play(index) }
+    override fun togglePlay() { h.tap(); a.togglePlay() }
+    override fun next() { h.tick(); a.next() }
+    override fun prev() { h.tick(); a.prev() }
+    override fun toggleRepeat() { h.tick(); a.toggleRepeat() }
+    override fun toggleShuffle() { h.tick(); a.toggleShuffle() }
+    override fun toggleAutoContinue() { h.tick(); a.toggleAutoContinue() }
+}

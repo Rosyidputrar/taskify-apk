@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.room
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -131,10 +132,11 @@ fun RoomScreen(
 
 @Composable
 private fun ModuleCard(module: TaskifyModule, pinned: Boolean, onOpen: () -> Unit, onLongPress: () -> Unit) {
+    val haptics = rememberHaptics()
     IndexCard(
         module,
         onClick = onOpen,
-        onLongClick = onLongPress,
+        onLongClick = { haptics.longPress(); onLongPress() },
         onClickLabel = "Buka ${module.label}",
         modifier = Modifier.fillMaxWidth(),
         contentPadding = 14.dp,

@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.files
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import android.content.ClipData
@@ -104,6 +107,9 @@ fun FilesContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticFilesActions(actions, haptics) }
     val context = LocalContext.current
     var detailId by rememberSaveable { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { actions.pick(it) }
@@ -242,4 +248,12 @@ fun FileRow(file: TempFile, now: Long, onOpen: () -> Unit, onCopy: () -> Unit, m
             if (TempFiles.isShareable(file, now)) IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin tautan ${file.fileName}") }
         }
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticFilesActions(private val a: FilesActions, private val h: TaskifyHaptics) : FilesActions by a {
+    override fun setExpiry(expiry: ExpiryOption) { h.tick(); a.setExpiry(expiry) }
+    override fun copied() { h.success(); a.copied() }
+    override fun setPublic(file: TempFile, value: Boolean) { h.toggle(value); a.setPublic(file, value) }
+    override fun applyExpiry(file: TempFile, expiry: ExpiryOption) { h.tick(); a.applyExpiry(file, expiry) }
 }

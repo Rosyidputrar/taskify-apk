@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.data
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -13,15 +14,16 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "taskify_prefs")
 
-/** Preferensi per perangkat (tidak disinkron): tema & modul yang disematkan ke Dok. */
+/** Preferensi per perangkat (tidak disinkron): tema, modul yang disematkan ke Dok, dan getaran. */
 class AppPreferences(private val context: Context) {
 
-    data class Snapshot(val themeMode: ThemeMode, val pinnedModule: TaskifyModule?)
+    data class Snapshot(val themeMode: ThemeMode, val pinnedModule: TaskifyModule?, val haptics: Boolean = true)
 
     val snapshot: Flow<Snapshot> = context.dataStore.data.map { prefs ->
         Snapshot(
             themeMode = prefs[THEME]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.System,
             pinnedModule = prefs[PINNED]?.let { name -> TaskifyModule.entries.firstOrNull { it.name == name } },
+            haptics = prefs[HAPTICS] ?: true,
         )
     }
 
@@ -35,8 +37,13 @@ class AppPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setHaptics(enabled: Boolean) {
+        context.dataStore.edit { it[HAPTICS] = enabled }
+    }
+
     private companion object {
         val THEME = stringPreferencesKey("theme_mode")
         val PINNED = stringPreferencesKey("dock_pinned_module")
+        val HAPTICS = booleanPreferencesKey("haptics")
     }
 }

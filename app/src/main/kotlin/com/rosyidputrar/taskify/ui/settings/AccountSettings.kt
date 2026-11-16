@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.settings
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import android.content.ClipData
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
@@ -268,8 +269,9 @@ fun SyncSection(viewModel: SettingsViewModel) {
 
 @Composable
 fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val haptics = rememberHaptics()
     Row(
-        Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = { haptics.toggle(it); onChange(it) }).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

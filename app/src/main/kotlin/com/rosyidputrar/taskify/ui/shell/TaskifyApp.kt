@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
@@ -150,13 +151,14 @@ fun TaskifyApp(
     preferences: AppPreferences.Snapshot,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    onHapticsChange: (Boolean) -> Unit = {},
     displayName: String? = null,
     messages: Flow<UiMessage> = emptyFlow(),
     home: HomeSlot = { padding, name, openModule, openTask -> HomeScreen(padding, name, openModule, openTask) },
 ) {
     val navController = rememberNavController()
     val spotlight = com.rosyidputrar.taskify.ui.spotlight.rememberSpotlightSheetState()
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     var captureOpen by rememberSaveable { mutableStateOf(false) }
     var captureText by rememberSaveable { mutableStateOf("") }
     var capturePickType by rememberSaveable { mutableStateOf(false) }
@@ -292,6 +294,7 @@ fun TaskifyApp(
                 onCapture = { openCapture() },
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
+                onHapticsChange = onHapticsChange,
                 modifier = modifier,
             )
         }
@@ -332,7 +335,7 @@ fun TaskifyApp(
                 onCapture = { openCapture() },
                 onCaptureLongPress = { openCapture(pickType = true) },
                 // Panel Spotlight ikut tertarik sejak jari mulai bergeser ke atas.
-                onPull = { delta -> if (spotlight.dragBy(delta)) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate) },
+                onPull = { delta -> if (spotlight.dragBy(delta)) haptics.threshold() },
                 onPullEnd = { velocity -> spotlight.release(velocity) },
                 onOpenSearch = { spotlight.open() },
                 modifier = Modifier
@@ -360,7 +363,10 @@ fun TaskifyApp(
                 snackbar.currentSnackbarData?.dismiss()
                 scope.launchSafe {
                     val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel, withDismissAction = message.action == null, duration = SnackbarDuration.Short)
-                    if (result == SnackbarResult.ActionPerformed) message.action?.invoke()
+                    if (result == SnackbarResult.ActionPerformed) {
+                        haptics.tap()
+                        message.action?.invoke()
+                    }
                 }
             }
         }
@@ -404,6 +410,7 @@ private fun TaskifyNavHost(
     onCapture: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    onHapticsChange: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     // Transisi bawaan NavHost = crossfade 700 ms: pindah layar terasa lambat & sempat kosong.
@@ -583,6 +590,8 @@ private fun TaskifyNavHost(
                 pinnedModule = preferences.pinnedModule,
                 onThemeModeChange = onThemeModeChange,
                 onPinnedModuleChange = onPinnedModuleChange,
+                haptics = preferences.haptics,
+                onHapticsChange = onHapticsChange,
                 onBack = navController.backIfPossible(),
                 onOpenModule = { navController.navigate(it.route()) },
             )

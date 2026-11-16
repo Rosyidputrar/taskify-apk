@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify
 
+import com.rosyidputrar.taskify.core.designsystem.component.LocalHapticsEnabled
+import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Intent
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
@@ -70,8 +72,10 @@ class MainActivity : FragmentActivity() {
             val prefs by appViewModel.state.collectAsStateWithLifecycle()
             val gate by gateViewModel.ui.collectAsStateWithLifecycle()
             val snapshot = prefs ?: return@setContent
-            TaskifyTheme(darkTheme = snapshot.themeMode.isDark()) {
-                AppGate(gate, snapshot)
+            CompositionLocalProvider(LocalHapticsEnabled provides snapshot.haptics) {
+                TaskifyTheme(darkTheme = snapshot.themeMode.isDark()) {
+                    AppGate(gate, snapshot)
+                }
             }
         }
     }
@@ -86,6 +90,7 @@ class MainActivity : FragmentActivity() {
                 messages = messenger.messages,
                 onThemeModeChange = appViewModel::setThemeMode,
                 onPinnedModuleChange = appViewModel::setPinnedModule,
+                onHapticsChange = appViewModel::setHaptics,
             )
         }
         GateHost(gate, shell = shell, gateScreen = { target ->

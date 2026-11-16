@@ -21,6 +21,10 @@ class AppViewModel(private val preferences: AppPreferences) : ViewModel() {
         launchSafe { preferences.setThemeMode(mode) }
     }
 
+    fun setHaptics(enabled: Boolean) {
+        launchSafe { preferences.setHaptics(enabled) }
+    }
+
     fun setPinnedModule(module: TaskifyModule?) {
         launchSafe { preferences.setPinnedModule(module) }
     }

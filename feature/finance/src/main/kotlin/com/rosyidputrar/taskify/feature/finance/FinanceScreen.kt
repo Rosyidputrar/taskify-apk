@@ -1,5 +1,11 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.domain.finance.Wallet
+import com.rosyidputrar.taskify.core.domain.finance.Debt
+import com.rosyidputrar.taskify.core.domain.finance.Recurring
+import com.rosyidputrar.taskify.core.domain.finance.CategoryKind
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.SkeletonCard
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import android.content.Context
@@ -111,6 +117,9 @@ fun FinanceContent(
     backButton: @Composable (() -> Unit) -> Unit = {},
     onExport: () -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticFinanceActions(actions, haptics) }
     var dialog by remember { mutableStateOf<FinanceDialog?>(null) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Finance)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
@@ -229,3 +238,15 @@ private fun MonthSwitcher(state: FinanceUiState, actions: FinanceActions) {
     }
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticFinanceActions(private val a: FinanceActions, private val h: TaskifyHaptics) : FinanceActions by a {
+    override fun setTab(tab: FinanceTab) { h.tick(); a.setTab(tab) }
+    override fun shiftMonth(amount: Long) { h.tick(); a.shiftMonth(amount) }
+    override fun setWallet(id: String?) { h.tick(); a.setWallet(id) }
+    override fun setSliceKind(kind: CategoryKind) { h.tick(); a.setSliceKind(kind) }
+    override fun setTxFilter(filter: TxListFilter) { h.tick(); a.setTxFilter(filter) }
+    override fun postOccurrence(r: Recurring) { h.success(); a.postOccurrence(r) }
+    override fun settleDebt(d: Debt, walletId: String?) { h.success(); a.settleDebt(d, walletId) }
+    override fun setRecurringActive(r: Recurring, active: Boolean) { h.toggle(active); a.setRecurringActive(r, active) }
+    override fun setWalletArchived(w: Wallet, archived: Boolean) { h.toggle(archived); a.setWalletArchived(w, archived) }
+}

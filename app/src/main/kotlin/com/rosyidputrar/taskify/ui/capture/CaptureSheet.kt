@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.capture
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,6 +67,7 @@ fun CaptureSheet(
     onDismiss: () -> Unit,
     viewModel: CaptureViewModel = koinViewModel(),
 ) {
+    val haptics = rememberHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var text by rememberSaveable { mutableStateOf(initialText) }
     var kind by rememberSaveable { mutableStateOf(CaptureKind.Auto) }
@@ -122,7 +124,7 @@ fun CaptureSheet(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onDismiss) { Text("Tutup") }
-                Button(onClick = { viewModel.save(kind, text, onDismiss) }, enabled = text.isNotBlank()) { Text("Simpan") }
+                Button(onClick = { viewModel.save(kind, text) { haptics.success(); onDismiss() } }, enabled = text.isNotBlank()) { Text("Simpan") }
             }
         }
     }

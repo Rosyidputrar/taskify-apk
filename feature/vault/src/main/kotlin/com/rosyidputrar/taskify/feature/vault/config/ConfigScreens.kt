@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.SecureWindow
@@ -117,6 +119,9 @@ fun ConfigFileContent(
     onOpenSandi: () -> Unit,
     backButton: @Composable (() -> Unit) -> Unit,
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticConfigFileActions(actions, haptics) }
     val file = state.file
     var menu by remember { mutableStateOf(false) }
     var meta by rememberSaveable { mutableStateOf(false) }
@@ -363,4 +368,12 @@ fun ConfigEditorContent(
             }
         }
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticConfigFileActions(private val a: ConfigFileActions, private val h: TaskifyHaptics) : ConfigFileActions by a {
+    override fun select(versionId: String) { h.tick(); a.select(versionId) }
+    override fun copyValue(key: String, value: String) { h.success(); a.copyValue(key, value) }
+    override fun copyRaw(text: String) { h.success(); a.copyRaw(text) }
+    override fun restore(version: DecryptedVersion) { h.success(); a.restore(version) }
 }

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth.component
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +44,9 @@ fun PinDots(filled: Int, total: Int, modifier: Modifier = Modifier) {
 /** Keypad angka besar ala kunci layar, dengan tombol hapus. */
 @Composable
 fun PinPad(onDigit: (Char) -> Unit, onBackspace: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING") val onDigit: (Char) -> Unit = { haptics.key(); onDigit(it) }
+    @Suppress("NAME_SHADOWING") val onBackspace: () -> Unit = { haptics.key(); onBackspace() }
     val rows = listOf("123", "456", "789")
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         rows.forEach { row ->

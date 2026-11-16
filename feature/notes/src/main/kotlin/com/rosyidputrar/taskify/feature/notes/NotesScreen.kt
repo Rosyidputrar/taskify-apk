@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -72,6 +75,9 @@ fun NotesContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticNotesActions(actions, haptics) }
     val trash = state.filter.trash
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
     LazyVerticalStaggeredGrid(
@@ -189,4 +195,12 @@ private fun LazyStaggeredGridScope.noteItems(notes: List<Note>, state: NotesUiSt
             modifier = Modifier.animateItem(),
         )
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticNotesActions(private val a: NotesActions, private val h: TaskifyHaptics) : NotesActions by a {
+    override fun setScope(scope: NoteScope) { h.tick(); a.setScope(scope) }
+    override fun toggleTrash() { h.tick(); a.toggleTrash() }
+    override fun togglePin(note: Note) { h.toggle(!note.pinned); a.togglePin(note) }
+    override fun restore(note: Note) { h.success(); a.restore(note) }
 }

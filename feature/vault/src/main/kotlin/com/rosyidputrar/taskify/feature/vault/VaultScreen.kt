@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +102,9 @@ fun VaultContent(
     backButton: @Composable (() -> Unit) -> Unit = {},
     onOpenConfig: (String?) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticVaultActions(actions, haptics) }
     var newProject by rememberSaveable { mutableStateOf(false) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Vault)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
@@ -320,3 +326,12 @@ fun ProjectDialog(project: CodeProject?, onDismiss: () -> Unit, onSave: (String,
     )
 }
 
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticVaultActions(private val a: VaultActions, private val h: TaskifyHaptics) : VaultActions by a {
+    override fun setTab(tab: VaultTab) { h.tick(); a.setTab(tab) }
+    override fun setFilter(filter: SnippetFilter) { h.tick(); a.setFilter(filter) }
+    override fun setConfigEnv(env: String?) { h.tick(); a.setConfigEnv(env) }
+    override fun toggleFavorite(snippet: Snippet) { h.toggle(!snippet.favorite); a.toggleFavorite(snippet) }
+    override fun toggleFavorite(project: CodeProject) { h.toggle(!project.favorite); a.toggleFavorite(project) }
+    override fun copied(snippet: Snippet) { h.success(); a.copied(snippet) }
+}

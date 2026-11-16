@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.content.ActivityNotFoundException
@@ -174,6 +175,9 @@ class MfaActions(
 
 @Composable
 fun MfaContent(status: GateStatus, state: MfaUiState, online: Boolean, actions: MfaActions) {
+    val haptics = rememberHaptics()
+    // Kode authenticator salah → getar penolakan.
+    LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
     val (title, subtitle) = headings(status)
     val enrolling = status == GateStatus.Enroll
 

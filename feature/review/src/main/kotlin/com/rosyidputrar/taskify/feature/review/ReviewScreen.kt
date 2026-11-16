@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.review
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.background
@@ -103,6 +106,9 @@ fun ReviewContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
 ) {
+    val haptics = rememberHaptics()
+    @Suppress("NAME_SHADOWING")
+    val actions = remember(actions, haptics) { HapticReviewActions(actions, haptics) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Review)
     val cur = state.ranges.current
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
@@ -310,4 +316,11 @@ private fun Highlight(icon: ImageVector, module: TaskifyModule, label: String, v
         }
         if (onClick != null) Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Getar halus per makna (lihat [TaskifyHaptics]) tanpa mengubah logika aksi. */
+private class HapticReviewActions(private val a: ReviewActions, private val h: TaskifyHaptics) : ReviewActions by a {
+    override fun setPeriod(period: ReviewPeriod) { h.tick(); a.setPeriod(period) }
+    override fun shift(dir: Int) { h.tick(); a.shift(dir) }
+    override fun goToday() { h.tick(); a.goToday() }
 }

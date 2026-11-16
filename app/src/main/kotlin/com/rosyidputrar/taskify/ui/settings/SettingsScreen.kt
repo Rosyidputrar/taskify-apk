@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.settings
 
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -53,11 +54,14 @@ fun SettingsScreen(
     pinnedModule: TaskifyModule?,
     onThemeModeChange: (ThemeMode) -> Unit,
     onPinnedModuleChange: (TaskifyModule?) -> Unit,
+    haptics: Boolean = true,
+    onHapticsChange: (Boolean) -> Unit = {},
     onBack: (() -> Unit)?,
     onOpenModule: (TaskifyModule) -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+    val tick = rememberHaptics()
     val exportTo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(viewModel::export) }
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -87,12 +91,19 @@ fun SettingsScreen(
                     ThemeMode.entries.forEachIndexed { index, mode ->
                         SegmentedButton(
                             selected = mode == themeMode,
-                            onClick = { onThemeModeChange(mode) },
+                            onClick = { tick.tick(); onThemeModeChange(mode) },
                             shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
                             label = { Text(mode.label) },
                         )
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+                SwitchRow(
+                    title = "Getaran",
+                    subtitle = "Getar halus saat menyelesaikan tugas, menyalin, memilih, menggeser, dan saat PIN salah.",
+                    checked = haptics,
+                    onChange = onHapticsChange,
+                )
             }
         }
         item {

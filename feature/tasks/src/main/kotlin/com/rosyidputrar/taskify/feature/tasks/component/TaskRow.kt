@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.tasks.component
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,6 +62,7 @@ import kotlinx.coroutines.launch
 fun TaskCheck(task: Task, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val ring = priorityColor(task.priority)
     val done = task.status == TaskStatus.Done
+    val haptics = rememberHaptics()
     val fill by animateColorAsState(if (done) ring else Color.Transparent, label = "check")
     Box(
         modifier
@@ -72,7 +75,8 @@ fun TaskCheck(task: Task, onToggle: () -> Unit, modifier: Modifier = Modifier) {
                 stateDescription = if (done) "Selesai" else "Belum selesai"
                 contentDescription = if (done) "Tandai belum selesai" else "Tandai selesai"
             }
-            .clickable(onClick = onToggle),
+            // Selesai = getar "berhasil"; dibuka lagi = getar saklar mati.
+            .clickable { if (done) haptics.toggle(false) else haptics.success(); onToggle() },
         contentAlignment = Alignment.Center,
     ) {
         if (done) Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(16.dp))
@@ -98,6 +102,11 @@ fun TaskRow(
 ) {
     val scope = rememberCoroutineScope()
     val state = rememberSwipeToDismissBoxState()
+    val haptics = rememberHaptics()
+    // Getar saat geseran melewati titik aksi (lepas = selesai/hapus), dan saat batal kembali.
+    LaunchedEffect(state.targetValue) {
+        if (state.targetValue != SwipeToDismissBoxValue.Settled) haptics.threshold()
+    }
     val tasksAccent = TaskifyTheme.modules.accent(TaskifyModule.Tasks)
     SwipeToDismissBox(
         state = state,

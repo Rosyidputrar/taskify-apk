@@ -80,7 +80,7 @@ fun TaskifyDock(
     onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     Column(
         modifier.draggable(
             rememberDraggableState { delta -> onPull(delta) },
@@ -112,15 +112,15 @@ fun TaskifyDock(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                leading.forEach { DockItem(it, it.key == selectedKey) { onSelect(it) } }
+                leading.forEach { DockItem(it, it.key == selectedKey) { if (it.key != selectedKey) haptics.tick(); onSelect(it) } }
                 CaptureButton(
-                    onClick = onCapture,
+                    onClick = { haptics.tap(); onCapture() },
                     onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.longPress()
                         onCaptureLongPress()
                     },
                 )
-                trailing.forEach { DockItem(it, it.key == selectedKey) { onSelect(it) } }
+                trailing.forEach { DockItem(it, it.key == selectedKey) { if (it.key != selectedKey) haptics.tick(); onSelect(it) } }
             }
         }
     }

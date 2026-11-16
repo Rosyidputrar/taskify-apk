@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,6 +83,8 @@ fun LoginScreen(viewModel: LoginViewModel = koinViewModel()) {
 
 @Composable
 fun LoginContent(greeting: String, state: LoginUiState, onSubmit: (email: String, password: String) -> Unit) {
+    val haptics = rememberHaptics()
+    LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var showPassword by rememberSaveable { mutableStateOf(false) }
