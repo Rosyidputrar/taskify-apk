@@ -199,7 +199,7 @@ layanan isi otomatis*).
 ### Notifikasi & Kesehatan Digital
 
 Dua modul yang membaca data perangkat. Datanya **hanya di HP ini** (tabel lokal, tidak pernah
-disinkronkan), ikut terkunci PIN, dan terhapus saat Keluar.
+disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi data), dan terhapus saat Keluar.
 
 **Notifikasi** (izin *Akses notifikasi*; APK dari GitHub di Android 13+ perlu *Izinkan setelan terbatas* dulu)
 - Lini waktu per jam, ringkasan + grafik 24 jam, pita hari sesuai masa simpan (1–30 hari), saringan

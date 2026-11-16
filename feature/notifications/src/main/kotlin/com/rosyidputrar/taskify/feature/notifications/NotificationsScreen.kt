@@ -44,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -145,6 +146,21 @@ internal fun buildTimeline(entries: List<NotifEntry>): List<TimelineRow> {
     return out
 }
 
+/**
+ * Indeks item baris jam [hour] di LazyColumn, atau null bila lompat tidak boleh dilakukan:
+ * jam tidak ada di lini waktu, atau tampilan bukan Lini Waktu. Di tampilan Per Aplikasi baris
+ * lini waktu tidak dirender, jadi rumus lama (`indeks + totalItemsCount - timeline.size`) bisa
+ * menghasilkan indeks negatif dan `scrollToItem` melempar IllegalArgumentException (crash).
+ * [listOffset] = jumlah item sebelum daftar (header + banner + kartu + pita + ringkasan +
+ * pencarian + saringan + pemilih tampilan).
+ */
+internal fun hourJumpTarget(hour: Int, view: NotifView, timeline: List<TimelineRow>, listOffset: Int): Int? {
+    if (view != NotifView.Timeline) return null
+    val index = timeline.indexOfFirst { it is TimelineRow.Hour && it.hour == hour }
+    if (index < 0) return null
+    return listOffset + index
+}
+
 @Composable
 fun NotificationsContent(
     state: NotificationsUiState,
@@ -163,6 +179,25 @@ fun NotificationsContent(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val timeline = remember(state.visible) { buildTimeline(state.visible) }
+    // Jumlah item sebelum daftar (lini waktu / per aplikasi): header + banner + kartu + pita +
+    // ringkasan + (pencarian) + saringan + pemilih tampilan. Dipakai untuk target lompat ke jam.
+    val listOffset = 5 +
+        (if (!state.access.connected && state.access.disconnectedAt > 0) 1 else 0) +
+        (if (state.drafts.isNotEmpty()) 1 else 0) +
+        (if (state.parcels.isNotEmpty()) 1 else 0) +
+        (if (searching) 1 else 0)
+    // Lompat ke jam yang diketuk dari tampilan Per Aplikasi: pindah dulu ke Lini Waktu,
+    // lompatnya menyusul setelah daftar lini waktu tersusun.
+    var pendingHour by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pendingHour, state.view) {
+        val h = pendingHour ?: return@LaunchedEffect
+        if (state.view != NotifView.Timeline) return@LaunchedEffect
+        val target = hourJumpTarget(h, state.view, timeline, listOffset)
+        if (target != null) listState.animateScrollToItem(target)
+        // Bersihkan penanda SETELAH lompat selesai. Membersihkannya sebelum scroll akan
+        // mengubah kunci LaunchedEffect ini dan membatalkan animasi scroll yang sedang berjalan.
+        pendingHour = null
+    }
 
     LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
         item(key = "header") {
@@ -194,8 +229,16 @@ fun NotificationsContent(
         item(key = "days") { DayRibbon(state, actions) }
         item(key = "summary") {
             SummaryCard(state, actions, onHour = { h ->
-                val index = timeline.indexOfFirst { it is TimelineRow.Hour && it.hour == h }
-                if (index >= 0) scope.launch { listState.animateScrollToItem(index + listState.layoutInfo.totalItemsCount - timeline.size) }
+                if (state.view == NotifView.Timeline) {
+                    hourJumpTarget(h, state.view, timeline, listOffset)?.let { target ->
+                        scope.launch { listState.animateScrollToItem(target) }
+                    }
+                } else {
+                    // Baris lini waktu tidak dirender di tampilan Per Aplikasi: pindah dulu,
+                    // lompatnya dikerjakan LaunchedEffect di atas setelah tampilan berganti.
+                    pendingHour = h
+                    actions.setView(NotifView.Timeline)
+                }
             })
         }
         if (searching) item(key = "search") {
@@ -251,7 +294,7 @@ private fun NotifOnboarding(state: NotificationsUiState, actions: NotificationsA
         Spacer(Modifier.height(6.dp))
         Text(
             "Taskify mencatat notifikasi yang masuk sejak izin diberikan. Tersimpan hanya di HP ini, tidak pernah dikirim ke server, " +
-                "kode OTP disensor, dan ikut terkunci PIN Taskify.",
+                "kode OTP disensor, dan terkunci di balik PIN aplikasi Taskify.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -581,13 +624,22 @@ private fun LazyListScope.timeline(rows: List<TimelineRow>, state: Notifications
 }
 
 private fun LazyListScope.perApp(state: NotificationsUiState, actions: NotificationsActions) {
-    if (state.appCounts.isEmpty()) {
-        item(key = "empty-apps") { EmptyState(TaskifyModule.Notifications, "Belum ada notifikasi", "Jumlah per aplikasi akan muncul di sini.") }
+    // Pencarian menyaring daftar Per Aplikasi berdasarkan nama/paket aplikasi.
+    val q = state.query.trim().lowercase()
+    val apps = if (q.isEmpty()) state.appCounts else state.appCounts.filter { it.label.lowercase().contains(q) || it.pkg.lowercase().contains(q) }
+    if (apps.isEmpty()) {
+        item(key = "empty-apps") {
+            EmptyState(
+                TaskifyModule.Notifications,
+                if (state.appCounts.isEmpty()) "Belum ada notifikasi" else "Tidak ada aplikasi yang cocok",
+                if (state.appCounts.isEmpty()) "Jumlah per aplikasi akan muncul di sini." else "Coba kata pencarian yang berbeda.",
+            )
+        }
         return
     }
-    val max = state.appCounts.maxOf { it.count }.coerceAtLeast(1)
+    val max = apps.maxOf { it.count }.coerceAtLeast(1)
     val accent = @Composable { TaskifyTheme.modules.accent(TaskifyModule.Notifications) }
-    items(state.appCounts, key = { "app-" + it.pkg }) { a ->
+    items(apps, key = { "app-" + it.pkg }) { a ->
         Row(
             Modifier.fillMaxWidth().clickable(onClickLabel = "Lihat notifikasi ${a.label}") { actions.setApp(a.pkg); actions.setView(NotifView.Timeline) }
                 .padding(horizontal = 20.dp, vertical = 10.dp),

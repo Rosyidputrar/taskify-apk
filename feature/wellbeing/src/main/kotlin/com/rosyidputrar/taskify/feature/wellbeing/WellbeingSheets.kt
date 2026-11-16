@@ -239,6 +239,9 @@ internal fun WellbeingSettingsSheet(state: WellbeingUiState, actions: WellbeingA
     val context = LocalContext.current
     val haptics = rememberHaptics()
     var confirmClear by remember { mutableStateOf(false) }
+    // Jam yang diminta pengguna; null = tidak ada dialog konfirmasi. setDayStart() menghapus
+    // semua riwayat lalu hanya mengimpor ulang 7 hari terakhir, jadi wajib dikonfirmasi dulu.
+    var confirmDayStart by remember { mutableStateOf<Int?>(null) }
     val s = state.settings
     val known = (state.appDays.values.flatten().groupBy { it.pkg }.map { (pkg, l) -> pkg to l.first().label } +
         s.excluded.map { it to it }).distinctBy { it.first }.sortedBy { it.second.lowercase() }
@@ -255,7 +258,7 @@ internal fun WellbeingSettingsSheet(state: WellbeingUiState, actions: WellbeingA
                 Label("HARI BERGANTI JAM")
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(UsageSettings.DAY_START_CHOICES) { h ->
-                        FilterChip(selected = s.dayStartHour == h, onClick = { haptics.tick(); actions.setDayStart(h) }, label = { Text("%02d.00".format(h)) })
+                        FilterChip(selected = s.dayStartHour == h, onClick = { haptics.tick(); if (h != s.dayStartHour) confirmDayStart = h }, label = { Text("%02d.00".format(h)) })
                     }
                 }
                 Text("Untuk yang sering begadang: pemakaian jam 01.00 tetap dihitung ke \"hari ini\". \"Pertama dipegang\" = buka kunci pertama setelah jam ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -301,6 +304,16 @@ internal fun WellbeingSettingsSheet(state: WellbeingUiState, actions: WellbeingA
             message = "Rekap & riwayat sesi di Taskify dihapus. Data seminggu terakhir yang masih disimpan sistem akan diimpor lagi saat disegarkan.",
             onConfirm = { confirmClear = false; actions.clearData() },
             onDismiss = { confirmClear = false },
+        )
+    }
+    val pendingHour = confirmDayStart
+    if (pendingHour != null) {
+        ConfirmDeleteDialog(
+            title = "Ubah jam pergantian hari?",
+            message = "Semua riwayat pemakaian dihapus lalu dihitung ulang dari data sistem. Riwayat lebih dari 7 hari terakhir akan hilang permanen, karena sistem hanya menyimpan 7 hari terakhir.",
+            onConfirm = { confirmDayStart = null; actions.setDayStart(pendingHour) },
+            onDismiss = { confirmDayStart = null },
+            confirmLabel = "Ubah jam",
         )
     }
 }
