@@ -54,7 +54,7 @@ class CaptureViewModel(
 
     fun discardDraft() { draft?.clear() }
 
-    fun save(kind: CaptureKind, text: String, onSaved: () -> Unit) {
+    fun save(kind: CaptureKind, text: String, clearDraft: Boolean = true, onSaved: () -> Unit) {
         if (text.isBlank()) return
         val today = Dates.today()
         val c = parseCapture(text, today)
@@ -76,7 +76,9 @@ class CaptureViewModel(
             }
             if (ok) {
                 _error.value = null
-                draft?.clear()
+                // clearDraft=false: teks yang disimpan bukan berasal dari draf (konflik draf
+                // belum diselesaikan) — draf lama tetap tersimpan untuk ditawarkan lagi.
+                if (clearDraft) draft?.clear()
                 onSaved()
             }
         }

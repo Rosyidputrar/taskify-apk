@@ -11,6 +11,7 @@ import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -52,5 +53,27 @@ class CaptureFormTest {
         val save = compose.onNodeWithText("Simpan").getBoundsInRoot()
         assertTrue(save.bottom.value <= 520f, "tombol Simpan di dalam area sheet (bottom=${save.bottom})")
         compose.onRoot().captureRoboImage("screenshots/capture_long_text_dark.png")
+    }
+
+    /** Konflik draf: sheet dibuka dengan teks baru sementara draf lama tersimpan. */
+    @Test fun draftConflictShowsRestoreOptions() {
+        var restored = false
+        var discarded = false
+        compose.setContent {
+            TaskifyTheme(darkTheme = true) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    CaptureForm(
+                        text = "teks baru dari bagikan", kind = CaptureKind.Auto, error = null, restored = false, title = "Tulis apa saja",
+                        onText = {}, onKind = {}, onDiscardDraft = { discarded = true }, onDismiss = {}, onSave = {},
+                        draftConflict = true, onRestoreDraft = { restored = true },
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("Ada draf sebelumnya yang belum disimpan.").assertIsDisplayed()
+        compose.onNodeWithText("Lihat draf").performClick()
+        assertTrue(restored, "Lihat draf memanggil onRestoreDraft")
+        compose.onNodeWithText("Buang draf").performClick()
+        assertTrue(discarded, "Buang draf memanggil onDiscardDraft")
     }
 }

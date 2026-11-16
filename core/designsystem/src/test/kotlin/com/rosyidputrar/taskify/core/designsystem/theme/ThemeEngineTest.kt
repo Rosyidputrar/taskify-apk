@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify.core.designsystem.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import org.junit.Test
@@ -48,8 +49,114 @@ class ThemeEngineTest {
 
     @Test fun everyPresetIsReadableAtEveryContrast() {
         for (p in ThemePalette.entries) for (c in ThemeContrast.entries) for (dark in listOf(false, true)) {
-            if (p == ThemePalette.KertasTinta && c == ThemeContrast.Standard) continue // diracik & diukur manual (docs/DESIGN.md)
+            // KertasTinta/Standar dilewati di sini karena diuji eksplisit di
+            // kertasTintaStandardIsExplicitlyHandcrafted (harus SAMA PERSIS dengan skema racikan
+            // manual, bukan sekadar terbaca).
+            if (p == ThemePalette.KertasTinta && c == ThemeContrast.Standard) continue
             check("${p.name}/${c.name}", ThemeSpec(palette = p, contrast = c), dark)
+        }
+    }
+
+    /** KertasTinta/Standar = desain asli, diuji eksplisit (bukan dilewati diam-diam). */
+    @Test fun kertasTintaStandardIsExplicitlyHandcrafted() {
+        for (dark in listOf(false, true)) {
+            val spec = ThemeSpec(palette = ThemePalette.KertasTinta, contrast = ThemeContrast.Standard)
+            assertTrue(spec.isHandcrafted, "KertasTinta/Standar = desain asli")
+            assertEquals(if (dark) DarkScheme else LightScheme, ThemeEngine.scheme(spec, dark))
+            val modules = ModuleColors(dark, spec, (if (dark) DarkScheme else LightScheme).primary)
+            assertEquals(if (dark) TaskifyModule.Tasks.dark else TaskifyModule.Tasks.light, modules.accent(TaskifyModule.Tasks))
+        }
+    }
+
+    /** KertasTinta + Sedang/Tinggi: kontras terkunci di Standar, palet TIDAK di-regenerasi. */
+    @Test fun kertasTintaContrastLocksToStandard() {
+        for (c in listOf(ThemeContrast.Medium, ThemeContrast.High)) for (dark in listOf(false, true)) {
+            val spec = ThemeSpec(palette = ThemePalette.KertasTinta, contrast = c)
+            assertEquals(ThemeContrast.Standard, spec.effectiveContrast, "kontras KertasTinta terkunci di Standar")
+            assertTrue(spec.isHandcrafted, "KertasTinta/$c tetap desain asli")
+            assertEquals(if (dark) DarkScheme else LightScheme, ThemeEngine.scheme(spec, dark), "KertasTinta/$c tidak me-regenerasi palet")
+            val modules = ModuleColors(dark, spec, (if (dark) DarkScheme else LightScheme).primary)
+            assertEquals(if (dark) TaskifyModule.Tasks.dark else TaskifyModule.Tasks.light, modules.accent(TaskifyModule.Tasks), "aksen modul KertasTinta/$c tetap racikan manual")
+        }
+    }
+
+    /** Kustom + Sedang/Tinggi: kontras benar-benar diterapkan dan tetap terbaca. */
+    @Test fun customThemesStayReadableAtHigherContrast() {
+        val seeds = ThemeEngine.quickSeeds.map { it.toInt() }
+        for (seed in seeds) for (style in ThemeStyle.entries) for (paper in listOf(true, false)) for (c in listOf(ThemeContrast.Medium, ThemeContrast.High)) for (dark in listOf(false, true)) {
+            check("seed=%08X/${style.name}/paper=$paper/${c.name}".format(seed), ThemeSpec(ThemePalette.Kustom, seed, style, paper, c), dark)
+        }
+    }
+
+    /**
+     * Dinamis + kontras apa pun: skema dinamis dikembalikan apa adanya, kontras tidak diterapkan.
+     * Skema dinamis asli (wallpaper) tidak bisa dibuat di JVM polos, jadi yang diuji di sini
+     * adalah perilaku mesin terhadap skema dinamis apa pun — bukan skema wallpaper itu sendiri.
+     * Skema wallpaper asli hanya dipakai lewat TaskifyTheme (dynamicLight/DarkColorScheme) dan
+     * tidak diuji di Robolectric: di Robolectric WallpaperManager tidak punya warna wallpaper,
+     * jadi dynamicLightColorScheme tidak menghasilkan skema wallpaper nyata.
+     */
+    @Test fun dynamicSchemeIsReturnedUnchangedRegardlessOfContrast() {
+        val fakeDynamic = lightColorScheme(
+            primary = Color(0xFF123456), onPrimary = Color.White,
+            primaryContainer = Color(0xFF234567), onPrimaryContainer = Color.White,
+            background = Color(0xFFF0F0F0), onBackground = Color.Black,
+            surface = Color.White, onSurface = Color.Black,
+        )
+        for (c in ThemeContrast.entries) for (dark in listOf(false, true)) {
+            assertEquals(fakeDynamic, ThemeEngine.scheme(ThemeSpec(palette = ThemePalette.Dinamis, contrast = c), dark, dynamic = fakeDynamic), "Dinamis/$c harus mengembalikan skema dinamis apa adanya")
+        }
+    }
+
+    /**
+     * ColorScheme tidak punya equals struktural (dua skema dengan peran warna yang sama persis
+     * tetap dianggap berbeda bila instansnya berbeda), jadi kesamaan skema dibandingkan
+     * peran demi peran.
+     */
+    private fun assertSameScheme(expected: ColorScheme, actual: ColorScheme, message: String) {
+        val roles = listOf(
+            ColorScheme::primary to "primary", ColorScheme::onPrimary to "onPrimary",
+            ColorScheme::primaryContainer to "primaryContainer", ColorScheme::onPrimaryContainer to "onPrimaryContainer",
+            ColorScheme::inversePrimary to "inversePrimary",
+            ColorScheme::secondary to "secondary", ColorScheme::onSecondary to "onSecondary",
+            ColorScheme::secondaryContainer to "secondaryContainer", ColorScheme::onSecondaryContainer to "onSecondaryContainer",
+            ColorScheme::tertiary to "tertiary", ColorScheme::onTertiary to "onTertiary",
+            ColorScheme::tertiaryContainer to "tertiaryContainer", ColorScheme::onTertiaryContainer to "onTertiaryContainer",
+            ColorScheme::background to "background", ColorScheme::onBackground to "onBackground",
+            ColorScheme::surface to "surface", ColorScheme::onSurface to "onSurface",
+            ColorScheme::surfaceVariant to "surfaceVariant", ColorScheme::onSurfaceVariant to "onSurfaceVariant",
+            ColorScheme::surfaceTint to "surfaceTint",
+            ColorScheme::inverseSurface to "inverseSurface", ColorScheme::inverseOnSurface to "inverseOnSurface",
+            ColorScheme::error to "error", ColorScheme::onError to "onError",
+            ColorScheme::errorContainer to "errorContainer", ColorScheme::onErrorContainer to "onErrorContainer",
+            ColorScheme::outline to "outline", ColorScheme::outlineVariant to "outlineVariant",
+            ColorScheme::scrim to "scrim",
+            ColorScheme::surfaceBright to "surfaceBright", ColorScheme::surfaceContainer to "surfaceContainer",
+            ColorScheme::surfaceContainerHigh to "surfaceContainerHigh",
+            ColorScheme::surfaceContainerHighest to "surfaceContainerHighest",
+            ColorScheme::surfaceContainerLow to "surfaceContainerLow",
+            ColorScheme::surfaceContainerLowest to "surfaceContainerLowest",
+            ColorScheme::surfaceDim to "surfaceDim",
+            ColorScheme::primaryFixed to "primaryFixed", ColorScheme::primaryFixedDim to "primaryFixedDim",
+            ColorScheme::onPrimaryFixed to "onPrimaryFixed", ColorScheme::onPrimaryFixedVariant to "onPrimaryFixedVariant",
+            ColorScheme::secondaryFixed to "secondaryFixed", ColorScheme::secondaryFixedDim to "secondaryFixedDim",
+            ColorScheme::onSecondaryFixed to "onSecondaryFixed", ColorScheme::onSecondaryFixedVariant to "onSecondaryFixedVariant",
+            ColorScheme::tertiaryFixed to "tertiaryFixed", ColorScheme::tertiaryFixedDim to "tertiaryFixedDim",
+            ColorScheme::onTertiaryFixed to "onTertiaryFixed", ColorScheme::onTertiaryFixedVariant to "onTertiaryFixedVariant",
+        )
+        for ((role, name) in roles) assertEquals(role.get(expected), role.get(actual), "$message ($name)")
+    }
+
+    /**
+     * Dinamis tanpa skema wallpaper (dynamic=null, mis. di bawah Android 12): fallback HCT
+     * TonalSpot dari seed 0xFF1D5867 — BUKAN skema dinamis wallpaper, dan tes ini mengatakannya
+     * eksplisit lewat kesamaan dengan skema Kustom yang sama.
+     */
+    @Test fun dynamicWithoutWallpaperFallsBackToHctTonalSpot() {
+        for (dark in listOf(false, true)) {
+            val fallback = ThemeEngine.scheme(ThemeSpec(palette = ThemePalette.Dinamis), dark, dynamic = null)
+            val expected = ThemeEngine.scheme(ThemeSpec(ThemePalette.Kustom, 0xFF1D5867.toInt(), ThemeStyle.TonalSpot, paper = false), dark)
+            assertSameScheme(expected, fallback, "fallback Dinamis = HCT TonalSpot seed 0xFF1D5867, bukan wallpaper")
         }
     }
 

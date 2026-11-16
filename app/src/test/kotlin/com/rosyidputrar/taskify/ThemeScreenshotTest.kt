@@ -6,7 +6,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -63,12 +68,26 @@ class ThemeScreenshotTest {
     }
 
     @Test fun choosingAPaletteAppliesIt() {
-        var chosen: ThemeSpec? = null
-        compose.setContent { TaskifyTheme { Column(Modifier.padding(20.dp)) { ThemePaletteSettings(ThemeSpec.Default, onThemeChange = { chosen = it }) } } }
+        var theme by mutableStateOf(ThemeSpec.Default)
+        compose.setContent { TaskifyTheme { Column(Modifier.padding(20.dp)) { ThemePaletteSettings(theme, onThemeChange = { theme = it }) } } }
+        // Kertas & Tinta: kontras terkunci di Standar, kontrol kontras mati.
+        compose.onNodeWithText("Tinggi").assertIsNotEnabled()
+        compose.onNodeWithText("Kertas & Tinta diracik manual pada kontras Standar, jadi kontras terkunci supaya tema bawaan tetap sama.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Palet Hutan").performClick()
-        assertEquals(ThemePalette.Hutan, chosen?.palette)
+        assertEquals(ThemePalette.Hutan, theme.palette)
         compose.onNodeWithText("Tinggi").performClick()
-        assertEquals(ThemeContrast.High, chosen?.contrast)
+        assertEquals(ThemeContrast.High, theme.contrast)
+        // Kembali ke Kertas & Tinta: kontras kembali ke Standar.
+        compose.onNodeWithContentDescription("Palet Kertas & Tinta").performClick()
+        assertEquals(ThemePalette.KertasTinta, theme.palette)
+        assertEquals(ThemeContrast.Standard, theme.contrast)
+    }
+
+    @Test fun dynamicPaletteDisablesContrast() {
+        var theme by mutableStateOf(ThemeSpec(palette = ThemePalette.Dinamis))
+        compose.setContent { TaskifyTheme { Column(Modifier.padding(20.dp)) { ThemePaletteSettings(theme, onThemeChange = { theme = it }) } } }
+        compose.onNodeWithText("Tinggi").assertIsNotEnabled()
+        compose.onNodeWithText("Material You memakai warna wallpaper sistem; kontras tidak berlaku di sini.").assertIsDisplayed()
     }
 
     @Test fun studioAppliesCustomSeed() {

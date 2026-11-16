@@ -2,13 +2,11 @@ package com.rosyidputrar.taskify.ui.spotlight
 
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.ui.unit.Velocity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.mutableFloatStateOf

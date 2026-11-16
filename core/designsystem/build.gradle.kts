@@ -16,7 +16,7 @@ dependencies {
     api(libs.compose.material.icons.extended)
     implementation(libs.androidx.core.ktx)
     implementation(libs.zxing.core)
-    // Palet tonal HCT (port resmi material-color-utilities) untuk tema kustom.
+    // Palet tonal HCT (port komunitas materialkolor dari material-color-utilities Google) untuk tema kustom.
     implementation(libs.material.color.utilities)
     api(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)

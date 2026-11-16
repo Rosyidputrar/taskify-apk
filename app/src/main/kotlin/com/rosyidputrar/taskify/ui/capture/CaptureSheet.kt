@@ -76,7 +76,10 @@ fun CaptureSheet(
     val haptics = rememberHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Draf yang tertinggal (sheet sebelumnya tertutup tanpa disimpan) dipulihkan.
-    val restored = remember { initialText.isBlank() && viewModel.draftText.isNotBlank() }
+    var restored by remember { mutableStateOf(initialText.isBlank() && viewModel.draftText.isNotBlank()) }
+    // Sheet dibuka dengan teks baru (mis. dari Bagikan/Spotlight) sementara draf lama masih
+    // tersimpan: draf lama tidak boleh tertimpa diam-diam sebelum pengguna melihatnya.
+    var draftConflict by rememberSaveable { mutableStateOf(initialText.isNotBlank() && viewModel.draftText.isNotBlank()) }
     var text by rememberSaveable { mutableStateOf(initialText.ifBlank { viewModel.draftText }) }
     val error by viewModel.error.collectAsStateWithLifecycle()
     var kind by rememberSaveable { mutableStateOf(CaptureKind.Auto) }
@@ -93,13 +96,21 @@ fun CaptureSheet(
             focusRequester = focusRequester,
             onText = {
                 text = it
-                viewModel.keepDraft(it)
+                // Selama konflik belum diselesaikan, teks baru tidak boleh menimpa draf lama.
+                if (!draftConflict) viewModel.keepDraft(it)
                 if (error != null) viewModel.clearError()
             },
             onKind = { kind = it; focusRequester.requestFocus() },
-            onDiscardDraft = { text = ""; viewModel.discardDraft() },
+            onDiscardDraft = {
+                viewModel.discardDraft()
+                // "Buang draf" pada konflik membuang draf lama, bukan teks baru yang sedang ditulis.
+                if (draftConflict) draftConflict = false else text = ""
+            },
+            onRestoreDraft = { text = viewModel.draftText; draftConflict = false; restored = true },
             onDismiss = onDismiss,
-            onSave = { viewModel.save(kind, text) { haptics.success(); onDismiss() } },
+            // Menyimpan teks baru saat konflik belum selesai tidak boleh menghapus draf lama:
+            // draf lama tetap tersimpan dan ditawarkan lagi saat sheet dibuka berikutnya.
+            onSave = { viewModel.save(kind, text, clearDraft = !draftConflict) { haptics.success(); onDismiss() } },
         )
     }
 }
@@ -122,6 +133,10 @@ fun CaptureForm(
     onDismiss: () -> Unit,
     onSave: () -> Unit,
     focusRequester: FocusRequester = remember { FocusRequester() },
+    /** Ada draf lama tersimpan sementara teks yang ditampilkan berasal dari luar (bukan draf). */
+    draftConflict: Boolean = false,
+    /** Tampilkan draf lama sebagai ganti teks saat ini. */
+    onRestoreDraft: () -> Unit = {},
 ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
         Column(
@@ -158,6 +173,13 @@ fun CaptureForm(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
+            if (draftConflict) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ada draf sebelumnya yang belum disimpan.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onRestoreDraft) { Text("Lihat draf") }
+                    TextButton(onClick = onDiscardDraft) { Text("Buang draf") }
+                }
+            }
             if (restored && text.isNotBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Draf sebelumnya dipulihkan.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))

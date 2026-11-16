@@ -68,8 +68,16 @@ data class ThemeSpec(
     val effectiveStyle: ThemeStyle get() = if (palette == ThemePalette.Kustom) style else palette.style
     val effectivePaper: Boolean get() = if (palette == ThemePalette.Kustom) paper else palette.paper
 
-    /** Desain asli tanpa perubahan apa pun (kontras standar). */
-    val isHandcrafted: Boolean get() = palette == ThemePalette.KertasTinta && contrast == ThemeContrast.Standard
+    /**
+     * Kontras yang benar-benar dipakai mesin tema. Kertas & Tinta diracik manual pada kontras
+     * Standar: menaikkan kontras tidak boleh me-regenerasi paletnya lewat HCT (itu mengganti
+     * tema bawaan tanpa pemberitahuan), jadi kontrasnya terkunci di Standar. Palet lain dan
+     * Kustom memakai kontras apa adanya.
+     */
+    val effectiveContrast: ThemeContrast get() = if (palette == ThemePalette.KertasTinta) ThemeContrast.Standard else contrast
+
+    /** Desain asli tanpa perubahan apa pun (kontras standar — terkunci untuk Kertas & Tinta). */
+    val isHandcrafted: Boolean get() = palette == ThemePalette.KertasTinta && effectiveContrast == ThemeContrast.Standard
 
     companion object {
         val Default = ThemeSpec()
@@ -83,9 +91,12 @@ data class ThemeSpec(
  */
 object ThemeEngine {
     fun scheme(spec: ThemeSpec, dark: Boolean, dynamic: ColorScheme? = null): ColorScheme {
+        // Material You memakai skema wallpaper dari sistem apa adanya: sistem tidak
+        // menyediakan skema yang sama dengan tingkat kontras lain, jadi kontras tidak
+        // berlaku di sini (kontrol kontras dimatikan untuk Dinamis di ThemePaletteSettings).
         if (spec.palette == ThemePalette.Dinamis && dynamic != null) return dynamic
         if (spec.isHandcrafted) return if (dark) DarkScheme else LightScheme
-        val ds = dynamicScheme(spec.effectiveSeed, spec.effectiveStyle, dark, spec.contrast.level)
+        val ds = dynamicScheme(spec.effectiveSeed, spec.effectiveStyle, dark, spec.effectiveContrast.level)
         val generated = ds.toColorScheme(dark)
         return if (spec.effectivePaper) generated.withPaper(dark, ds) else generated
     }
@@ -118,7 +129,7 @@ object ThemeEngine {
             ThemeStyle.Neutral -> 0.55
             else -> 1.0
         }
-        val tone = when (spec.contrast) {
+        val tone = when (spec.effectiveContrast) {
             ThemeContrast.Standard -> if (dark) 80.0 else 40.0
             ThemeContrast.Medium -> if (dark) 85.0 else 35.0
             ThemeContrast.High -> if (dark) 90.0 else 28.0

@@ -110,7 +110,9 @@ fun ThemePaletteSettings(theme: ThemeSpec, onThemeChange: (ThemeSpec) -> Unit) {
     val dark = TaskifyTheme.isDark
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
         items(availablePalettes(), key = { it.name }) { p ->
-            val spec = if (p == ThemePalette.Kustom) theme.copy(palette = p) else ThemeSpec(palette = p, seed = theme.seed, style = theme.style, paper = theme.paper, contrast = theme.contrast)
+            // Kertas & Tinta terkunci di kontras Standar (lihat ThemeSpec.effectiveContrast):
+            // memilihnya mengembalikan kontras ke Standar supaya tema bawaan tetap sama.
+            val spec = if (p == ThemePalette.Kustom) theme.copy(palette = p) else ThemeSpec(palette = p, seed = theme.seed, style = theme.style, paper = theme.paper, contrast = if (p == ThemePalette.KertasTinta) ThemeContrast.Standard else theme.contrast)
             PaletteSwatch(
                 palette = p,
                 spec = spec,
@@ -135,15 +137,35 @@ fun ThemePaletteSettings(theme: ThemeSpec, onThemeChange: (ThemeSpec) -> Unit) {
     Spacer(Modifier.height(14.dp))
     Text("Kontras", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
+    // Kertas & Tinta diracik manual pada Standar (kontras terkunci), Material You memakai
+    // skema wallpaper sistem (kontras tidak berlaku): kontrol dimatikan supaya tidak tampak
+    // berfungsi padahal tidak berpengaruh.
+    val contrastEnabled = theme.palette != ThemePalette.KertasTinta && theme.palette != ThemePalette.Dinamis
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         ThemeContrast.entries.forEachIndexed { i, c ->
             SegmentedButton(
                 selected = theme.contrast == c,
                 onClick = { haptics.tick(); onThemeChange(theme.copy(contrast = c)) },
                 shape = SegmentedButtonDefaults.itemShape(i, ThemeContrast.entries.size),
+                enabled = contrastEnabled,
                 label = { Text(c.label) },
             )
         }
+    }
+    if (theme.palette == ThemePalette.KertasTinta) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Kertas & Tinta diracik manual pada kontras Standar, jadi kontras terkunci supaya tema bawaan tetap sama.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else if (theme.palette == ThemePalette.Dinamis) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Material You memakai warna wallpaper sistem; kontras tidak berlaku di sini.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
     if (studio) {
         ThemeStudio(
