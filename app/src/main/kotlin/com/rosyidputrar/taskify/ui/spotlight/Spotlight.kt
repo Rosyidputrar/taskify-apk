@@ -1,5 +1,19 @@
 package com.rosyidputrar.taskify.ui.spotlight
 
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -103,13 +117,13 @@ private sealed interface SpotlightResult {
 }
 
 /**
- * Spotlight = pencarian global & command palette. Dibuka dengan geser dok ke atas,
- * Ctrl/⌘ + K, atau shortcut launcher "Cari".
+ * Spotlight = pencarian global & command palette. Dibuka dengan menarik dok ke atas (panel
+ * mengikuti jari), Ctrl/⌘ + K, atau shortcut launcher "Cari". Ditutup dengan menarik panel ke
+ * bawah, ketuk latar, atau tombol kembali.
  */
 @Composable
 fun Spotlight(
-    visible: Boolean,
-    onDismiss: () -> Unit,
+    state: SpotlightSheetState,
     onOpenModule: (TaskifyModule) -> Unit,
     onCapture: (String) -> Unit,
     themeMode: ThemeMode,
@@ -117,36 +131,87 @@ fun Spotlight(
     onOpenEntity: (EntityType, String) -> Unit = { _, _ -> },
     onOpenTag: (String) -> Unit = {},
 ) {
-    BackHandler(enabled = visible, onBack = onDismiss)
-    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
-        )
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn() + slideInVertically { -it / 6 },
-        exit = fadeOut() + slideOutVertically { -it / 6 },
-    ) {
-        Box(Modifier.fillMaxSize().statusBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
-            SpotlightPanel(
-                onDismiss = onDismiss,
-                onOpenModule = onOpenModule,
-                onCapture = onCapture,
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                onOpenEntity = onOpenEntity,
-                onOpenTag = onOpenTag,
-            )
+    val haptics = LocalHapticFeedback.current
+    var screenHeight by remember { mutableFloatStateOf(0f) }
+    Box(
+        Modifier.fillMaxSize().onSizeChanged {
+            screenHeight = it.height.toFloat()
+            // Separuh tinggi layar = terbuka penuh: tarikan terasa 1:1 dengan jari.
+            state.travelPx = it.height * 0.5f
+        },
+    )
+    if (!state.visible) return
+    BackHandler(onBack = state::close)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = state.progress }
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = state::close),
+    )
+    // Seret ke bawah dari daftar yang sudah di paling atas = menutup (seperti bottom sheet).
+    val nested = remember(state) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Panel belum penuh & jari naik: naikkan panel dulu sebelum daftar bergulir.
+                if (source == NestedScrollSource.UserInput && available.y < 0 && state.progress < 1f) {
+                    state.dragBy(available.y)
+                    return available
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y > 0) {
+                    state.dragBy(available.y)
+                    return available
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (!state.dragging) return Velocity.Zero
+                state.release(available.y)
+                return available
+            }
         }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .imePadding()
+            .graphicsLayer {
+                val p = state.progress
+                // Naik dari bawah mengikuti jari; muncul cepat di awal tarikan.
+                translationY = (1f - p) * screenHeight * 0.6f
+                alpha = (p * 2.5f).coerceAtMost(1f)
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        SpotlightPanel(
+            state = state,
+            onDismiss = state::close,
+            onOpenModule = onOpenModule,
+            onCapture = onCapture,
+            themeMode = themeMode,
+            onThemeModeChange = onThemeModeChange,
+            onOpenEntity = onOpenEntity,
+            onOpenTag = onOpenTag,
+            modifier = Modifier
+                .nestedScroll(nested)
+                .draggable(
+                    rememberDraggableState { delta -> if (state.dragBy(delta)) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate) },
+                    Orientation.Vertical,
+                    onDragStopped = { velocity -> state.release(velocity) },
+                ),
+        )
     }
 }
 
 @Composable
 private fun SpotlightPanel(
+    state: SpotlightSheetState,
     onDismiss: () -> Unit,
     onOpenModule: (TaskifyModule) -> Unit,
     onCapture: (String) -> Unit,
@@ -154,6 +219,7 @@ private fun SpotlightPanel(
     onThemeModeChange: (ThemeMode) -> Unit,
     onOpenEntity: (EntityType, String) -> Unit,
     onOpenTag: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     // Pencarian isi (FTS5 lokal) — debounce 120 ms seperti webapp; tanpa repository = modul saja.
@@ -166,7 +232,11 @@ private fun SpotlightPanel(
         found = runCatching { search.search(q) to search.searchTags(q) }.getOrDefault(emptyList<EntityRow>() to emptyList())
     }
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    val focusManager = LocalFocusManager.current
+    // Keyboard baru muncul setelah panel terbuka penuh & diam — tidak melompat di tengah tarikan.
+    LaunchedEffect(state.settledOpen) {
+        if (state.settledOpen) runCatching { focusRequester.requestFocus() } else focusManager.clearFocus()
+    }
 
     val results = remember(query, themeMode, found) { buildResults(query.trim(), themeMode, found.first, found.second) }
     val run: (SpotlightResult) -> Unit = { result ->
@@ -187,7 +257,7 @@ private fun SpotlightPanel(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 16.dp,
-        modifier = Modifier
+        modifier = modifier
             .padding(16.dp)
             .widthIn(max = 640.dp)
             .fillMaxWidth()

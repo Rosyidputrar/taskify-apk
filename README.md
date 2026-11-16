@@ -160,7 +160,7 @@ Tag & Sampah, tampilan, dok, status konfigurasi server, dan versi.
 
 ### Pencarian & Bagikan
 
-- Spotlight (geser dok ke atas / Ctrl+K) mencari ISI tugas, jurnal, catatan, transaksi, snippet,
+- Spotlight (tarik dok ke atas — panelnya ikut tertarik mengikuti jari; atau Ctrl+K) mencari ISI tugas, jurnal, catatan, transaksi, snippet,
   dan project lewat indeks SQLite FTS5 lokal (trigger di tabel PowerSync, sama dengan webapp) —
   tetap jalan offline; tag ikut dicari.
 - "Bagikan → Taskify" dari aplikasi lain: teks/tautan jadi tugas, jurnal, snippet, atau catat cepat;

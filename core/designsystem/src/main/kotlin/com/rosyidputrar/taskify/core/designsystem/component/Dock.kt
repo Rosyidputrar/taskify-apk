@@ -1,5 +1,10 @@
 package com.rosyidputrar.taskify.core.designsystem.component
 
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandHorizontally
@@ -57,7 +62,8 @@ data class DockDestination(
 /**
  * Dok mengambang: tujuan di kiri & kanan, tombol Tangkap di tengah.
  * - Ketuk ✚ = catat cepat, tahan = pilih jenis.
- * - Geser dok ke atas = Spotlight (pencarian global).
+ * - Tarik dok ke atas = Spotlight (pencarian global); panelnya ikut tertarik mengikuti jari
+ *   ([onPull] tiap pergeseran px, [onPullEnd] dengan kecepatan saat dilepas).
  * Tujuan aktif melebar menampilkan labelnya (pola ExpandableBottomBar).
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -69,25 +75,18 @@ fun TaskifyDock(
     onSelect: (DockDestination) -> Unit,
     onCapture: () -> Unit,
     onCaptureLongPress: () -> Unit,
-    onSwipeUp: () -> Unit,
+    onPull: (deltaY: Float) -> Unit,
+    onPullEnd: (velocityY: Float) -> Unit,
+    onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
-    val threshold = with(LocalDensity.current) { 40.dp.toPx() }
     Column(
-        modifier.pointerInput(Unit) {
-            var total = 0f
-            detectVerticalDragGestures(
-                onDragStart = { total = 0f },
-                onDragEnd = {
-                    if (total < -threshold) {
-                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                        onSwipeUp()
-                    }
-                },
-                onVerticalDrag = { _, delta -> total += delta },
-            )
-        },
+        modifier.draggable(
+            rememberDraggableState { delta -> onPull(delta) },
+            Orientation.Vertical,
+            onDragStopped = { velocity -> onPullEnd(velocity) },
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Pegangan kecil: petunjuk bahwa dok bisa ditarik ke atas.
@@ -96,7 +95,11 @@ fun TaskifyDock(
                 .padding(bottom = 6.dp)
                 .size(width = 36.dp, height = 4.dp)
                 .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
-                .semantics { contentDescription = "Geser ke atas untuk mencari" },
+                .semantics {
+                    contentDescription = "Tarik ke atas untuk mencari"
+                    // TalkBack tidak bisa menyeret: sediakan aksi langsung.
+                    customActions = listOf(CustomAccessibilityAction("Buka pencarian") { onOpenSearch(); true })
+                },
         )
         Surface(
             shape = RoundedCornerShape(32.dp),
