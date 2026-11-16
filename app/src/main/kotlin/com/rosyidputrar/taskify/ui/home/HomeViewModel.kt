@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.home
 
+import com.rosyidputrar.taskify.core.device.DeviceToday
+import com.rosyidputrar.taskify.core.device.DeviceSummary
 import com.rosyidputrar.taskify.data.AppPreferences
 import com.rosyidputrar.taskify.core.store.calendar.CalendarRepository
 import com.rosyidputrar.taskify.core.domain.home.HomeLayout
@@ -43,6 +45,8 @@ data class HomeUiState(
     val week: Map<String, DayActivity> = emptyMap(),
     /** Susunan Beranda pilihan pengguna. */
     val layout: HomeLayout = HomeLayout.Default,
+    /** Kesehatan Digital & Notifikasi hari ini (null = belum ada data/izin). */
+    val device: DeviceToday = DeviceToday(null, null),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -54,6 +58,7 @@ class HomeViewModel(
     private val rejectedChanges: Flow<Long> = flowOf(0L),
     private val calendar: CalendarRepository? = null,
     private val prefs: AppPreferences? = null,
+    private val deviceSummary: DeviceSummary? = null,
 ) : ViewModel() {
     private val today = todayFlow().stateIn(viewModelScope, SharingStarted.Eagerly, Dates.today())
 
@@ -61,9 +66,14 @@ class HomeViewModel(
 
     val state: StateFlow<HomeUiState> = today.flatMapLatest { t ->
         val parts = combine(tasks.watchFocus(t, 6), tasks.watchSubtaskProgress(), home.watchSummary(t)) { f, p, s -> Parts(f, p, s) }
-        val extras = combine(rejectedChanges, weekActivity(t), prefs?.homeLayout ?: flowOf(HomeLayout.Default)) { r, w, l -> Triple(r, w, l) }
-        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), extras) { p, streak, activity, (rejected, week, layout) ->
-            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = rejected, week = week, layout = layout)
+        val extras = combine(
+            rejectedChanges,
+            weekActivity(t),
+            prefs?.homeLayout ?: flowOf(HomeLayout.Default),
+            deviceSummary?.watchToday() ?: flowOf(DeviceToday(null, null)),
+        ) { r, w, l, d -> Extras(r, w, l, d) }
+        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), extras) { p, streak, activity, x ->
+            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = x.rejected, week = x.week, layout = x.layout, device = x.device)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -106,3 +116,5 @@ class HomeViewModel(
         }
     }
 }
+
+private data class Extras(val rejected: Long, val week: Map<String, DayActivity>, val layout: HomeLayout, val device: DeviceToday)

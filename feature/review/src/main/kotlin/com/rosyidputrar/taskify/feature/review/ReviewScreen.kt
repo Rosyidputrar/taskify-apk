@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.domain.device.formatDuration
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Timelapse
 import com.rosyidputrar.taskify.core.domain.focus.formatMinutes
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.runtime.remember
@@ -169,6 +172,28 @@ fun ReviewContent(
                         lowerIsBetter = true, hint = "Masuk ${Rupiah.compact(now.income)}")
                     Stat(Icons.Outlined.EditNote, TaskifyModule.Journal, "Hari berjurnal", "${now.journalDays}/${state.elapsed}", null, Modifier.weight(1f),
                         hint = now.moodAvg?.let { "mood ${"%.1f".format(it).replace('.', ',')} · ${moodLabel(it)?.lowercase()}" } ?: "belum ada mood")
+                }
+                val dv = state.device
+                if (!dv.isEmpty) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Stat(
+                            Icons.Outlined.Timelapse, TaskifyModule.Wellbeing, "Waktu layar/hari",
+                            if (dv.daysWithData == 0) "–" else formatDuration(dv.avgScreenMs),
+                            Review.percentChange(dv.avgScreenMs, state.deviceBefore.avgScreenMs).takeIf { dv.daysWithData > 0 && state.deviceBefore.daysWithData > 0 },
+                            Modifier.weight(1f),
+                            lowerIsBetter = true,
+                            hint = if (dv.daysWithData == 0) "izinkan Akses penggunaan" else
+                                "${dv.avgUnlocks}× buka kunci" + (dv.pickupMinute?.let { " · pegang %02d.%02d".format(it / 60, it % 60) } ?: ""),
+                        )
+                        Stat(
+                            Icons.Outlined.NotificationsActive, TaskifyModule.Notifications, "Notifikasi",
+                            "${dv.notifications}",
+                            Review.percentChange(dv.notifications, state.deviceBefore.notifications).takeIf { state.deviceBefore.notifications > 0 },
+                            Modifier.weight(1f),
+                            lowerIsBetter = true,
+                            hint = "±${dv.notifications / state.elapsed.coerceAtLeast(1)} per hari",
+                        )
+                    }
                 }
                 val f = state.focus
                 Stat(

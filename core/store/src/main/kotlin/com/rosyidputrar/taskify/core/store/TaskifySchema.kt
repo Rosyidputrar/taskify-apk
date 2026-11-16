@@ -146,10 +146,58 @@ object TaskifySchema {
         localOnly = true,
     )
 
+    /**
+     * LOCAL-ONLY: modul Notifikasi — notifikasi yang dicatat pendengar notifikasi di HP ini
+     * (tidak pernah disinkronkan). Kolom money_* / draft = draf transaksi; parcel_* = status paket.
+     */
+    val notifLog = Table(
+        name = "notif_log",
+        columns = listOf(
+            t("package"), t("app_label"), t("n_key"), t("conversation"), t("title"), t("text"), t("category"), i("posted_ms"), t("day"),
+            i("hidden"), t("handled"), i("money_amount"), t("money_kind"), t("money_party"), t("money_source"), t("draft"),
+            t("parcel_stage"), t("parcel_ref"),
+        ),
+        indexes = listOf(idx("notif_log_day", "day", "posted_ms"), idx("notif_log_draft", "draft"), idx("notif_log_key", "package", "n_key")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: jumlah notifikasi per aplikasi per hari (disimpan lebih lama dari isi notifikasi). */
+    val notifDaily = Table(
+        name = "notif_daily",
+        columns = listOf(t("day"), t("package"), t("app_label"), i("count")),
+        indexes = listOf(idx("notif_daily_day", "day")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: Kesehatan Digital — sesi aplikasi di layar. */
+    val usageSessions = Table(
+        name = "usage_sessions",
+        columns = listOf(t("day"), t("package"), i("start_ms"), i("end_ms")),
+        indexes = listOf(idx("usage_sessions_day", "day", "start_ms")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: rekap pemakaian per aplikasi per hari. */
+    val usageDaily = Table(
+        name = "usage_daily",
+        columns = listOf(t("day"), t("package"), t("app_label"), i("foreground_ms"), i("opens"), i("longest_ms")),
+        indexes = listOf(idx("usage_daily_day", "day"), idx("usage_daily_pkg", "package", "day")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: rekap perangkat per hari (waktu layar, buka kunci, pertama dipegang). */
+    val deviceDaily = Table(
+        name = "device_daily",
+        columns = listOf(t("day"), i("screen_ms"), i("unlocks"), i("first_pickup_ms")),
+        indexes = listOf(idx("device_daily_day", "day")),
+        localOnly = true,
+    )
+
     val all: List<Table> = listOf(
         userSettings, tags, taggings, entityLinks, taskLists, tasks, journalEntries, notes, wallets, categories, debts,
         recurringTransactions, transactions, budgets, snippets, codeProjects, attachments, pwKeys, pwItems, pwTotpLog,
         configFiles, configVersions, tempFiles, uploadErrors, focusSessions,
+        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily,
     )
 
     val schema = Schema(all)

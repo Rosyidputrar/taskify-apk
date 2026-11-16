@@ -1,5 +1,10 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.feature.wellbeing.WellbeingScreen
+import com.rosyidputrar.taskify.feature.notifications.NotificationDraftsBanner
+import com.rosyidputrar.taskify.feature.notifications.NotificationsScreen
+import com.rosyidputrar.taskify.navigation.WellbeingRoute
+import com.rosyidputrar.taskify.navigation.NotificationsRoute
 import com.rosyidputrar.taskify.ui.focus.FocusScreen
 import com.rosyidputrar.taskify.navigation.FocusRoute
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -251,6 +256,8 @@ fun TaskifyApp(
         destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
         destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
         destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
+        destination.hasRoute<NotificationsRoute>() -> TaskifyModule.Notifications
+        destination.hasRoute<WellbeingRoute>() -> TaskifyModule.Wellbeing
         destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
         destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
         destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
@@ -417,6 +424,7 @@ fun TaskifyApp(
             onThemeModeChange = onThemeModeChange,
             onOpenEntity = ::openEntity,
             onOpenTag = { id -> spotlight.close(); navController.navigate(TagRoute(id)) },
+            onOpenNotifications = { pkg -> spotlight.close(); navController.navigate(NotificationsRoute(app = pkg)) },
         )
     }
     }
@@ -519,6 +527,24 @@ private fun TaskifyNavHost(
                 onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
             )
         }
+        composable<NotificationsRoute> { entry ->
+            val route = entry.toRoute<NotificationsRoute>()
+            NotificationsScreen(
+                contentPadding = contentPadding,
+                app = route.app,
+                openDrafts = route.drafts,
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<WellbeingRoute> {
+            WellbeingScreen(
+                contentPadding = contentPadding,
+                onOpenNotifications = { pkg -> navController.navigate(NotificationsRoute(app = pkg)) },
+                onBack = navController.backIfPossible(),
+                backButton = { BackButton(it) },
+            )
+        }
         composable<FocusRoute> { entry ->
             FocusScreen(
                 taskId = entry.toRoute<FocusRoute>().taskId,
@@ -582,6 +608,7 @@ private fun TaskifyNavHost(
                 onNewTx = { walletId -> navController.navigate(TransactionRoute(walletId = walletId)) },
                 onBack = navController.backIfPossible(),
                 backButton = { BackButton(it) },
+                topSlot = { NotificationDraftsBanner(onOpen = { navController.navigate(NotificationsRoute(drafts = true)) }) },
             )
         }
         composable<TransactionRoute> { entry ->

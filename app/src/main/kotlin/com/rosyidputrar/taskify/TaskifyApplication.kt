@@ -42,6 +42,8 @@ class TaskifyApplication : Application() {
         // Tagihan jatuh tempo, anggaran, dan streak jurnal — tetap dicek walau Taskify tidak dibuka.
         get<com.rosyidputrar.taskify.core.reminders.ContextNotifier>().ensureChannels()
         get<com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler>().schedule()
+        // Notifikasi & Kesehatan Digital: salin data pemakaian tiap jam + buang riwayat lewat masa simpan.
+        get<com.rosyidputrar.taskify.core.device.DeviceScheduler>().schedule()
         // Mode Fokus: alarm hilang bila proses mati paksa / "Paksa berhenti" — pasang ulang dari
         // sesi tersimpan, dan pulihkan "Jangan Ganggu" bila macet menyala tanpa sesi aktif.
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {

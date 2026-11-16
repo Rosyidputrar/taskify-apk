@@ -11,6 +11,8 @@ import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Timelapse
 import androidx.compose.material.icons.outlined.OndemandVideo
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
@@ -46,14 +48,16 @@ enum class TaskifyModule(
     Trash("Sampah", "Pulihkan yang terhapus", Icons.Outlined.DeleteSweep, Color(0xFF5F5750), Color(0xFFC8BEB3)),
     Music("Musik", "Cari lagu, antrean, lirik", Icons.Outlined.MusicNote, Color(0xFF9A3456), Color(0xFFF3A0BC)),
     TikTok("TikTok", "Lihat & unduh konten", Icons.Outlined.OndemandVideo, Color(0xFF1F1C17), Color(0xFFE8E8E8)),
+    Notifications("Notifikasi", "Semua yang masuk hari ini", Icons.Outlined.NotificationsActive, Color(0xFF8C4A00), Color(0xFFFFB86B)),
+    Wellbeing("Kesehatan Digital", "Waktu layar & kebiasaan HP", Icons.Outlined.Timelapse, Color(0xFF00639B), Color(0xFF94CCFF)),
     ;
 
     companion object {
         val onLight = Color.White
         val onDark = Color(0xFF141414)
 
-        /** 11 modul utama, urutan tampil di Ruang. */
-        val main = listOf(Home, Tasks, Calendar, Journal, Notes, Finance, Vault, Sandi, Files, Review, Settings)
+        /** Modul utama, urutan tampil di Ruang. */
+        val main = listOf(Home, Tasks, Calendar, Journal, Notes, Finance, Vault, Sandi, Files, Review, Notifications, Wellbeing, Settings)
 
         /** Fitur lintas modul yang juga punya halaman sendiri. */
         val extras = listOf(Tags, Trash, Music, TikTok)

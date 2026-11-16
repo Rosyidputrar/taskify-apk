@@ -16,6 +16,8 @@ enum class HomeTile(val label: String) {
     Streak("Streak jurnal"),
     Balance("Saldo semua dompet"),
     Income("Masuk bulan ini"),
+    ScreenTime("Waktu layar"),
+    Notifications("Notifikasi hari ini"),
 }
 
 /**

@@ -43,6 +43,9 @@ class DeviceLeftovers(
     private val focus: com.rosyidputrar.taskify.focus.FocusController? = null,
     /** Bisa diganti di tes; default membatalkan pekerjaan unik pengingat kontekstual. */
     private val cancelContextWork: (Context) -> Unit = ::cancelContextReminderWork,
+    /** Notifikasi & Kesehatan Digital: preferensi (pengecualian, pemetaan dompet) + pekerjaan latar. */
+    private val devicePrefs: com.rosyidputrar.taskify.core.device.DeviceModulePrefs? = null,
+    private val deviceScheduler: com.rosyidputrar.taskify.core.device.DeviceScheduler? = null,
 ) {
     suspend fun clear() {
         // Notifikasi pengingat yang masih tampil memuat judul tugas akun lama.
@@ -58,6 +61,10 @@ class DeviceLeftovers(
         contextPrefs?.forgetHistory()
         // Sesi Mode Fokus (judul tugas akun lama di notifikasi, alarm, Jangan Ganggu yang kita nyalakan).
         focus?.clear()
+        // Notifikasi & Kesehatan Digital: isinya ada di tabel lokal (ikut terhapus bersama database);
+        // di sini preferensinya (pemetaan dompet, pengecualian) dan pekerjaan salin data tiap jam.
+        devicePrefs?.clear()
+        deviceScheduler?.cancel()
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()

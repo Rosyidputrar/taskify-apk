@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.di
 
+import com.rosyidputrar.taskify.feature.wellbeing.wellbeingFeatureModule
+import com.rosyidputrar.taskify.feature.notifications.notificationsFeatureModule
+import com.rosyidputrar.taskify.core.device.deviceDataModule
 import com.rosyidputrar.taskify.ui.focus.FocusViewModel
 import com.rosyidputrar.taskify.focus.FocusController
 import com.rosyidputrar.taskify.core.store.focus.FocusRepository
@@ -160,7 +163,16 @@ private val deviceModule = module {
             hideContent = { reminderPrefs.hideContent },
         )
     }
-    single { DeviceLeftovers(androidContext(), get(), get(), get(), get(), get()) }
+    single {
+        val reminderPrefs = get<ReminderPrefs>()
+        com.rosyidputrar.taskify.core.device.DraftAlerts(androidContext(), hideContent = { reminderPrefs.hideContent })
+    }
+    single {
+        DeviceLeftovers(
+            androidContext(), get(), get(), get(), get(), get(),
+            devicePrefs = get(), deviceScheduler = get(),
+        )
+    }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
     single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
     single { MusicPlayer(androidContext(), get()) }
@@ -186,7 +198,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
     viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get()) }
-    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
@@ -209,4 +221,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule, deviceDataModule, notificationsFeatureModule, wellbeingFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

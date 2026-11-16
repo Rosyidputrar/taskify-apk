@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.ui.spotlight
 
+import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.core.domain.device.formatClockTime
+import com.rosyidputrar.taskify.core.store.device.NotifEntry
+import com.rosyidputrar.taskify.core.store.device.NotificationLogRepository
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -104,6 +108,12 @@ private sealed interface SpotlightResult {
         override val subtitle = row.describe()
     }
 
+    /** Notifikasi yang tercatat di modul Notifikasi. */
+    data class Notification(val entry: NotifEntry) : SpotlightResult {
+        override val title = entry.title ?: entry.appLabel
+        override val subtitle = listOfNotNull(entry.appLabel, Dates.relativeDayLabel(entry.day, Dates.today()) + " " + formatClockTime(entry.postedAt), entry.text).joinToString(" · ")
+    }
+
     data class Tag(val hit: TagHit) : SpotlightResult {
         override val title = "#${hit.name}"
         override val subtitle = "${hit.count} item bertag"
@@ -129,6 +139,7 @@ fun Spotlight(
     onThemeModeChange: (ThemeMode) -> Unit,
     onOpenEntity: (EntityType, String) -> Unit = { _, _ -> },
     onOpenTag: (String) -> Unit = {},
+    onOpenNotifications: (pkg: String?) -> Unit = {},
 ) {
     val haptics = rememberHaptics()
     var screenHeight by remember { mutableFloatStateOf(0f) }
@@ -197,6 +208,7 @@ fun Spotlight(
             onThemeModeChange = onThemeModeChange,
             onOpenEntity = onOpenEntity,
             onOpenTag = onOpenTag,
+            onOpenNotifications = onOpenNotifications,
             modifier = Modifier
                 .nestedScroll(nested)
                 .draggable(
@@ -219,16 +231,20 @@ private fun SpotlightPanel(
     onOpenEntity: (EntityType, String) -> Unit,
     onOpenTag: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenNotifications: (pkg: String?) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     // Pencarian isi (FTS5 lokal) — debounce 120 ms seperti webapp; tanpa repository = modul saja.
     val search = remember { runCatching { GlobalContext.getOrNull()?.getOrNull<SearchRepository>() }.getOrNull() }
+    val notifLog = remember { runCatching { GlobalContext.getOrNull()?.getOrNull<NotificationLogRepository>() }.getOrNull() }
     var found by remember { mutableStateOf<Pair<List<EntityRow>, List<TagHit>>>(emptyList<EntityRow>() to emptyList()) }
+    var notifHits by remember { mutableStateOf<List<NotifEntry>>(emptyList()) }
     LaunchedEffect(query) {
         val q = query.trim()
-        if (q.isEmpty() || search == null) { found = emptyList<EntityRow>() to emptyList(); return@LaunchedEffect }
+        if (q.isEmpty() || search == null) { found = emptyList<EntityRow>() to emptyList(); notifHits = emptyList(); return@LaunchedEffect }
         delay(120)
         found = runCatching { search.search(q) to search.searchTags(q) }.getOrDefault(emptyList<EntityRow>() to emptyList())
+        notifHits = runCatching { notifLog?.search(q, limit = 5).orEmpty() }.getOrDefault(emptyList())
     }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -237,7 +253,7 @@ private fun SpotlightPanel(
         if (state.settledOpen) runCatching { focusRequester.requestFocus() } else focusManager.clearFocus()
     }
 
-    val results = remember(query, themeMode, found) { buildResults(query.trim(), themeMode, found.first, found.second) }
+    val results = remember(query, themeMode, found, notifHits) { buildResults(query.trim(), themeMode, found.first, found.second, notifHits) }
     val run: (SpotlightResult) -> Unit = { result ->
         when (result) {
             is SpotlightResult.Module -> onOpenModule(result.module)
@@ -248,6 +264,7 @@ private fun SpotlightPanel(
             }
             is SpotlightResult.Entity -> onOpenEntity(result.row.type, result.row.id)
             is SpotlightResult.Tag -> onOpenTag(result.hit.id)
+            is SpotlightResult.Notification -> onOpenNotifications(result.entry.pkg)
         }
         query = ""
     }
@@ -283,7 +300,7 @@ private fun SpotlightPanel(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             LazyColumn(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                items(results, key = { r -> if (r is SpotlightResult.Entity) r.row.type.value + r.row.id else r.title }) { result ->
+                items(results, key = { r -> when (r) { is SpotlightResult.Entity -> r.row.type.value + r.row.id; is SpotlightResult.Notification -> "notif" + r.entry.id; else -> r.title } }) { result ->
                     ResultRow(result, onClick = { run(result) })
                 }
                 if (query.isBlank()) item {
@@ -299,7 +316,7 @@ private fun SpotlightPanel(
     }
 }
 
-private fun buildResults(query: String, themeMode: ThemeMode, hits: List<EntityRow>, tags: List<TagHit>): List<SpotlightResult> {
+private fun buildResults(query: String, themeMode: ThemeMode, hits: List<EntityRow>, tags: List<TagHit>, notifs: List<NotifEntry> = emptyList()): List<SpotlightResult> {
     val all = TaskifyModule.main + TaskifyModule.extras
     val modules = if (query.isEmpty()) {
         all
@@ -312,7 +329,7 @@ private fun buildResults(query: String, themeMode: ThemeMode, hits: List<EntityR
         .map { SpotlightResult.Theme(it) }
     val capture = if (query.isNotEmpty()) listOf(SpotlightResult.Capture(query)) else emptyList()
     // Teks yang tidak cocok modul mana pun paling mungkin catat cepat → taruh di atas.
-    val content = hits.map { SpotlightResult.Entity(it) } + tags.map { SpotlightResult.Tag(it) }
+    val content = hits.map { SpotlightResult.Entity(it) } + tags.map { SpotlightResult.Tag(it) } + notifs.map { SpotlightResult.Notification(it) }
     return if (modules.isEmpty()) content + capture + themes else modules + content + capture + themes
 }
 
@@ -324,6 +341,7 @@ private fun ResultRow(result: SpotlightResult, onClick: () -> Unit) {
         is SpotlightResult.Theme -> Icons.Outlined.Contrast to MaterialTheme.colorScheme.onSurfaceVariant
         is SpotlightResult.Entity -> result.row.type.icon to TaskifyTheme.modules.accent(result.row.type.module)
         is SpotlightResult.Tag -> Icons.Outlined.Tag to namedColor(result.hit.color)
+        is SpotlightResult.Notification -> TaskifyModule.Notifications.icon to TaskifyTheme.modules.accent(TaskifyModule.Notifications)
     }
     val kind = when (result) {
         is SpotlightResult.Module -> "MODUL"
@@ -331,6 +349,7 @@ private fun ResultRow(result: SpotlightResult, onClick: () -> Unit) {
         is SpotlightResult.Theme -> "PERINTAH"
         is SpotlightResult.Entity -> result.row.type.label.uppercase()
         is SpotlightResult.Tag -> "TAG"
+        is SpotlightResult.Notification -> "NOTIFIKASI"
     }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),

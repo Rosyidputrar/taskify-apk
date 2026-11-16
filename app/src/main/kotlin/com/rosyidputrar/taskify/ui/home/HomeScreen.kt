@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.home
 
+import com.rosyidputrar.taskify.core.domain.device.formatDuration
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.FilledTonalButton
 import com.rosyidputrar.taskify.core.domain.home.HomeTile
@@ -368,6 +369,16 @@ private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModu
             HomeTile.Streak -> Tile(TaskifyModule.Review, tile.label, "${state.streak}", "hari berturut-turut")
             HomeTile.Balance -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.balance), if (s.balance < 0) "lebih banyak keluar" else "total semua dompet")
             HomeTile.Income -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.incomeMonth), "keluar Rp ${Rupiah.compact(s.expenseMonth)}")
+            HomeTile.ScreenTime -> Tile(
+                TaskifyModule.Wellbeing, tile.label,
+                state.device.screenMs?.let(::formatDuration) ?: "—",
+                if (state.device.screenMs == null) "buka Kesehatan Digital" else "hari ini",
+            )
+            HomeTile.Notifications -> Tile(
+                TaskifyModule.Notifications, tile.label,
+                state.device.notifications?.toString() ?: "—",
+                if (state.device.notifications == null) "buka Notifikasi" else "masuk hari ini",
+            )
         }
     }
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

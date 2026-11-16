@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.device.DeviceSummary
+import com.rosyidputrar.taskify.core.device.DeviceRange
 import kotlinx.coroutines.flow.flowOf
 import com.rosyidputrar.taskify.core.store.focus.FocusStats
 import com.rosyidputrar.taskify.core.store.focus.FocusRepository
@@ -41,6 +43,9 @@ data class ReviewUiState(
     /** Mode Fokus (riwayat lokal perangkat ini). */
     val focus: FocusStats = FocusStats(),
     val focusBefore: FocusStats = FocusStats(),
+    /** Kesehatan Digital & Notifikasi (data lokal HP ini). */
+    val device: DeviceRange = DeviceRange(),
+    val deviceBefore: DeviceRange = DeviceRange(),
 ) {
     val isCurrent get() = today in ranges.current
     val elapsed get() = Review.elapsedDays(ranges.current, today)
@@ -61,6 +66,7 @@ class ReviewViewModel(
     private val repo: ReviewRepository,
     private val finance: FinanceRepository,
     private val focus: FocusRepository? = null,
+    private val deviceSummary: DeviceSummary? = null,
 ) : ViewModel(), ReviewActions {
     private val selection = MutableStateFlow(Selection(ReviewPeriod.Week, null))
 
@@ -75,7 +81,9 @@ class ReviewViewModel(
             val main = combine(stats, repo.watchDaily(cur), finance.watchCategoryBreakdown(cur.from, cur.to, CategoryKind.Expense), highlights, repo.watchHeatmap(Review.heatRange(today))) { (now, before), daily, cats, (big, mood), heat ->
                 ReviewUiState(s.period, today, ranges, now, before, Review.fillDays(cur, daily), cats.take(5), big, mood, heat)
             }
-            combine(main, focusStats) { st, (f, fb) -> st.copy(focus = f, focusBefore = fb) }
+            val deviceStats = deviceSummary?.let { d -> combine(d.watchRange(cur.from, cur.to), d.watchRange(ranges.previous.from, ranges.previous.to)) { a, b -> a to b } }
+                ?: flowOf(DeviceRange() to DeviceRange())
+            combine(main, focusStats, deviceStats) { st, (f, fb), (dv, dvb) -> st.copy(focus = f, focusBefore = fb, device = dv, deviceBefore = dvb) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReviewUiState())
 
