@@ -149,6 +149,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
     single { com.rosyidputrar.taskify.ui.capture.CaptureDraft(androidContext()) }
+    single { com.rosyidputrar.taskify.autofill.AutofillVault(get()) }
     single { FocusRepository(get()) }
     single {
         val history = get<FocusRepository>()

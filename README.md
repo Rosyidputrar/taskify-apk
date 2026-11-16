@@ -178,6 +178,24 @@ Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **
   dan Aktivitas; pilih ubin ringkasan (termasuk *Saldo semua dompet* dan *Masuk bulan ini*). Pita
   minggu menampilkan titik tugas/jurnal/catatan/transaksi per hari.
 
+### Isi otomatis Sandi
+
+Sandi bisa dijadikan layanan Isi Otomatis Android (Sandi → Pengaturan brankas → *Jadikan Sandi
+layanan isi otomatis*).
+
+- **Cocok berdasarkan alamat**: di browser dicocokkan dengan domain situs (persis, atau domain
+  induk yang sama: `accounts.google.com` ↔ `google.com`); di aplikasi dengan paket
+  (`androidapp://com.bca`) atau domain terbalik (`tokopedia.com` ↔ `com.tokopedia.tkpd`). Domain
+  mirip seperti `google.com.evil.io` tidak dianggap cocok. Item lain bisa dipilih manual lewat
+  *Cari di Sandi…*, dengan peringatan "Alamat tidak cocok" lebih dulu.
+- **Brankas terkunci**: hanya baris *Buka Sandi* yang ditawarkan, tanpa isi brankas. Brankas dibuka
+  dengan sidik jari / kunci layar (bila perangkat diingat) atau master password, lalu pilih item.
+  Brankas yang sudah lewat batas kunci otomatis dikunci, bukan dipakai, walau Taskify di latar.
+- **Simpan sandi baru**: setelah masuk di aplikasi lain, sistem menawarkan *Simpan ke Taskify
+  Sandi*. Item dengan nama pengguna sama diperbarui; selain itu dibuat item baru. Saat terkunci,
+  kredensial hanya dititipkan di memori proses sampai brankas dibuka.
+- Jendela isi otomatis memakai `FLAG_SECURE` dan tidak muncul di Recents.
+
 ### Pengaturan
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —

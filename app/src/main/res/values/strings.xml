@@ -12,5 +12,6 @@
     <string name="tile_capture_label">Tangkap</string>
     <string name="tile_capture_subtitle">Taskify</string>
     <string name="tile_focus_label">Fokus</string>
+    <string name="autofill_label">Taskify Sandi</string>
     <string name="tile_focus_subtitle">Pomodoro</string>
 </resources>

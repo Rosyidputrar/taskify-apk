@@ -46,6 +46,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -247,6 +248,7 @@ fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: (
             Text("Tidak diingat. Centang \"Ingat perangkat ini\" saat membuka brankas untuk melewati master password selama 30 hari.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        AutofillSetting()
         HorizontalDivider()
         Text("Kunci", style = MaterialTheme.typography.labelLarge)
         Text("Mengganti master password atau kunci pemulihan membuat kunci enkripsi baru dan mengenkripsi ulang seluruh isi brankas dalam satu transaksi. Perlu online dan tersinkron penuh.",
@@ -298,4 +300,39 @@ private fun RotateRecoveryDialog(state: SandiUiState, actions: SandiActions, onD
         confirmButton = { TextButton(onClick = { actions.rotateRecovery(password) }, enabled = password.isNotEmpty() && state.busy == null) { Text("Buat baru") } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = state.busy == null) { Text("Batal") } },
     )
+}
+
+/**
+ * Isi otomatis: Sandi sebagai layanan Autofill Android. Status dibaca ulang setiap kembali dari
+ * Setelan sistem. Disembunyikan bila perangkat tidak mendukung Autofill.
+ */
+@Composable
+private fun AutofillSetting() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) { runCatching { context.getSystemService(android.view.autofill.AutofillManager::class.java) }.getOrNull() }
+    if (manager == null || !runCatching { manager.isAutofillSupported }.getOrDefault(false)) return
+    var enabled by remember { mutableStateOf(runCatching { manager.hasEnabledAutofillServices() }.getOrDefault(false)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        enabled = runCatching { manager.hasEnabledAutofillServices() }.getOrDefault(false)
+        onPauseOrDispose { }
+    }
+    HorizontalDivider()
+    Text("Isi otomatis", style = MaterialTheme.typography.labelLarge)
+    Text(
+        if (enabled) "Aktif · Sandi menawarkan nama pengguna & sandi di aplikasi dan browser lain, serta menyimpan sandi baru yang kamu ketik."
+        else "Isi nama pengguna & sandi di aplikasi dan browser lain langsung dari brankas — tetap perlu brankas terbuka atau sidik jari.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (!enabled) {
+        FilledTonalButton(
+            onClick = {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                    .setData(android.net.Uri.parse("package:" + context.packageName))
+                runCatching { context.startActivity(intent) }
+                    .onFailure { runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) } }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Jadikan Sandi layanan isi otomatis") }
+    }
 }

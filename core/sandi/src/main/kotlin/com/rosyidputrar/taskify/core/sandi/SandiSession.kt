@@ -59,6 +59,20 @@ class SandiSession(private val prefs: SandiPrefs, private val clipboard: SecureC
         clipboard.clearNow() // jangan biarkan sandi tertinggal di papan klip setelah dikunci
     }
 
+    /**
+     * Brankas untuk Isi Otomatis di aplikasi lain. Saat itu Taskify biasanya di latar, dan batas
+     * kunci otomatis baru diperiksa ketika Taskify tampil lagi ([onStart]) — maka diperiksa di sini
+     * juga: yang sudah lewat batas dikunci, bukan dipakai.
+     */
+    fun openForAutofill(now: Long = System.currentTimeMillis()): OpenVault? {
+        val v = _vault.value ?: return null
+        if (shouldLockSandi(now, lastActivity, hiddenAt, prefs.autoLockMinutes)) {
+            lock()
+            return null
+        }
+        return v
+    }
+
     /** Interaksi pengguna di layar Sandi (menunda kunci idle). */
     fun touch() {
         if (_vault.value != null) lastActivity = System.currentTimeMillis()
