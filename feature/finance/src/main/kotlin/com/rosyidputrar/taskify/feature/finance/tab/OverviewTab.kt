@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance.tab
 
+import androidx.compose.ui.platform.LocalDensity
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -58,13 +59,26 @@ import com.rosyidputrar.taskify.feature.finance.component.compactSlices
 import com.rosyidputrar.taskify.feature.finance.component.expenseColor
 import com.rosyidputrar.taskify.feature.finance.component.incomeColor
 
+/** Di atas skala huruf ini, baris berisi beberapa ubin ditumpuk agar tidak terpotong. */
+internal const val LARGE_FONT_SCALE = 1.3f
+
 fun LazyListScope.overviewTab(state: FinanceUiState, actions: FinanceActions, onOpenTx: (String) -> Unit) {
     val totals = state.monthData.totals
     item(key = "ov-stats") {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("Pemasukan", totals.income, Icons.AutoMirrored.Outlined.CallReceived, incomeColor(), Modifier.weight(1f))
-            StatTile("Pengeluaran", totals.expense, Icons.AutoMirrored.Outlined.CallMade, expenseColor(), Modifier.weight(1f))
-            StatTile("Selisih", totals.net, Icons.Outlined.Balance, if (totals.net >= 0) incomeColor() else expenseColor(), Modifier.weight(1f), signed = true)
+        val tiles: @Composable (Modifier, Boolean) -> Unit = { m, wide ->
+            StatTile("Pemasukan", totals.income, Icons.AutoMirrored.Outlined.CallReceived, incomeColor(), m, wide = wide)
+            StatTile("Pengeluaran", totals.expense, Icons.AutoMirrored.Outlined.CallMade, expenseColor(), m, wide = wide)
+            StatTile("Selisih", totals.net, Icons.Outlined.Balance, if (totals.net >= 0) incomeColor() else expenseColor(), m, signed = true, wide = wide)
+        }
+        // Huruf besar (aksesibilitas): tiga ubin sejajar tidak muat → ditumpuk, label & angka utuh.
+        if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tiles(Modifier.fillMaxWidth(), true)
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                tiles(Modifier.weight(1f), false)
+            }
         }
     }
     if (state.due.isNotEmpty()) item(key = "ov-due") { DueCard(state.due, state.today, actions) }
@@ -157,9 +171,20 @@ fun levelColor(level: BudgetLevel) = when (level) {
 }
 
 @Composable
-private fun StatTile(label: String, value: Long, icon: ImageVector, tint: androidx.compose.ui.graphics.Color, modifier: Modifier, signed: Boolean = false) {
+private fun StatTile(label: String, value: Long, icon: ImageVector, tint: androidx.compose.ui.graphics.Color, modifier: Modifier, signed: Boolean = false, wide: Boolean = false) {
     val text = if (signed && value > 0) "+" + Rupiah.compact(value) else Rupiah.compact(value)
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = modifier.semantics(mergeDescendants = true) { contentDescription = "$label ${Rupiah.format(value)}" }) {
+        if (wide) {
+            // Versi selebar layar: ikon · label (boleh membungkus) · angka.
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                Text(if (value == 0L) "Rp 0" else "Rp $text", style = MaterialTheme.typography.titleMedium, color = if (signed) tint else MaterialTheme.colorScheme.onSurface)
+            }
+            return@Surface
+        }
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
             FitText(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

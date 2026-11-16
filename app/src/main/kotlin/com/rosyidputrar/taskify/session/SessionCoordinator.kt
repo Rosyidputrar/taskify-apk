@@ -11,7 +11,11 @@ import com.rosyidputrar.taskify.core.data.TaskifyDatabase
 import com.rosyidputrar.taskify.core.reminders.ReminderScheduler
 import com.rosyidputrar.taskify.core.domain.auth.GateStatus
 import com.rosyidputrar.taskify.core.domain.auth.cleanDisplayName
+import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,6 +51,7 @@ class SessionCoordinator(
     private val search: com.rosyidputrar.taskify.core.store.search.SearchRepository,
     private val trash: com.rosyidputrar.taskify.core.store.cross.TrashRepository,
     private val music: com.rosyidputrar.taskify.core.media.MusicPlayer,
+    private val leftovers: DeviceLeftovers,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -102,25 +107,41 @@ class SessionCoordinator(
     suspend fun pendingUploads(): Long = database.pendingUploadCount()
 
     /**
-     * Keluar: lupakan kepercayaan perangkat, kosongkan database lokal, lalu keluarkan sesi
-     * (global bila online, lokal bila tidak). Urutan sama dengan webapp.
+     * Keluar dari layar: berjalan di cakupan aplikasi supaya tidak ikut batal saat layar Pengaturan
+     * hilang (gerbang langsung pindah ke layar masuk begitu [readyUser] null).
      */
-    suspend fun logout() = mutex.withLock {
-        trustStore.clear()
-        _readyUser.value = null
-        // Pengingat akun ini tidak boleh berbunyi lagi setelah keluar.
-        reminders.cancelAll()
-        // Salinan lampiran & unggahan tertunda milik akun ini juga dihapus dari perangkat.
-        attachments.wipe()
-        // Brankas Sandi dikunci (DEK dihapus dari memori) dan kunci perangkat tepercaya dilupakan.
-        sandi.wipe()
-        // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
-        tempFiles.wipe()
-        search.clear()
-        // Musik berhenti (token akun ini tidak berlaku lagi).
-        withContext(Dispatchers.Main) { music.wipe() }
-        database.wipe()
-        auth.signOut()
+    fun requestLogout(): Job = scope.launchSafe { logout() }
+
+    /**
+     * Keluar: lupakan kepercayaan perangkat, kosongkan database lokal & semua sisa akun, lalu keluarkan
+     * sesi (global bila online, lokal bila tidak). Urutan sama dengan webapp. Tiap langkah berdiri
+     * sendiri dan sesi SELALU dikeluarkan — bila database gagal dikosongkan, isinya tetap dibuang saat
+     * akun lain masuk (pemilik berbeda).
+     */
+    suspend fun logout() = withContext(NonCancellable) {
+        mutex.withLock {
+            _readyUser.value = null
+            val failed = runLogoutSteps(
+                listOf(
+                    LogoutStep("kepercayaan perangkat") { trustStore.clear() },
+                    // Pengingat akun ini tidak boleh berbunyi lagi setelah keluar.
+                    LogoutStep("pengingat") { reminders.cancelAll() },
+                    // Salinan lampiran & unggahan tertunda milik akun ini juga dihapus dari perangkat.
+                    LogoutStep("lampiran") { attachments.wipe() },
+                    // Brankas Sandi dikunci (DEK dihapus dari memori) dan kunci perangkat tepercaya dilupakan.
+                    LogoutStep("Sandi") { sandi.wipe() },
+                    // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
+                    LogoutStep("Berkas") { tempFiles.wipe() },
+                    LogoutStep("indeks pencarian") { search.clear() },
+                    // Musik berhenti (token akun ini tidak berlaku lagi).
+                    LogoutStep("musik") { withContext(Dispatchers.Main) { music.wipe() } },
+                    LogoutStep("database") { database.wipe() },
+                    LogoutStep("sisa di perangkat") { leftovers.clear() },
+                    LogoutStep("sesi") { auth.signOut() },
+                ),
+            )
+            if (failed.isNotEmpty()) UiErrors.report(LogoutIncompleteException(failed))
+        }
     }
 
     /** Ubah nama tampilan (baris `user_settings` dibuat server saat akun didaftarkan). */
@@ -137,3 +158,6 @@ class SessionCoordinator(
         return true
     }
 }
+
+/** Keluar tetap terjadi, tetapi sebagian sisa akun gagal dibersihkan. */
+class LogoutIncompleteException(val steps: List<String>) : IllegalStateException("Keluar, tetapi gagal membersihkan: ${steps.joinToString()}")

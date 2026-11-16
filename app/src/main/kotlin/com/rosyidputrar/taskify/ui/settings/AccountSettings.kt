@@ -181,6 +181,7 @@ fun SecuritySection(viewModel: SettingsViewModel) {
 fun SyncSection(viewModel: SettingsViewModel) {
     val sync by viewModel.sync.collectAsStateWithLifecycle()
     val errors by viewModel.uploadErrors.collectAsStateWithLifecycle()
+    val retrying by viewModel.retrying.collectAsStateWithLifecycle()
     val storage by viewModel.storage.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
@@ -211,19 +212,34 @@ fun SyncSection(viewModel: SettingsViewModel) {
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
             Text("${errors.size} perubahan ditolak server", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
             Text(
-                "Disimpan di sini supaya tidak hilang diam-diam. Salin untuk dicek, lalu bersihkan.",
+                "Data di HP sudah dikembalikan ke versi server. \"Coba lagi\" mengirim ulang perubahan ini apa adanya " +
+                    "(bisa menimpa ubahan dari perangkat lain); salin untuk dicek, atau bersihkan bila tidak perlu.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             errors.take(20).forEach { e ->
-                Column(Modifier.padding(vertical = 6.dp)) {
-                    Text("${e.op} ${e.tableName}", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        listOfNotNull(explainErrorCode(e.errorCode), e.errorMessage).joinToString(" — "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${e.op} ${e.tableName}", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            listOfNotNull(explainErrorCode(e.errorCode), e.errorMessage).joinToString(" — "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (viewModel.canRetry) {
+                        TextButton(onClick = { viewModel.retryUploadErrors(listOf(e)) }, enabled = !retrying) { Text("Coba lagi") }
+                    }
                 }
+            }
+            if (errors.size > 20) {
+                Text("…dan ${errors.size - 20} lainnya (ikut di \"Salin JSON\" & \"Coba lagi semua\").", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (viewModel.canRetry) {
+                Button(onClick = { viewModel.retryUploadErrors(errors) }, enabled = !retrying, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (retrying) "Mengirim ulang…" else "Coba lagi semua")
+                }
+                Spacer(Modifier.height(8.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
@@ -244,7 +260,7 @@ fun SyncSection(viewModel: SettingsViewModel) {
                     }
                     scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("upload_errors", json.toString()))) }
                 }) { Text("Salin JSON") }
-                Button(onClick = viewModel::clearUploadErrors) { Text("Bersihkan") }
+                OutlinedButton(onClick = viewModel::clearUploadErrors, enabled = !retrying) { Text("Bersihkan") }
             }
         }
     }
@@ -268,9 +284,7 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boo
 fun NotificationSection(viewModel: SettingsViewModel) {
     val ui by viewModel.notifications.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val permission = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { viewModel.refreshNotifications() }
+    val requestNotifications = com.rosyidputrar.taskify.core.designsystem.component.rememberNotificationPermission { viewModel.refreshNotifications() }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         viewModel.refreshNotifications()
         onPauseOrDispose { }
@@ -286,16 +300,8 @@ fun NotificationSection(viewModel: SettingsViewModel) {
             ok = ui.canPost,
             title = if (ui.canPost) "Notifikasi diizinkan" else "Notifikasi belum diizinkan",
             action = if (ui.canPost) null else "Izinkan",
-            onAction = {
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    context.startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName),
-                    )
-                }
-            },
+            // Ditolak permanen / dimatikan di sistem → langsung ke pengaturan notifikasi Taskify.
+            onAction = requestNotifications,
         )
         StatusRow(
             ok = ui.exactAlarms,

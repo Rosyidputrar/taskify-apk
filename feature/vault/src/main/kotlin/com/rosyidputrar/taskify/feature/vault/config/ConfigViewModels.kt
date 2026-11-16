@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -100,7 +101,7 @@ class ConfigFileViewModel(
 
     private fun launchBusy(block: suspend () -> Unit) {
         busy.value = true
-        viewModelScope.launch {
+        launchSafe {
             try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { messenger.show(e.message ?: "Gagal") } finally { busy.value = false }
         }
     }
@@ -152,7 +153,7 @@ class ConfigEditorViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
     init {
-        if (fileId != null) viewModelScope.launch {
+        if (fileId != null) launchSafe {
             val file = repo.watchFile(fileId).first()
             val latest = service.versions(fileId).first { it.ready || service.session.vault.value == null }.versions.firstOrNull()
             val text = latest?.payload?.text ?: ""
@@ -180,7 +181,7 @@ class ConfigEditorViewModel(
         if (parsed.blocking) { local.update { it.copy(error = parsed.problems.first().message) }; return }
         if (s.isNew && s.name.isBlank()) { local.update { it.copy(error = "Beri nama berkasnya, mis. .env.production") }; return }
         local.update { it.copy(saving = true, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val id = if (fileId == null) {
                     service.createConfigFile(s.name.trim(), s.format, s.environment, s.projectId, s.text, s.note)

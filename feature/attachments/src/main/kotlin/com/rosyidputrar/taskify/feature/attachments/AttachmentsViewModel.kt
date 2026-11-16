@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.attachments
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -32,7 +33,7 @@ class AttachmentsViewModel(
     override fun hasLocalCopy(att: Attachment) = manager.hasLocalCopy(att.id)
 
     private fun act(block: suspend () -> Unit) {
-        viewModelScope.launch {
+        launchSafe {
             try {
                 block()
             } catch (e: kotlinx.coroutines.CancellationException) {

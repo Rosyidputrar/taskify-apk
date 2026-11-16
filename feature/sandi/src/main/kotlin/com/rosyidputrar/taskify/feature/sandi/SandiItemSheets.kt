@@ -65,9 +65,9 @@ internal fun spacedCode(code: String) = if (code.length >= 6) code.substring(0, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ItemSheet(item: SandiItem, now: Long, actions: SandiActions, onEdit: () -> Unit, onDismiss: () -> Unit) {
+internal fun ItemSheet(item: SandiItem, now: () -> Long, actions: SandiActions, onEdit: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        ItemDetail(item, now, actions, onEdit, onDelete = { actions.remove(item); onDismiss() })
+        ItemDetail(item, now(), actions, onEdit, onDelete = { actions.remove(item); onDismiss() })
     }
 }
 

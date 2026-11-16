@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.domain.media.MusicQueue
@@ -76,7 +77,7 @@ class MusicViewModel(private val player: MusicPlayer, private val client: MusicC
 
     init {
         // Lirik mengikuti lagu yang sedang diputar.
-        viewModelScope.launch {
+        launchSafe {
             player.state.collect { s ->
                 val id = s.lyricsId
                 if (id != local.value.lyrics.lyricsId) loadLyrics(id)
@@ -87,9 +88,9 @@ class MusicViewModel(private val player: MusicPlayer, private val client: MusicC
     private fun loadLyrics(id: String) {
         local.update { it.copy(lyrics = LyricsState(id, if (id.isEmpty()) null else null, loading = id.isNotEmpty())) }
         if (id.isEmpty()) return
-        viewModelScope.launch {
+        launchSafe {
             val r = runCatching { player.lyrics(id) }
-            if (local.value.lyrics.lyricsId != id) return@launch
+            if (local.value.lyrics.lyricsId != id) return@launchSafe
             local.update { it.copy(lyrics = LyricsState(id, r.getOrNull(), false, r.exceptionOrNull()?.message)) }
         }
     }
@@ -104,7 +105,7 @@ class MusicViewModel(private val player: MusicPlayer, private val client: MusicC
         if (q.isEmpty()) return
         searchJob?.cancel()
         local.update { it.copy(tab = MusicTab.Search, search = s.copy(loading = true, error = null)) }
-        searchJob = viewModelScope.launch {
+        searchJob = launchSafe {
             try {
                 val page = client.search(q, s.filter)
                 local.update { it.copy(search = it.search.copy(results = page.songs, cursor = page.cursor.takeIf { s.filter.pages }, loading = false, searched = true)) }
@@ -121,7 +122,7 @@ class MusicViewModel(private val player: MusicPlayer, private val client: MusicC
         val cursor = s.cursor ?: return
         if (s.loading) return
         local.update { it.copy(search = s.copy(loading = true)) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val page = client.searchMore(cursor)
                 local.update { it.copy(search = it.search.copy(results = MusicQueue.mergePages(it.search.results, page.songs), cursor = page.cursor, loading = false)) }

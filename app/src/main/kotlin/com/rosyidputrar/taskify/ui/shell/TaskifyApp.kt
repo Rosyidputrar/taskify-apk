@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -348,7 +349,7 @@ fun TaskifyApp(
         LaunchedEffect(messages) {
             messages.collect { message ->
                 snackbar.currentSnackbarData?.dismiss()
-                scope.launch {
+                scope.launchSafe {
                     val result = snackbar.showSnackbar(message.text, actionLabel = message.actionLabel, withDismissAction = message.action == null, duration = SnackbarDuration.Short)
                     if (result == SnackbarResult.ActionPerformed) message.action?.invoke()
                 }

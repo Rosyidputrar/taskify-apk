@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.settings
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.powersync.sync.SyncStatusData
@@ -47,7 +48,28 @@ class SettingsViewModel(
     private val exporter: com.rosyidputrar.taskify.core.store.cross.ExportRepository,
     private val messenger: com.rosyidputrar.taskify.core.designsystem.component.Messenger,
     private val context: android.content.Context,
+    private val retrier: com.rosyidputrar.taskify.core.data.RejectedChangeRetrier? = null,
 ) : ViewModel() {
+
+    private val _retrying = MutableStateFlow(false)
+    /** "Coba lagi" perubahan yang ditolak sedang berjalan. */
+    val retrying: StateFlow<Boolean> = _retrying.asStateFlow()
+
+    /** Bisa mengirim ulang (server dikonfigurasi). */
+    val canRetry: Boolean get() = retrier != null
+
+    fun retryUploadErrors(rows: List<UploadErrorRow>) {
+        val r = retrier ?: return
+        if (_retrying.value || rows.isEmpty()) return
+        _retrying.value = true
+        launchSafe {
+            try {
+                messenger.show(r.retryAll(rows).text)
+            } finally {
+                _retrying.value = false
+            }
+        }
+    }
 
     private val _exporting = MutableStateFlow(false)
     val exporting: StateFlow<Boolean> = _exporting.asStateFlow()
@@ -58,7 +80,7 @@ class SettingsViewModel(
     fun export(target: android.net.Uri) {
         if (_exporting.value) return
         _exporting.value = true
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val rows = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     context.contentResolver.openOutputStream(target)?.use { out ->
@@ -84,7 +106,7 @@ class SettingsViewModel(
     /** Dipanggil saat layar tampil / kembali dari pengaturan sistem. */
     fun refreshNotifications() {
         _notifications.value = NotificationUi(notifier.canPost(), scheduler.canExact(), reminderPrefs.hideContent)
-        viewModelScope.launch { scheduler.rescheduleNow() }
+        launchSafe { scheduler.rescheduleNow() }
     }
 
     fun setHideContent(hide: Boolean) {
@@ -117,7 +139,7 @@ class SettingsViewModel(
     data class StorageUi(val dbBytes: Long = 0, val pendingUploads: Long = 0)
 
     fun refreshStorage() {
-        viewModelScope.launch {
+        launchSafe {
             val pending = if (hasAccount) runCatching { database.pendingUploadCount() }.getOrDefault(0) else 0
             _storage.value = StorageUi(database.databaseSizeBytes(), pending)
         }
@@ -125,7 +147,7 @@ class SettingsViewModel(
 
     fun saveDisplayName(name: String) {
         val c = coordinator ?: return
-        viewModelScope.launch {
+        launchSafe {
             val ok = c.updateDisplayName(name)
             _account.value = _account.value.copy(
                 nameSaveMessage = if (ok) "Tersimpan. Akan tersinkron ke perangkat lain." else "Data akun belum tersinkron. Coba lagi setelah online.",
@@ -139,7 +161,7 @@ class SettingsViewModel(
     }
 
     fun enablePin(pin: String, autoLockMinutes: Int) {
-        viewModelScope.launch { lock.enable(pin, autoLockMinutes) }
+        launchSafe { lock.enable(pin, autoLockMinutes) }
     }
 
     fun disablePin() = lock.disable()
@@ -149,12 +171,11 @@ class SettingsViewModel(
     fun forgetDevice() = auth?.forgetDevice()
 
     fun clearUploadErrors() {
-        viewModelScope.launch { database.clearUploadErrors() }
+        launchSafe { database.clearUploadErrors() }
     }
 
     fun logout() {
-        val c = coordinator ?: return
-        viewModelScope.launch { c.logout() }
+        coordinator?.requestLogout()
     }
 
     private fun summarize(status: SyncStatusData, online: Boolean): SyncSummary {

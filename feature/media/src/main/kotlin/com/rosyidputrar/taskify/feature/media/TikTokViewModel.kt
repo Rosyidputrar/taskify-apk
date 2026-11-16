@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -51,7 +52,7 @@ class TikTokViewModel(private val client: TikTokClient, private val saver: Media
         if (input.isEmpty()) return
         if (TikTok.findLink(input) == null) { _state.update { it.copy(error = "Bukan link TikTok yang dikenali. Tempel link dari tombol Bagikan → Salin tautan.") }; return }
         _state.update { it.copy(input = input, loading = true, error = null, post = null, saved = emptyMap()) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val post = client.extract(input)
                 _state.update { it.copy(loading = false, post = post, extractedAt = System.currentTimeMillis()) }
@@ -69,7 +70,7 @@ class TikTokViewModel(private val client: TikTokClient, private val saver: Media
         val key = asset.key()
         if (key in s.downloading) return
         _state.update { it.copy(downloading = it.downloading + (key to null)) }
-        viewModelScope.launch {
+        launchSafe {
             var pending: MediaSaver.Pending? = null
             try {
                 val mime = when (asset) { TikTokAsset.Video -> "video/mp4"; TikTokAsset.Audio -> "audio/mpeg"; is TikTokAsset.Photo -> "image/jpeg" }

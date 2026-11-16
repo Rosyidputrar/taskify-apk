@@ -19,7 +19,7 @@ class TaskifyDatabase(
     private val context: Context,
     scope: CoroutineScope,
     private val devicePrefs: DevicePrefs,
-) {
+) : UploadErrorStore {
     val db: PowerSyncDatabase = PowerSyncDatabase(
         factory = DatabaseDriverFactory(context),
         schema = TaskifySchema.schema,
@@ -82,6 +82,15 @@ class TaskifyDatabase(
 
     suspend fun clearUploadErrors() {
         db.execute("DELETE FROM upload_errors")
+    }
+
+    override suspend fun deleteUploadError(id: String) {
+        db.execute("DELETE FROM upload_errors WHERE id = ?", listOf(id))
+    }
+
+    /** Coba lagi masih ditolak: simpan alasan terbaru. */
+    override suspend fun updateUploadError(id: String, code: String?, message: String?, at: String) {
+        db.execute("UPDATE upload_errors SET error_code = ?, error_message = ?, created_at = ? WHERE id = ?", listOf(code, message, at, id))
     }
 
     fun databaseSizeBytes(): Long {

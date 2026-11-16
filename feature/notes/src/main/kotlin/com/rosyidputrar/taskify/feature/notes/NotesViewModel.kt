@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -80,11 +81,11 @@ class NotesViewModel(
     override fun toggleTrash() { filter.value = filter.value.copy(trash = !filter.value.trash) }
 
     override fun togglePin(note: Note) {
-        viewModelScope.launch { repo.update(note.id, mapOf("is_pinned" to !note.pinned)) }
+        launchSafe { repo.update(note.id, mapOf("is_pinned" to !note.pinned)) }
     }
 
     override fun restore(note: Note) {
-        viewModelScope.launch {
+        launchSafe {
             repo.restore(note.id)
             messenger.show("Catatan dipulihkan")
         }

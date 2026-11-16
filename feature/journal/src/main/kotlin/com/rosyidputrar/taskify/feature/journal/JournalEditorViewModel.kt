@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
@@ -82,7 +83,7 @@ class JournalEditorViewModel(
     init {
         val today = Dates.today()
         if (args.id != null) {
-            viewModelScope.launch {
+            launchSafe {
                 val entry = repo.get(args.id)
                 _ui.value = if (entry == null) {
                     JournalDraftUi(loaded = true, missing = true)
@@ -157,7 +158,7 @@ class JournalEditorViewModel(
         saver.queue(mapOf("is_pinned" to pinned), immediate = true)
     }
 
-    fun retry() { viewModelScope.launch { saver.flush() } }
+    fun retry() { launchSafe { saver.flush() } }
 
     /** Dipanggil saat aplikasi ke latar / layar ditutup. */
     fun flush() { saver.flushLater() }
@@ -174,14 +175,14 @@ class JournalEditorViewModel(
 
     fun restore() {
         val id = savedId.value ?: return
-        viewModelScope.launch {
+        launchSafe {
             repo.restore(id)
             _ui.update { it.copy(trashed = false) }
         }
     }
 
-    fun addTag(name: String) { savedId.value?.let { id -> viewModelScope.launch { tags.addByName(JOURNAL_ENTITY, id, listOf(name)) } } }
-    fun removeTag(tag: TagRef) { savedId.value?.let { id -> viewModelScope.launch { tags.remove(JOURNAL_ENTITY, id, tag.id) } } }
+    fun addTag(name: String) { savedId.value?.let { id -> launchSafe { tags.addByName(JOURNAL_ENTITY, id, listOf(name)) } } }
+    fun removeTag(tag: TagRef) { savedId.value?.let { id -> launchSafe { tags.remove(JOURNAL_ENTITY, id, tag.id) } } }
 
     override fun onCleared() {
         saver.flushLater()

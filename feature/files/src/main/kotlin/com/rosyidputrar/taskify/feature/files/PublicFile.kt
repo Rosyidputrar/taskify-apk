@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.files
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -93,7 +94,7 @@ class PublicFileViewModel(private val token: String?, private val api: TempFiles
     private fun load() {
         val t = token ?: return
         _state.value = PublicFileState.Loading
-        viewModelScope.launch {
+        launchSafe {
             _state.value = try {
                 api.publicInfo(t)?.let { PublicFileState.Ready(it, System.currentTimeMillis()) } ?: PublicFileState.Missing
             } catch (e: CancellationException) {
@@ -109,7 +110,7 @@ class PublicFileViewModel(private val token: String?, private val api: TempFiles
     override fun save(target: Uri) {
         val t = token ?: return
         _download.value = PublicDownload(running = true)
-        viewModelScope.launch {
+        launchSafe {
             try {
                 uploader.downloadPublic(t, target, (state.value as? PublicFileState.Ready)?.info?.fileName ?: "berkas") { p -> _download.update { it.copy(progress = p) } }
                 _download.value = PublicDownload(done = true)

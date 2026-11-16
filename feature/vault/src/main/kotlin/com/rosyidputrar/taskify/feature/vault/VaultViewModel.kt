@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -83,12 +84,12 @@ class VaultViewModel(private val repo: VaultRepository, attachments: AttachmentR
     override fun setProjectSearch(text: String) { projectSearch.value = text }
     override fun setConfigSearch(text: String) { configFilter.value = text to configFilter.value.second }
     override fun setConfigEnv(env: String?) { configFilter.value = configFilter.value.first to env }
-    override fun toggleFavorite(snippet: Snippet) { viewModelScope.launch { repo.setSnippetFavorite(snippet.id, !snippet.favorite) } }
-    override fun toggleFavorite(project: CodeProject) { viewModelScope.launch { repo.setProjectFavorite(project.id, !project.favorite) } }
+    override fun toggleFavorite(snippet: Snippet) { launchSafe { repo.setSnippetFavorite(snippet.id, !snippet.favorite) } }
+    override fun toggleFavorite(project: CodeProject) { launchSafe { repo.setProjectFavorite(project.id, !project.favorite) } }
     override fun copied(snippet: Snippet) = messenger.show("${snippet.title} tersalin")
 
     override fun createProject(name: String, description: String?, repoUrl: String?, onCreated: (String) -> Unit) {
         if (name.isBlank()) return
-        viewModelScope.launch { onCreated(repo.saveProject(null, name, description, repoUrl)) }
+        launchSafe { onCreated(repo.saveProject(null, name, description, repoUrl)) }
     }
 }

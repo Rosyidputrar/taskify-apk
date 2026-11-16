@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -110,7 +111,7 @@ class ZipViewerViewModel(private val attachmentId: String, private val repo: Att
     private var local: File? = null
 
     init {
-        viewModelScope.launch {
+        launchSafe {
             try {
                 val att = repo.get(attachmentId) ?: throw IllegalStateException("Versi tidak ditemukan")
                 _state.update { it.copy(attachment = att) }
@@ -133,7 +134,7 @@ class ZipViewerViewModel(private val attachmentId: String, private val repo: Att
             return
         }
         val file = local ?: return
-        viewModelScope.launch {
+        launchSafe {
             val preview = withContext(Dispatchers.IO) {
                 when {
                     isTextPath(node.path) -> ZipReader.readText(file, node.path)?.let { (text, cut) -> EntryPreview.Text(node.path, text, cut) }
@@ -159,7 +160,7 @@ class ZipViewerViewModel(private val attachmentId: String, private val repo: Att
 
     fun saveEntry(path: String, target: Uri) {
         val att = _state.value.attachment ?: return
-        viewModelScope.launch {
+        launchSafe {
             runCatching { files.saveZipEntry(att, path, target) }
                 .onSuccess { messenger.show("${path.substringAfterLast('/')} disimpan") }
                 .onFailure { messenger.show(it.message ?: "Gagal menyimpan") }

@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.State
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,8 +78,10 @@ fun SandiScreen(
     viewModel: SandiViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Detak 1 dtk dibaca HANYA oleh baris kode 2FA (bukan seluruh layar) → daftar tidak disusun ulang tiap detik.
+    val clock = viewModel.clock.collectAsStateWithLifecycle()
     SecureWindow()
-    SandiContent(state, viewModel, contentPadding, onBack, backButton)
+    SandiContent(state, viewModel, contentPadding, onBack, backButton, clock)
 }
 
 @Composable
@@ -86,7 +91,11 @@ fun SandiContent(
     contentPadding: PaddingValues,
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
+    clock: State<Long>? = null,
 ) {
+    val fixedClock = remember(state.now) { mutableLongStateOf(state.now) }
+    val liveClock = clock ?: fixedClock
+    val now: () -> Long = remember(liveClock) { { liveClock.value } }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by rememberSaveable { mutableStateOf(false) }
@@ -146,8 +155,8 @@ fun SandiContent(
                 }
                 banners(state, actions)
                 when (state.tab) {
-                    SandiTab.Vault -> vaultList(state, actions, onOpen = { open = it.id })
-                    SandiTab.Codes -> codes(state, actions, onQuick = { quick = true }, onHistory = { history = true })
+                    SandiTab.Vault -> vaultList(state, actions, now, onOpen = { open = it.id })
+                    SandiTab.Codes -> codes(state, actions, now, onQuick = { quick = true }, onHistory = { history = true })
                     SandiTab.Generator -> item(key = "gen") { GeneratorPanel(state, actions) }
                 }
             }
@@ -156,13 +165,13 @@ fun SandiContent(
 
     val byId = { id: String? -> state.items.items.firstOrNull { it.id == id } }
     if (unlocked) {
-        byId(open)?.let { item -> ItemSheet(item, state.now, actions, onEdit = { editing = item.id; open = null }, onDismiss = { open = null }) }
+        byId(open)?.let { item -> ItemSheet(item, now, actions, onEdit = { editing = item.id; open = null }, onDismiss = { open = null }) }
         if (creating) ItemEditorSheet(null, state, actions, onDismiss = { creating = false })
         byId(editing)?.let { item -> ItemEditorSheet(item, state, actions, onDismiss = { editing = null }) }
         if (settings) SettingsSheet(state, actions, onDismiss = { settings = false })
         if (history) HistorySheet(state, actions, onDismiss = { history = false })
     }
-    if (quick) QuickCheckSheet(state, actions, onDismiss = { quick = false })
+    if (quick) QuickCheckSheet(state, actions, now, onDismiss = { quick = false })
     state.recoveryToShow?.let { RecoveryKeyDialog(it, state.email, actions) }
 }
 
@@ -194,7 +203,7 @@ internal fun Banner(text: String, onDismiss: (() -> Unit)?, warning: Boolean = t
     }
 }
 
-private fun LazyListScope.vaultList(state: SandiUiState, actions: SandiActions, onOpen: (SandiItem) -> Unit) {
+private fun LazyListScope.vaultList(state: SandiUiState, actions: SandiActions, now: () -> Long, onOpen: (SandiItem) -> Unit) {
     item(key = "search") {
         OutlinedTextField(
             state.search, actions::setSearch,
@@ -213,11 +222,11 @@ private fun LazyListScope.vaultList(state: SandiUiState, actions: SandiActions, 
             if (state.search.isNotBlank()) "Coba kata lain." else "Tambahkan sandi pertama dengan tombol +. Semua isinya dienkripsi sebelum meninggalkan perangkat.",
         )
     }
-    items(list, key = { it.id }) { item -> ItemRow(item, state.now, actions, onClick = { onOpen(item) }, modifier = Modifier.animateItem()) }
+    items(list, key = { it.id }) { item -> ItemRow(item, now, actions, onClick = { onOpen(item) }, modifier = Modifier.animateItem()) }
 }
 
 @Composable
-fun ItemRow(item: SandiItem, now: Long, actions: SandiActions, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ItemRow(item: SandiItem, now: () -> Long, actions: SandiActions, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val p = item.payload
     IndexCard(TaskifyModule.Sandi, onClick = onClick, onClickLabel = "Buka sandi", modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp), contentPadding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -232,7 +241,7 @@ fun ItemRow(item: SandiItem, now: Long, actions: SandiActions, onClick: () -> Un
                 Text(listOf(p.username, displayHost(p.url)).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "—" },
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            val w = p.totp?.let { Totp.window(it, now) }
+            val w = p.totp?.let { Totp.window(it, now()) }
             if (w != null) {
                 TextButton(onClick = { actions.copyCode(item, w.code) }) {
                     Text(spacedCode(w.code), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleSmall)
@@ -244,7 +253,7 @@ fun ItemRow(item: SandiItem, now: Long, actions: SandiActions, onClick: () -> Un
     }
 }
 
-private fun LazyListScope.codes(state: SandiUiState, actions: SandiActions, onQuick: () -> Unit, onHistory: () -> Unit) {
+private fun LazyListScope.codes(state: SandiUiState, actions: SandiActions, now: () -> Long, onQuick: () -> Unit, onHistory: () -> Unit) {
     item(key = "codes-bar") {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onQuick) { Text("Cek kunci cepat") }
@@ -255,13 +264,13 @@ private fun LazyListScope.codes(state: SandiUiState, actions: SandiActions, onQu
     if (state.items.ready && list.isEmpty()) item(key = "codes-empty") {
         EmptyState(TaskifyModule.Sandi, "Belum ada kode 2FA", "Tambahkan kunci 2FA saat mengubah sandi, atau pakai \"Cek kunci cepat\" untuk menempel kunci dari situs.")
     }
-    items(list, key = { "c-" + it.id }) { item -> CodeRow(item, state.now, actions, Modifier.animateItem()) }
+    items(list, key = { "c-" + it.id }) { item -> CodeRow(item, now, actions, Modifier.animateItem()) }
 }
 
 @Composable
-fun CodeRow(item: SandiItem, now: Long, actions: SandiActions, modifier: Modifier = Modifier) {
+fun CodeRow(item: SandiItem, now: () -> Long, actions: SandiActions, modifier: Modifier = Modifier) {
     val cfg = item.payload.totp ?: return
-    val w = Totp.window(cfg, now) ?: return
+    val w = Totp.window(cfg, now()) ?: return
     val secs = ((w.remainingMs + 999) / 1000).toInt()
     IndexCard(TaskifyModule.Sandi, onClick = { actions.copyCode(item, w.code) }, onClickLabel = "Salin kode", modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp), contentPadding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {

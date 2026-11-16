@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -18,6 +19,7 @@ import com.rosyidputrar.taskify.core.sandi.SecureClipboard
 import com.rosyidputrar.taskify.core.sandi.SandiPrefs
 import com.rosyidputrar.taskify.core.sandi.TotpLogItem
 import com.rosyidputrar.taskify.core.sandi.VaultStatus
+import com.rosyidputrar.taskify.core.sandi.DeviceAuthException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,13 +59,16 @@ data class SandiUiState(
     val generator: Generator.Prefs = Generator.Prefs(),
     val generated: String = "",
     val email: String? = null,
+    /** HP punya kunci layar → "ingat perangkat" bisa dipakai. */
+    val trustAvailable: Boolean = true,
 ) {
-    val filtered: List<SandiItem> get() {
+    /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
+    val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
         val q = search.trim().lowercase()
         val list = items.items.filter { q.isEmpty() || listOf(it.payload.title, it.payload.username, it.payload.url, it.payload.notes).any { f -> f.lowercase().contains(q) } }
-        return list.sortedWith(compareByDescending<SandiItem> { it.payload.favorite }.thenBy { it.payload.title.lowercase() })
+        list.sortedWith(compareByDescending<SandiItem> { it.payload.favorite }.thenBy { it.payload.title.lowercase() })
     }
-    val withTotp: List<SandiItem> get() = filtered.filter { it.payload.totp != null }
+    val withTotp: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) { filtered.filter { it.payload.totp != null } }
 }
 
 interface SandiActions {
@@ -104,34 +109,47 @@ class SandiViewModel(
     private val email: AccountEmail,
 ) : ViewModel(), SandiActions {
     private val local = MutableStateFlow(
-        SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get()),
+        SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get(), now = service.totpNow()),
     )
 
-    /** Detak 1 dtk untuk kode TOTP. */
-    private val ticker = flow { while (true) { emit(service.totpNow()); delay(1_000) } }
+    /**
+     * Detak 1 dtk untuk kode TOTP — terpisah dari [state]: hanya baris kode yang membacanya, jadi
+     * daftar (filter + urut) tidak dihitung & disusun ulang setiap detik.
+     */
+    val clock: StateFlow<Long> = flow { while (true) { emit(service.totpNow()); delay(1_000) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), service.totpNow())
 
     val state: StateFlow<SandiUiState> = combine(
         local,
         service.status,
         combine(service.items, service.totpLog) { i, l -> i to l },
         combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
-        ticker,
-    ) { l, status, (items, log), (rk, rr, sw), now ->
+    ) { l, status, (items, log), (rk, rr, sw) ->
         l.copy(
-            status = status, items = items, log = log, now = now, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
-            trustDaysLeft = service.trustMeta()?.let { trustDaysLeft(it, System.currentTimeMillis()) }?.takeIf { it > 0 },
+            status = status, items = items, log = log, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
             clockOffsetMs = service.clockOffsetMs,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
+    /** Status "ingat perangkat" dibaca dari prefs hanya saat bisa berubah (buka, lupakan), bukan tiap detik. */
+    private fun refreshTrust() {
+        local.update {
+            it.copy(
+                trustDaysLeft = service.trustMeta()?.let { m -> trustDaysLeft(m, System.currentTimeMillis()) }?.takeIf { d -> d > 0 },
+                trustAvailable = service.trustAvailable(),
+            )
+        }
+    }
+
     init {
+        refreshTrust()
         if (local.value.generated.isEmpty()) regenerate()
-        viewModelScope.launch { runCatching { withContext(Dispatchers.Default) { MasterPassword.warmUp() } } }
+        launchSafe { runCatching { withContext(Dispatchers.Default) { MasterPassword.warmUp() } } }
     }
 
     private fun run(busy: String, block: suspend () -> Unit) {
         local.update { it.copy(busy = busy, error = null) }
-        viewModelScope.launch {
+        launchSafe {
             try {
                 block()
             } catch (e: SandiUserException) {
@@ -155,11 +173,23 @@ class SandiViewModel(
 
     override fun tryTrusted() {
         if (service.trustMeta() == null) return
-        viewModelScope.launch { runCatching { service.unlockTrusted() } }
+        launchSafe {
+            try {
+                service.unlockTrusted()
+            } catch (e: DeviceAuthException) {
+                local.update { it.copy(error = e.message) }
+            } finally {
+                refreshTrust()
+            }
+        }
     }
 
     override fun unlock(password: String, remember: Boolean) = run("Membuka brankas…") {
-        if (!service.unlock(password, remember)) throw SandiUserException("Master password salah.")
+        when (val r = service.unlock(password, remember)) {
+            SandiService.UnlockOutcome.WrongPassword -> throw SandiUserException("Master password salah.")
+            is SandiService.UnlockOutcome.Unlocked -> r.rememberNote?.let(messenger::show)
+        }
+        refreshTrust()
     }
 
     /** Penilaian master password (async karena kamus zxcvbn dimuat sekali). */
@@ -210,12 +240,12 @@ class SandiViewModel(
     override fun forgetDevice() {
         service.forgetDevice()
         messenger.show("Perangkat ini tidak lagi diingat")
-        local.update { it.copy() }
+        refreshTrust()
     }
 
-    override fun dismissRejectedKey() { viewModelScope.launch { service.dismissRejectedKeyCreation() } }
-    override fun dismissRejectedRotation() { viewModelScope.launch { service.dismissRejectedRotation() } }
-    override fun dismissStaleWrites() { viewModelScope.launch { service.dismissStaleWrites() } }
+    override fun dismissRejectedKey() { launchSafe { service.dismissRejectedKeyCreation() } }
+    override fun dismissRejectedRotation() { launchSafe { service.dismissRejectedRotation() } }
+    override fun dismissStaleWrites() { launchSafe { service.dismissStaleWrites() } }
 
     // ---------------------------------------------------------------- item
 
@@ -226,7 +256,7 @@ class SandiViewModel(
     }
 
     override fun remove(item: SandiItem) {
-        viewModelScope.launch {
+        launchSafe {
             service.removeItem(item.id)
             messenger.undoable("\"${item.payload.title.ifBlank { "Sandi" }}\" dihapus") { service.restoreItem(item.id) }
         }
@@ -240,7 +270,7 @@ class SandiViewModel(
     /** Salin kode TOTP + catat ke riwayat (terenkripsi). */
     override fun copyCode(item: SandiItem, code: String) {
         copy("Kode ${item.payload.title}", code)
-        viewModelScope.launch { runCatching { service.recordTotpUse(item.id, item.payload.title, code) } }
+        launchSafe { runCatching { service.recordTotpUse(item.id, item.payload.title, code) } }
     }
 
     /** Cek cepat → simpan kunci TOTP sebagai item baru. */
@@ -250,8 +280,8 @@ class SandiViewModel(
         onDone()
     }
 
-    override fun deleteLog(id: String) { viewModelScope.launch { service.deleteTotpLog(id) } }
-    override fun clearLog() { viewModelScope.launch { service.clearTotpLog() } }
+    override fun deleteLog(id: String) { launchSafe { service.deleteTotpLog(id) } }
+    override fun clearLog() { launchSafe { service.clearTotpLog() } }
 
     // ---------------------------------------------------------------- generator
 

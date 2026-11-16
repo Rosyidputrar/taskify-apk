@@ -131,12 +131,12 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun QuickCheckSheet(state: SandiUiState, actions: SandiActions, onDismiss: () -> Unit) {
+internal fun QuickCheckSheet(state: SandiUiState, actions: SandiActions, now: () -> Long, onDismiss: () -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf("") }
     val problem = text.takeIf { it.isNotBlank() }?.let { Totp.problem(it) }
     val parsed = if (text.isNotBlank() && problem == null) Totp.parseInput(text) else null
-    val w = parsed?.let { Totp.window(it.config, state.now) }
+    val w = parsed?.let { Totp.window(it.config, now()) }
     val unlocked = state.status is VaultStatus.Unlocked
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -13,6 +14,8 @@ import com.rosyidputrar.taskify.core.store.tasks.TagRef
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
 import com.rosyidputrar.taskify.core.store.tasks.TaskList
 import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
+import com.rosyidputrar.taskify.core.domain.editor.SaveState
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -34,7 +37,13 @@ class TaskDetailViewModel(
     private val tasks: TaskRepository,
     private val tagRepo: TagRepository,
     private val messenger: Messenger,
+    appScope: CoroutineScope,
 ) : ViewModel() {
+
+    private val text = TaskTextEditor(appScope) { patch -> tasks.update(taskId, patch) }
+
+    /** Status simpan judul/catatan. */
+    val saveState: StateFlow<SaveState> = text.state
 
     val state: StateFlow<TaskDetailState> = combine(
         tasks.watchTask(taskId),
@@ -48,15 +57,24 @@ class TaskDetailViewModel(
     private fun current() = state.value.task
 
     private fun save(patch: Map<String, Any?>) {
-        viewModelScope.launch { tasks.update(taskId, patch) }
+        launchSafe { tasks.update(taskId, patch) }
     }
 
+    fun editTitle(title: String) = text.editTitle(title)
+
+    fun editNotes(notes: String) = text.editNotes(notes)
+
+    /** Simpan sekarang (fokus pindah, sheet ditutup). */
+    fun flushEdits() = text.flush()
+
+    /** Enter di judul: simpan segera. */
     fun rename(title: String) {
-        if (title.isNotBlank() && title.trim() != current()?.title) save(mapOf("title" to title))
+        if (title.trim() != current()?.title) text.editTitle(title, immediate = true)
     }
 
-    fun setNotes(notes: String) {
-        if (notes != (current()?.notes ?: "")) save(mapOf("notes" to notes.ifBlank { null }))
+    override fun onCleared() {
+        flushEdits()
+        super.onCleared()
     }
 
     fun setSchedule(date: String?, time: String?) {
@@ -81,7 +99,7 @@ class TaskDetailViewModel(
 
     fun toggleDone() {
         val task = current() ?: return
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.toggle(task)
             val undo = outcome.undo
             if (outcome.message != null && undo != null) messenger.undoable(outcome.message!!, undo)
@@ -90,7 +108,7 @@ class TaskDetailViewModel(
 
     fun cancelTask() {
         val task = current() ?: return
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.cancel(task)
             outcome.undo?.let { messenger.undoable(outcome.message ?: "Dibatalkan", it) }
         }
@@ -98,7 +116,7 @@ class TaskDetailViewModel(
 
     fun delete(onDone: () -> Unit) {
         val task = current() ?: return
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.remove(task)
             outcome.undo?.let { messenger.undoable(outcome.message ?: "Dihapus", it) }
             onDone()
@@ -106,7 +124,7 @@ class TaskDetailViewModel(
     }
 
     fun restore() {
-        viewModelScope.launch { tasks.restore(taskId) }
+        launchSafe { tasks.restore(taskId) }
     }
 
     // ------------------------------------------------------------------ subtask
@@ -114,30 +132,30 @@ class TaskDetailViewModel(
     fun addSubtask(title: String) {
         val task = current() ?: return
         if (title.isBlank()) return
-        viewModelScope.launch { tasks.create(NewTask(title = title, parentId = task.id, listId = task.listId)) }
+        launchSafe { tasks.create(NewTask(title = title, parentId = task.id, listId = task.listId)) }
     }
 
     fun toggleSubtask(sub: Task) {
-        viewModelScope.launch { tasks.toggle(sub) }
+        launchSafe { tasks.toggle(sub) }
     }
 
     fun renameSubtask(sub: Task, title: String) {
         if (title.isBlank() || title == sub.title) return
-        viewModelScope.launch { tasks.update(sub.id, mapOf("title" to title)) }
+        launchSafe { tasks.update(sub.id, mapOf("title" to title)) }
     }
 
     fun removeSubtask(sub: Task) {
-        viewModelScope.launch { tasks.remove(sub) }
+        launchSafe { tasks.remove(sub) }
     }
 
     // ------------------------------------------------------------------ tag
 
     fun addTag(name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { tagRepo.addByName("task", taskId, listOf(name)) }
+        launchSafe { tagRepo.addByName("task", taskId, listOf(name)) }
     }
 
     fun removeTag(tag: TagRef) {
-        viewModelScope.launch { tagRepo.remove("task", taskId, tag.id) }
+        launchSafe { tagRepo.remove("task", taskId, tag.id) }
     }
 }

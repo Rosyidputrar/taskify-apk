@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material3.Surface
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,6 +50,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import com.rosyidputrar.taskify.core.designsystem.component.rememberNotificationPermission
+import com.rosyidputrar.taskify.core.designsystem.component.rememberNotificationsAllowed
+import com.rosyidputrar.taskify.core.reminders.ReminderNotifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,32 +101,37 @@ fun TaskDetailSheet(taskId: String, today: String, onDismiss: () -> Unit) {
     val viewModel: TaskDetailViewModel = koinViewModel(key = "task-$taskId") { parametersOf(taskId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+    // Ketikan judul/catatan yang belum tersimpan ikut disimpan saat sheet ditutup dengan cara apa pun.
+    val close = { viewModel.flushEdits(); onDismiss() }
+    ModalBottomSheet(onDismissRequest = close, sheetState = sheet) {
         val task = state.task
         if (task == null) {
             Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                 Text(if (state.loaded) "Tugas tidak ditemukan." else "Memuat…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            TaskDetailContent(task, state, today, viewModel, onDismiss)
+            TaskDetailContent(task, state, today, viewModel, close)
         }
     }
 }
 
 @Composable
 private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String, vm: TaskDetailViewModel, onClose: () -> Unit) {
-    var title by remember(task.id) { mutableStateOf(task.title) }
-    var notes by remember(task.id) { mutableStateOf(task.notes.orEmpty()) }
+    // Saveable: ketikan bertahan saat HP diputar / proses dibuat ulang.
+    var title by rememberSaveable(task.id) { mutableStateOf(task.title) }
+    var notes by rememberSaveable(task.id) { mutableStateOf(task.notes.orEmpty()) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     // Pengingat kustom = dialog dua langkah: tanggal lalu jam.
     var pendingReminderDate by rememberSaveable { mutableStateOf<String?>(null) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Tasks)
     val inTrash = task.deletedAt != null
 
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notificationsAllowed by rememberNotificationsAllowed(ReminderNotifier.CHANNEL_ID)
+    val requestNotifications = rememberNotificationPermission()
     fun setReminder(remindAt: String?) {
         vm.setRemindAt(remindAt)
-        if (remindAt != null && Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // Minta sekali saat pengingat dipasang; status & jalan keluarnya tetap tampil di bawah pengingat.
+        if (remindAt != null && !notificationsAllowed) requestNotifications()
     }
 
     Column(
@@ -144,7 +154,7 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
             Spacer(Modifier.width(8.dp))
             TextField(
                 value = title,
-                onValueChange = { title = it },
+                onValueChange = { title = it; vm.editTitle(it) },
                 textStyle = MaterialTheme.typography.headlineSmall,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
@@ -153,7 +163,7 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { vm.rename(title) }),
-                modifier = Modifier.weight(1f).onFocusChanged { if (!it.isFocused) vm.rename(title) },
+                modifier = Modifier.weight(1f).onFocusChanged { if (!it.isFocused) vm.flushEdits() },
             )
         }
 
@@ -202,6 +212,9 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
                     }
                 }
             }
+        }
+        if (task.remindAt != null && !inTrash && !notificationsAllowed) {
+            ReminderBlockedNotice(onFix = requestNotifications)
         }
 
         // Subtask dengan progres.
@@ -253,10 +266,10 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
         Section("Catatan") {
             OutlinedTextField(
                 value = notes,
-                onValueChange = { notes = it },
+                onValueChange = { notes = it; vm.editNotes(it) },
                 placeholder = { Text("Detail, tautan, atau langkah…") },
                 minLines = 3,
-                modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) vm.setNotes(notes) },
+                modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) vm.flushEdits() },
             )
         }
 
@@ -315,4 +328,17 @@ private fun MetaChip(icon: ImageVector, label: String, active: Boolean, tint: Co
             AssistChipDefaults.assistChipColors(leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant)
         },
     )
+}
+
+/** Pengingat terpasang tetapi notifikasi Taskify dimatikan → beri tahu dan beri jalan keluar. */
+@Composable
+internal fun ReminderBlockedNotice(onFix: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.NotificationsOff, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Notifikasi Taskify mati — pengingat ini tidak akan muncul.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = onFix) { Text("Izinkan") }
+        }
+    }
 }

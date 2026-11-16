@@ -20,6 +20,11 @@ class Messenger {
         _messages.tryEmit(UiMessage(text))
     }
 
+    /** Pesan dengan tombol aksi bebas (mis. "Lihat"). */
+    fun action(text: String, label: String, action: suspend () -> Unit) {
+        _messages.tryEmit(UiMessage(text, label, action))
+    }
+
     fun undoable(text: String, undo: suspend () -> Unit) {
         _messages.tryEmit(UiMessage(text, "Urungkan", undo))
     }

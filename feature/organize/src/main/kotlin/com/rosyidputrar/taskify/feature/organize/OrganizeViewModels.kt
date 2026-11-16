@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.organize
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -50,17 +51,17 @@ class TagViewModel(private val tagId: String, private val repo: TagRepository, p
     override fun open(row: EntityRow) = opener.open(row.type, row.id)
 
     override fun rename(name: String, onDone: (Boolean) -> Unit) {
-        viewModelScope.launch {
+        launchSafe {
             val ok = repo.rename(tagId, name)
             if (!ok) messenger.show("Nama kosong atau sudah dipakai tag lain.")
             onDone(ok)
         }
     }
 
-    override fun setColor(color: String) { viewModelScope.launch { repo.setColor(tagId, color) } }
+    override fun setColor(color: String) { launchSafe { repo.setColor(tagId, color) } }
 
     override fun delete(onDone: () -> Unit) {
-        viewModelScope.launch {
+        launchSafe {
             val name = state.value.tag?.name
             repo.deleteTag(tagId)
             messenger.show("Tag #${name ?: ""} dihapus")
@@ -95,23 +96,23 @@ class TrashViewModel(private val repo: TrashRepository, private val messenger: M
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrashUiState())
 
     override fun restoreSecret(row: SecretTrashRow) {
-        viewModelScope.launch { repo.restoreSecret(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }
+        launchSafe { repo.restoreSecret(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }
     }
 
     override fun destroySecret(row: SecretTrashRow) {
-        viewModelScope.launch { repo.destroySecret(row.type, listOf(row.id)); messenger.show("\"${row.title}\" dihapus permanen") }
+        launchSafe { repo.destroySecret(row.type, listOf(row.id)); messenger.show("\"${row.title}\" dihapus permanen") }
     }
 
     override fun restore(row: EntityRow) {
-        viewModelScope.launch { repo.restore(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }
+        launchSafe { repo.restore(row.type, row.id); messenger.show("${row.type.label} dipulihkan") }
     }
 
     override fun destroy(row: EntityRow) {
-        viewModelScope.launch { repo.destroy(row.type, listOf(row.id)); messenger.show("\"${row.title}\" dihapus permanen") }
+        launchSafe { repo.destroy(row.type, listOf(row.id)); messenger.show("\"${row.title}\" dihapus permanen") }
     }
 
     override fun emptyAll() {
-        viewModelScope.launch { repo.emptyTrash(); messenger.show("Sampah dikosongkan") }
+        launchSafe { repo.emptyTrash(); messenger.show("Sampah dikosongkan") }
     }
 }
 

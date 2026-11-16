@@ -78,6 +78,16 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
         }
     }
 
+    /** Salinan sementara milik Taskify sendiri (`file://` di cache, mis. dari Bagikan) dibuang setelah dipakai. */
+    private fun discardOwnCopy(uri: Uri) {
+        if (uri.scheme != "file") return
+        val path = uri.path ?: return
+        runCatching {
+            val file = java.io.File(path).canonicalFile
+            if (file.path.startsWith(context.cacheDir.canonicalPath + java.io.File.separator)) file.delete()
+        }
+    }
+
     private fun patch(key: String, f: (UploadJob) -> UploadJob) = _jobs.update { list -> list.map { if (it.key == key) f(it) else it } }
     fun dismiss(key: String) = _jobs.update { list -> list.filterNot { it.key == key } }
     private fun setOverlay(id: String, row: TempFile?) = _overlay.update { it + (id to row) }
@@ -155,6 +165,7 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
             } finally {
                 running.remove(key)
                 holdRead(file.uri, false)
+                discardOwnCopy(file.uri)
             }
         }
     }

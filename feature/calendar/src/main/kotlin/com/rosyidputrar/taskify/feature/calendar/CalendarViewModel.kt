@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.calendar
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -110,7 +111,7 @@ class CalendarViewModel(
     /** Catat cepat di hari terpilih: tanpa tanggal di teks → tanggal yang sedang dibuka. */
     fun quickAdd(text: String) {
         if (text.isBlank()) return
-        viewModelScope.launch {
+        launchSafe {
             val p = parseQuickAdd(text, today.value)
             val id = tasks.create(NewTask(p.title, dueDate = p.dueDate ?: selected.value, dueTime = p.dueTime, priority = p.priority ?: 0))
             if (p.tags.isNotEmpty()) tags.addByName("task", id, p.tags)
@@ -119,7 +120,7 @@ class CalendarViewModel(
     }
 
     fun toggle(task: Task) {
-        viewModelScope.launch {
+        launchSafe {
             val outcome = tasks.toggle(task, today.value)
             val undo = outcome.undo
             if (outcome.message != null && undo != null) messenger.undoable(outcome.message!!, undo)

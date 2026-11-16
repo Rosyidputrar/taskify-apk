@@ -52,6 +52,19 @@ berdampingan dengan versi rilis, tidak bisa menimpanya, dan tidak bisa membaca d
 memakai paket `com.rosyidputrar.taskify`; unggah dulu semua perubahan (Pengaturan › Sinkronisasi),
 lalu uninstall sebelum memasang APK rilis.
 
+### Uji asap APK rilis
+
+Setiap push, CI membangun APK rilis (R8 full mode, sama persis dengan yang dibagikan) dengan
+keystore SEMENTARA — tidak butuh secret keystore — lalu memasangnya di emulator Android 8.0
+(API 26, minSdk) dan Android 14 (API 34). `tools/smoke-test.sh` membuka aplikasi lewat launcher,
+shortcut (Tangkap/Cari/Kalender), Bagikan teks, ke latar & kembali, dan memutar layar; job gagal
+bila proses mati atau ada `FATAL EXCEPTION` (logcat & screenshot terakhir jadi artifact
+`smoke-api…`). Bisa juga dijalankan lokal ke emulator/HP yang terhubung:
+
+```bash
+tools/smoke-test.sh app/build/outputs/apk/release/app-release.apk
+```
+
 ## Struktur
 
 ```
@@ -74,7 +87,8 @@ core/files           Lampiran: presign Edge Function `files`, unggah R2 via Work
                      salinan offline, kompres foto, baca ZIP. Berkas publik: Edge Function `tempfiles`,
                      unggah streaming langsung dari content:// (sampai 1 GB) dengan progres & batal
 core/sandi           Sesi brankas (DEK hanya di memori, kunci otomatis), ingat perangkat 30 hari
-                     (Android Keystore), papan klip yang dibersihkan sendiri, rotasi kunci atomik
+                     (kunci Android Keystore yang hanya terbuka lewat sidik jari / kunci layar),
+                     papan klip yang dibersihkan sendiri, rotasi kunci atomik
 core/media           Musik (Worker music-taskify + Media3: putar di latar, notifikasi, layar kunci) dan
                      TikTok (Worker ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
@@ -113,6 +127,9 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
 4. Database lokal disiapkan: bila akun berbeda dari pemilik sebelumnya, isinya dikosongkan dulu,
    lalu sinkronisasi PowerSync dimulai.
 5. PIN aktif → layar kunci (5 percobaan → jeda 30 detik; Lupa PIN = verifikasi password akun).
+   Selama PIN aktif, pratinjau Taskify di layar Terkini dikosongkan.
+6. Keluar akun membersihkan SEMUA sisa di HP: database, lampiran, Sandi, unggahan Berkas, notifikasi
+   yang tampil, kotak masuk Bagikan, PIN, dan widget — tiap langkah berdiri sendiri, sesi selalu keluar.
 
 ### Widget, shortcut & aksesibilitas
 
@@ -128,7 +145,8 @@ tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji k
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —
 yang terakhir tidak bisa dihapus karena MFA wajib — dan lupakan perangkat ini), notifikasi
-pengingat, sinkronisasi & penyimpanan (perubahan yang ditolak server bisa disalin & dibersihkan),
+pengingat, sinkronisasi & penyimpanan (perubahan yang ditolak server diumumkan lewat snackbar &
+kartu di Beranda, bisa dicoba lagi per item / semua, disalin, atau dibersihkan),
 ekspor semua data ke JSON (format sama dengan webapp, termasuk Sampah, jalan offline), tautan ke
 Tag & Sampah, tampilan, dok, status konfigurasi server, dan versi.
 

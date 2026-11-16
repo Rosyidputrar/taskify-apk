@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.capture
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.common.Rupiah
@@ -40,7 +41,7 @@ class CaptureViewModel(
         if (text.isBlank()) return
         val today = Dates.today()
         val c = parseCapture(text, today)
-        viewModelScope.launch {
+        launchSafe {
             val ok = when (kind) {
                 CaptureKind.Auto -> when (c.type) {
                     CaptureType.Task -> saveTask(text, today)

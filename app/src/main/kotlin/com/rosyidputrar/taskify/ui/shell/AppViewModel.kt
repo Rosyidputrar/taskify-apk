@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
@@ -17,10 +18,10 @@ class AppViewModel(private val preferences: AppPreferences) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch { preferences.setThemeMode(mode) }
+        launchSafe { preferences.setThemeMode(mode) }
     }
 
     fun setPinnedModule(module: TaskifyModule?) {
-        viewModelScope.launch { preferences.setPinnedModule(module) }
+        launchSafe { preferences.setPinnedModule(module) }
     }
 }

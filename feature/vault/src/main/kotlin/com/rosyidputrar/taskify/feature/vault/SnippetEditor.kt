@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -92,7 +93,7 @@ class SnippetEditorViewModel(private val id: String?, private val repo: VaultRep
     val draft: StateFlow<SnippetDraft> = _draft
 
     init {
-        viewModelScope.launch {
+        launchSafe {
             _draft.value = id?.let { repo.getSnippet(it) }?.let { SnippetDraft(true, it.id, it.title, it.language, it.description.orEmpty(), it.code) }
                 ?: SnippetDraft(loaded = true)
         }
@@ -103,7 +104,7 @@ class SnippetEditorViewModel(private val id: String?, private val repo: VaultRep
     fun save(onDone: () -> Unit) {
         val d = _draft.value
         if (d.title.isBlank() || d.code.isBlank()) return
-        viewModelScope.launch {
+        launchSafe {
             val saved = repo.saveSnippet(d.id, d.title, d.language, d.code, d.description)
             _draft.update { it.copy(id = saved, dirty = false) }
             messenger.show("Snippet disimpan")
@@ -113,7 +114,7 @@ class SnippetEditorViewModel(private val id: String?, private val repo: VaultRep
 
     fun remove(onDone: () -> Unit) {
         val sid = _draft.value.id ?: return onDone()
-        viewModelScope.launch {
+        launchSafe {
             repo.removeSnippet(sid)
             messenger.undoable("Snippet dipindahkan ke Sampah") { repo.restoreSnippet(sid) }
             onDone()

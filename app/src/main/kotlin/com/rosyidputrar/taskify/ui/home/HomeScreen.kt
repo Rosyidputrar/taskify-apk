@@ -1,5 +1,10 @@
 package com.rosyidputrar.taskify.ui.home
 
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -84,6 +89,9 @@ fun HomeContent(
     val today = state.today
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { TodayHeader(today, homeGreeting(Dates.greeting(), displayName)) }
+        if (state.rejectedChanges > 0) {
+            item(key = "rejected") { RejectedChangesBanner(state.rejectedChanges, onOpen = { onOpenModule(TaskifyModule.Settings) }) }
+        }
         item { WeekRibbon(today, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
         item { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
         item { SummaryBento(state, onOpenModule) }
@@ -112,6 +120,27 @@ fun HomeContent(
                     ActivityKind.Transaction -> AppEvents.send(AppEvent.OpenTransaction(id = item.id))
                 }
             })
+        }
+    }
+}
+
+/** Pengingat tetap (bukan hanya snackbar) bahwa ada perubahan yang tidak tersimpan di server. */
+@Composable
+private fun RejectedChangesBanner(count: Long, onOpen: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(MaterialTheme.shapes.large)
+            .clickable(onClickLabel = "Buka Pengaturan sinkronisasi", role = Role.Button, onClick = onOpen),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.CloudOff, contentDescription = null)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("$count perubahan ditolak server", style = MaterialTheme.typography.titleSmall)
+                Text("Tidak tersimpan. Ketuk untuk melihat & coba lagi.", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -186,6 +215,7 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                 state.progress[top.id]?.takeIf { it.total > 0 }?.let { ProgressRing(it.done, it.total, accent, size = 40.dp, stroke = 4.dp, showLabel = true) }
             }
             val rest = state.focus.drop(1).take(4)
+            val largeFont = LocalDensity.current.fontScale > 1.3f
             if (rest.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 Text("LALU", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -196,8 +226,17 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                     ) {
                         TaskCheck(task, { onToggle(task) })
                         Spacer(Modifier.width(12.dp))
-                        Text(task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        dueLabel(task, state.today)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        val due = dueLabel(task, state.today)
+                        if (largeFont) {
+                            // Huruf besar: waktu pindah ke bawah judul supaya judul tidak terdesak.
+                            Column(Modifier.weight(1f)) {
+                                Text(task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                due?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        } else {
+                            Text(task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            due?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
                     }
                 }
             }

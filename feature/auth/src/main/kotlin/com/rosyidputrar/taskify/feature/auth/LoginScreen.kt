@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
@@ -59,7 +60,7 @@ class LoginViewModel(private val auth: AuthRepository, loginNames: LoginNameStor
             return
         }
         _state.value = LoginUiState(loading = true)
-        viewModelScope.launch {
+        launchSafe {
             try {
                 auth.signIn(email, password)
                 // Sukses → status sesi berubah, gerbang pindah ke verifikasi dua langkah.

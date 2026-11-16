@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.auth
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -84,7 +85,7 @@ class LockViewModel(
 
     private fun check(pin: String) {
         _state.update { it.copy(checking = true) }
-        viewModelScope.launch {
+        launchSafe {
             when (val result = lock.unlock(pin)) {
                 UnlockResult.Success -> _state.value = LockUiState()
                 is UnlockResult.Wrong -> _state.value = LockUiState(message = "PIN salah. Sisa ${result.remaining} percobaan.")
@@ -107,7 +108,7 @@ class LockViewModel(
             !network.isOnline() -> _state.update { it.copy(forgotError = "Butuh koneksi internet untuk memeriksa password.") }
             else -> {
                 _state.update { it.copy(forgotBusy = true, forgotError = null) }
-                viewModelScope.launch {
+                launchSafe {
                     try {
                         auth.signIn(email, password)
                         lock.disable()

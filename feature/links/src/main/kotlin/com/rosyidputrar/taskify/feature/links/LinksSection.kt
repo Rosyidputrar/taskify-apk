@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.links
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -84,11 +85,11 @@ class LinksViewModel(
     val links: StateFlow<List<LinkedEntity>> = repo.watchLinks(type, id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     override fun link(target: EntityRow) {
-        viewModelScope.launch { if (repo.link(type, id, target.type, target.id)) messenger.show("Ditautkan ke \"${target.title}\"") }
+        launchSafe { if (repo.link(type, id, target.type, target.id)) messenger.show("Ditautkan ke \"${target.title}\"") }
     }
 
     override fun unlink(link: LinkedEntity) {
-        viewModelScope.launch {
+        launchSafe {
             repo.unlink(link.linkId)
             messenger.undoable("Tautan dilepas") { repo.link(type, id, link.entity.type, link.entity.id) }
         }

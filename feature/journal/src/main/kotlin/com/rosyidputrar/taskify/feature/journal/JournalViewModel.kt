@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
@@ -108,7 +109,7 @@ class JournalViewModel(
     override fun setRange(days: Int) { range.value = days }
 
     override fun restore(entry: JournalEntry) {
-        viewModelScope.launch {
+        launchSafe {
             repo.restore(entry.id)
             messenger.show("Entri jurnal dipulihkan")
         }
