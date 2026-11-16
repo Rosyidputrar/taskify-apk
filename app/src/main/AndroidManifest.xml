@@ -108,7 +108,16 @@
         </service>
         <receiver
             android:name=".focus.FocusReceiver"
-            android:exported="false" />
+            android:exported="true">
+            <!-- Alarm hilang setelah kejadian ini → pasang ulang dari sesi tersimpan (lihat FocusReceiver). -->
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <!-- Sandi sebagai layanan Isi Otomatis Android. -->
         <service
             android:name=".autofill.TaskifyAutofillService"

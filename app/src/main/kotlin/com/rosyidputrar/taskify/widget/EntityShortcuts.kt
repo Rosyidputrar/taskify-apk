@@ -18,6 +18,7 @@ import com.rosyidputrar.taskify.core.domain.files.EntityType
 internal object ShortcutIcons {
     fun letter(module: TaskifyModule, text: String = module.label): IconCompat {
         val size = 216 // 108dp × 2 (ikon adaptif, zona aman ~144px di tengah)
+        val safe = size * 2 / 3f // 144px: isi ikon adaptif wajib muat di sini
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         canvas.drawColor(module.light.toArgb())
@@ -28,6 +29,11 @@ internal object ShortcutIcons {
             typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
         }
         val initial = text.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "T"
+        // Huruf lebar ("W") pada 84sp bisa melewati zona aman → kecilkan sampai muat di dalamnya.
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(initial, 0, initial.length, bounds)
+        val scale = minOf(1f, safe / bounds.width().coerceAtLeast(1), safe / bounds.height().coerceAtLeast(1))
+        if (scale < 1f) paint.textSize *= scale
         val y = size / 2f - (paint.descent() + paint.ascent()) / 2f
         canvas.drawText(initial, size / 2f, y, paint)
         return IconCompat.createWithAdaptiveBitmap(bmp)

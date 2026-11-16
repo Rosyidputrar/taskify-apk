@@ -42,6 +42,12 @@ class TaskifyApplication : Application() {
         // Tagihan jatuh tempo, anggaran, dan streak jurnal — tetap dicek walau Taskify tidak dibuka.
         get<com.rosyidputrar.taskify.core.reminders.ContextNotifier>().ensureChannels()
         get<com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler>().schedule()
+        // Mode Fokus: alarm hilang bila proses mati paksa / "Paksa berhenti" — pasang ulang dari
+        // sesi tersimpan, dan pulihkan "Jangan Ganggu" bila macet menyala tanpa sesi aktif.
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            runCatching { get<com.rosyidputrar.taskify.focus.FocusController>().recoverAfterRestart() }
+                .onFailure { Log.w("Taskify", "Mode Fokus: pemulihan saat mulai gagal", it) }
+        }
         // Perubahan yang ditolak server diumumkan (bukan hanya tercatat di Pengaturan).
         com.rosyidputrar.taskify.session.RejectedChangesNotifier(get<com.rosyidputrar.taskify.core.data.TaskifyDatabase>().watchUploadErrorCount(), messenger, get(APP_SCOPE_QUALIFIER)).start()
         // Item yang baru dibuka → shortcut launcher dinamis (tidak saat PIN aktif; dihapus saat PIN dinyalakan).

@@ -7,6 +7,11 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.Configuration
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.rosyidputrar.taskify.core.auth.LockManager
 import com.rosyidputrar.taskify.core.auth.PinMac
 import com.rosyidputrar.taskify.core.data.DevicePrefs
@@ -17,6 +22,9 @@ import com.rosyidputrar.taskify.core.files.PickedFile
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
 import com.rosyidputrar.taskify.core.files.Transfers
+import com.rosyidputrar.taskify.core.reminders.ContextCheckWorker
+import com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler
+import com.rosyidputrar.taskify.core.reminders.JournalNudgeWorker
 import com.rosyidputrar.taskify.core.store.NotSignedInException
 import com.rosyidputrar.taskify.session.DeviceLeftovers
 import com.rosyidputrar.taskify.session.LogoutIncompleteException
@@ -29,11 +37,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.assertEquals
@@ -46,6 +56,12 @@ import kotlin.test.assertTrue
 @Config(sdk = [34])
 class LogoutCleanupTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Before fun initWorkManager() {
+        // DeviceLeftovers.clear() membatalkan pekerjaan WorkManager; di Robolectric penyedia
+        // startup androidx tidak jalan, jadi inisialisasi manual (sekali per sandbox tes).
+        runCatching { WorkManager.initialize(context, Configuration.Builder().build()) }
+    }
 
     @After fun reset() = UiErrors.install {}
 
@@ -113,6 +129,38 @@ class LogoutCleanupTest {
         assertFalse(uploadCopy.exists())
         assertTrue(shareDir.listFiles().orEmpty().isEmpty())
         assertNull(inbox.content.value)
+    }
+
+    @Test fun logoutCancelsContextualWork() = runBlocking {
+        val wm = WorkManager.getInstance(context)
+        wm.enqueueUniquePeriodicWork(
+            ContextReminderScheduler.WORK_CHECK, androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<ContextCheckWorker>(6, TimeUnit.HOURS, 1, TimeUnit.HOURS).build(),
+        )
+        wm.enqueueUniqueWork(
+            ContextReminderScheduler.WORK_JOURNAL, androidx.work.ExistingWorkPolicy.REPLACE,
+            // Ditunda 10 jam supaya worker tidak sempat jalan selama tes (butuh Koin + database).
+            OneTimeWorkRequestBuilder<JournalNudgeWorker>().setInitialDelay(10, TimeUnit.HOURS).build(),
+        )
+        assertTrue(wm.getWorkInfosForUniqueWork(ContextReminderScheduler.WORK_CHECK).get().isNotEmpty())
+        assertTrue(wm.getWorkInfosForUniqueWork(ContextReminderScheduler.WORK_JOURNAL).get().isNotEmpty())
+
+        val prefs = DevicePrefs(context)
+        val lock = LockManager(prefs, PinMac { Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(ByteArray(32) { 3 }, "HmacSHA256")) }.doFinal(it) })
+        DeviceLeftovers(context, ShareInbox(context), lock).clear()
+
+        val check = wm.getWorkInfosForUniqueWork(ContextReminderScheduler.WORK_CHECK).get()
+        val journal = wm.getWorkInfosForUniqueWork(ContextReminderScheduler.WORK_JOURNAL).get()
+        assertTrue(check.isNotEmpty() && check.all { it.state == WorkInfo.State.CANCELLED }, "context-check harus dibatalkan, dapat $check")
+        assertTrue(journal.isNotEmpty() && journal.all { it.state == WorkInfo.State.CANCELLED }, "journal-nudge harus dibatalkan, dapat $journal")
+    }
+
+    @Test fun logoutInvokesContextWorkCanceller() = runBlocking {
+        var calls = 0
+        val prefs = DevicePrefs(context)
+        val lock = LockManager(prefs, PinMac { Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(ByteArray(32) { 3 }, "HmacSHA256")) }.doFinal(it) })
+        DeviceLeftovers(context, ShareInbox(context), lock, cancelContextWork = { calls++ }).clear()
+        assertEquals(1, calls)
     }
 
     @Test fun ownCacheCopyIsDeletedAfterUploadEnds() {

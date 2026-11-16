@@ -62,10 +62,11 @@ class ContextNotifier(private val context: Context, private val prefs: ReminderP
     fun autoPosted(count: Int) {
         if (count <= 0 || !canPost()) return
         ensureChannels()
+        val hide = prefs.hideContent
         val n = NotificationCompat.Builder(context, CHANNEL_BILLS)
             .setSmallIcon(R.drawable.ic_stat_reminder)
-            .setContentTitle("$count transaksi berulang dicatat otomatis")
-            .setContentText("Cek di Keuangan › Transaksi.")
+            .setContentTitle(if (hide) "Ada transaksi berulang dicatat otomatis" else "$count transaksi berulang dicatat otomatis")
+            .setContentText(if (hide) null else "Cek di Keuangan › Transaksi.")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
             .setAutoCancel(true)
@@ -101,10 +102,11 @@ class ContextNotifier(private val context: Context, private val prefs: ReminderP
     fun journal(streak: Int) {
         if (!canPost()) return
         ensureChannels()
+        val hide = prefs.hideContent
         val n = NotificationCompat.Builder(context, CHANNEL_JOURNAL)
             .setSmallIcon(R.drawable.ic_stat_reminder)
-            .setContentTitle("Streak jurnal $streak hari")
-            .setContentText("Belum menulis hari ini — satu kalimat pun cukup supaya tidak putus.")
+            .setContentTitle(if (hide) "Pengingat jurnal" else "Streak jurnal $streak hari")
+            .setContentText(if (hide) null else "Belum menulis hari ini — satu kalimat pun cukup supaya tidak putus.")
             .setAutoCancel(true)
             .setContentIntent(openModule("Journal"))
             .build()

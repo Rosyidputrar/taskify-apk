@@ -23,7 +23,7 @@ class FocusRepository(private val db: PowerSyncDatabase) {
         """SELECT
              (SELECT COALESCE(SUM(minutes), 0) FROM focus_sessions WHERE day BETWEEN ?1 AND ?2),
              (SELECT COUNT(*) FROM focus_sessions WHERE day BETWEEN ?1 AND ?2),
-             (SELECT task_title FROM focus_sessions WHERE day BETWEEN ?1 AND ?2 AND task_title IS NOT NULL
+             (SELECT MAX(task_title) FROM focus_sessions WHERE day BETWEEN ?1 AND ?2 AND task_title IS NOT NULL
                 GROUP BY task_id ORDER BY SUM(minutes) DESC LIMIT 1),
              (SELECT SUM(minutes) FROM focus_sessions WHERE day BETWEEN ?1 AND ?2 AND task_title IS NOT NULL
                 GROUP BY task_id ORDER BY SUM(minutes) DESC LIMIT 1)""",

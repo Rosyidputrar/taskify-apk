@@ -129,6 +129,30 @@ class FocusControllerTest {
         assertEquals(NotificationManager.INTERRUPTION_FILTER_ALARMS, nm.currentInterruptionFilter)
     }
 
+    @Test fun multipleMissedPhasesPostSeparateAlerts() = runBlocking<Unit> {
+        focus.start("t1", "Tulis laporan")
+        clock += 25 * MINUTE + 5 * MINUTE + 3_000 // fokus + istirahat terlewat selagi HP mati
+        focus.catchUp()
+        val alerts = shadowOf(nm).allNotifications.filter { it.channelId == FocusController.CHANNEL_ALERT }
+        assertEquals(2, alerts.size, "tiap fase yang terlewat harus punya alert sendiri")
+        assertEquals(listOf("Fokus selesai", "Istirahat selesai"), alerts.map { it.extras.getString("android.title") ?: "" }.sorted())
+    }
+
+    @Test fun setConfigMidSessionAppliesToLaterPhases() = runBlocking<Unit> {
+        focus.start("t1", "Tulis laporan")
+        focus.setConfig(focus.config.value.copy(focusMinutes = 15))
+        assertEquals(25 * MINUTE, focus.run.value!!.durationMs, "fase berjalan tidak berubah durasinya")
+        clock += 25 * MINUTE + 3_000
+        focus.catchUp(alert = false)
+        assertEquals(com.rosyidputrar.taskify.core.domain.focus.FocusPhase.ShortBreak, focus.run.value!!.phase)
+        clock += 5 * MINUTE + 3_000
+        focus.catchUp(alert = false)
+        val run = focus.run.value!!
+        assertEquals(com.rosyidputrar.taskify.core.domain.focus.FocusPhase.Focus, run.phase)
+        assertEquals(2, run.round)
+        assertEquals(15 * MINUTE, run.durationMs, "putaran berikutnya memakai durasi baru")
+    }
+
     @Test fun clearOnLogoutForgetsEverythingWithoutRecording() = runBlocking<Unit> {
         focus.start("t1", "Tulis laporan")
         clock += 10 * MINUTE

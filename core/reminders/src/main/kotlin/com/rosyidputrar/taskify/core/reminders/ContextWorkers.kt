@@ -54,6 +54,16 @@ class ContextReminderScheduler(private val context: Context, private val prefs: 
         )
     }
 
+    /**
+     * Dipanggil JournalNudgeWorker setelah bekerja: jadwalkan nudge besok — kecuali sudah keluar
+     * ([dbOwner] null). Tanpa penjaga ini pekerjaan periodik menjadwalkan ulang dirinya sendiri
+     * selamanya walau tidak ada akun yang masuk.
+     */
+    fun rescheduleJournalAfterNudge(dbOwner: String?, nowMillis: Long = System.currentTimeMillis()) {
+        if (dbOwner == null) return
+        scheduleJournal(nowMillis + 60_000L)
+    }
+
     companion object {
         const val WORK_CHECK = "context-check"
         const val WORK_CHECK_NOW = "context-check-now"
@@ -75,21 +85,24 @@ class ContextCheckWorker(context: Context, params: WorkerParameters) : Coroutine
     override suspend fun doWork(): Result {
         if (devicePrefs.dbOwner == null) return Result.success() // belum/tidak masuk akun
         val today = Dates.today()
-        var notified = ContextReminders.pruneKeys(prefs.notified, today)
+        // Baca-ubah-tulis `notified` harus atomik: worker periodik 6 jam dan one-time
+        // "context-check-now" bisa berjalan bersamaan dan saling menghilangkan kunci.
+        val notified = prefs.updateNotified { ContextReminders.pruneKeys(it, today) }
         runCatching { notifier.autoPosted(finance.processDueRecurring(today)) }
+        val newKeys = mutableSetOf<String>()
         if (prefs.bills) {
             val due = ContextReminders.billsToNotify(finance.watchRecurring().first(), today, notified)
             due.forEach { notifier.bill(it, today) }
-            notified = notified + due.map(ContextReminders::billKey)
+            newKeys += due.map(ContextReminders::billKey)
         }
         if (prefs.budgets) {
             val month = Dates.monthStart(today)
             val last = Dates.addDays(Dates.parse(month).plusMonths(1).toString(), -1L)
             val alerts = ContextReminders.budgetAlerts(finance.watchBudgets(month, last).first(), month, notified)
             alerts.forEach(notifier::budget)
-            notified = notified + alerts.map { ContextReminders.budgetKey(it, month, it.level) }
+            newKeys += alerts.map { ContextReminders.budgetKey(it, month, it.level) }
         }
-        prefs.notified = notified
+        if (newKeys.isNotEmpty()) prefs.updateNotified { it + newKeys }
         return Result.success()
     }
 }
@@ -112,8 +125,9 @@ class JournalNudgeWorker(context: Context, params: WorkerParameters) : Coroutine
                 if (ContextReminders.shouldNudgeJournal(streakYesterday, wroteToday)) notifier.journal(streakYesterday)
             }
         } finally {
-            // +1 menit supaya tidak terjadwal ke jam yang sama hari ini lagi.
-            scheduler.scheduleJournal(System.currentTimeMillis() + 60_000L)
+            // +1 menit supaya tidak terjadwal ke jam yang sama hari ini lagi. Bila sudah keluar
+            // (dbOwner null) JANGAN jadwalkan ulang: pekerjaan ini harus mati bersama sesi.
+            scheduler.rescheduleJournalAfterNudge(devicePrefs.dbOwner)
         }
         return Result.success()
     }

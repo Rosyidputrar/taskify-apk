@@ -64,6 +64,14 @@ class FocusController(
     fun setConfig(config: PomodoroConfig) {
         _config.value = config
         prefs.edit { putString(KEY_CONFIG, config.encode()) }
+        // Durasi baru berlaku untuk fase BERIKUTNYA dari sesi yang sedang berjalan: config
+        // tersimpan di dalam run (dipakai `next()`), jadi run lama tidak boleh menyimpan config lama.
+        // Durasi fase yang sedang berjalan tidak diubah (akhir fase tetap seperti yang dijadwalkan).
+        _run.value?.let { r ->
+            val updated = r.copy(config = config)
+            _run.value = updated
+            prefs.edit { putString(KEY_RUN, updated.encode()) }
+        }
     }
 
     fun setDnd(enabled: Boolean) {
@@ -99,10 +107,23 @@ class FocusController(
     }
 
     /** Alarm akhir fase berbunyi / aplikasi dibuka: majukan fase yang sudah lewat. */
-    suspend fun catchUp(alert: Boolean = true) = mutex.withLock {
-        var r = _run.value ?: return@withLock
+    suspend fun catchUp(alert: Boolean = true) = mutex.withLock { catchUpLocked(alert) }
+
+    /**
+     * Pemulihan setelah reboot / ganti waktu / izin alarm tepat berubah / proses mati paksa
+     * (dipanggil FocusReceiver & TaskifyApplication.onCreate, tanpa perlu membuka aplikasi):
+     * - ada sesi tersimpan → [catchUpLocked] memasang ulang alarm dari state itu + menata DND.
+     * - tidak ada sesi tapi flag [KEY_DND_APPLIED] masih set → DND macet menyala dipulihkan.
+     */
+    suspend fun recoverAfterRestart() = mutex.withLock {
+        val r = _run.value
+        if (r == null) restoreDnd() else catchUpLocked(alert = false)
+    }
+
+    private suspend fun catchUpLocked(alert: Boolean) {
+        var r = _run.value ?: return
         val t = now()
-        if (!r.isFinished(t)) return@withLock refresh(r)
+        if (!r.isFinished(t)) return refresh(r)
         // Fase bisa terlewat lebih dari satu (HP mati saat istirahat). Fokus yang menunggu "Mulai"
         // selalu dijeda, jadi rantai berhenti di sana.
         var steps = 0
@@ -117,7 +138,7 @@ class FocusController(
     }
 
     /** Keluar akun: hentikan tanpa mencatat & bersihkan semuanya. */
-    fun clear() {
+    suspend fun clear() = mutex.withLock {
         _run.value = null
         prefs.edit { clear() }
         _config.value = PomodoroConfig()
@@ -138,22 +159,33 @@ class FocusController(
     }
 
     private fun set(r: FocusRun?) {
+        // Urutan penting: atur alarm DULU, baru publikasikan state. `pause()` (dan aksi
+        // notifikasi lain) berjalan async lewat FocusReceiver, dan pengamat `run` bisa
+        // melihat sesi dijeda SEBELUM `cancelAlarm()` sempat jalan bila state
+        // dipublikasikan dulu — alarm akhir fase yang masih terjadwal sempat terlihat
+        // (flake di full suite, lolos bila dijalankan sendirian).
+        applyAlarm(r)
         _run.value = r
         prefs.edit { if (r == null) remove(KEY_RUN) else putString(KEY_RUN, r.encode()) }
         if (r == null) {
-            cancelAlarm()
             restoreDnd()
             NotificationManagerCompat.from(context).cancel(ID_RUNNING)
         } else {
-            refresh(r)
+            applyDnd(r)
+            postRunning(r)
         }
         refreshTile()
     }
 
     private fun refresh(r: FocusRun) {
-        if (r.isPaused) cancelAlarm() else scheduleAlarm(r.endsAt(now()))
+        applyAlarm(r)
         applyDnd(r)
         postRunning(r)
+    }
+
+    /** Batalkan alarm bila tidak ada sesi / sesi dijeda, pasang alarm akhir fase bila berjalan. */
+    private fun applyAlarm(r: FocusRun?) {
+        if (r == null || r.isPaused) cancelAlarm() else scheduleAlarm(r.endsAt(now()))
     }
 
     // ---- Jangan Ganggu -------------------------------------------------------------------------
@@ -277,7 +309,9 @@ class FocusController(
             .setTimeoutAfter(2 * MINUTE)
             .setContentIntent(openFocus())
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(ID_ALERT, n) }
+        // Satu id per fase yang berakhir: bila >1 fase terlewat (HP mati lama), tiap alert
+        // terlihat sendiri, bukan hanya yang terakhir menimpa yang sebelumnya.
+        runCatching { NotificationManagerCompat.from(context).notify(ID_ALERT + ended.ordinal, n) }
     }
 
     private fun clockOf(millis: Long): String {

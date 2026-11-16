@@ -37,6 +37,18 @@ class FocusRepositoryTest {
         assertEquals(150L, focus.watchTaskMinutes("a").first())
     }
 
+    @Test fun topTaskTitleIsDeterministicWhenTitleChanges() = runBlocking {
+        // Judul tugas bisa berubah (di-rename): GROUP BY task_id sambil memilih task_title
+        // telanjang adalah kolom bare SQLite yang nilainya arbitrer — pakai MAX() supaya
+        // judul teratas deterministik.
+        focus.record("a", "Zebra", "2026-10-06", "s", "e", 25)
+        focus.record("a", "Apel", "2026-10-07", "s", "e", 25)
+        focus.record("b", "Desain", "2026-10-07", "s", "e", 40)
+        val stats = focus.watchStats("2026-10-01", "2026-10-07").first()
+        assertEquals("Zebra", stats.topTask)
+        assertEquals(50L, stats.topTaskMinutes)
+    }
+
     @Test fun focusSessionsNeverQueueForUpload() = runBlocking {
         focus.record("a", "Laporan", "2026-10-07", "s", "e", 25)
         assertEquals(null, db.getNextCrudTransaction())

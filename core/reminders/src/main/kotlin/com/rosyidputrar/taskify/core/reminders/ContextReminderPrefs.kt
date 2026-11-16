@@ -35,11 +35,22 @@ class ContextReminderPrefs(devicePrefs: DevicePrefs) {
     /** Keluar akun: lupakan riwayat pemberitahuan akun lama (saklar tetap milik perangkat). */
     fun forgetHistory() = prefs.edit { remove(KEY_NOTIFIED) }
 
+    /**
+     * Baca-ubah-tulis [notified] secara atomik. Worker periodik 6 jam dan one-time
+     * "context-check-now" bisa berjalan bersamaan: tanpa kunci ini kunci yang ditulis satu
+     * worker bisa ditimpa hasil baca basi worker lain. Mengembalikan nilai sesudah transform.
+     */
+    fun updateNotified(transform: (Set<String>) -> Set<String>): Set<String> = synchronized(NOTIFIED_LOCK) {
+        transform(notified).also { notified = it }
+    }
+
     private companion object {
         const val KEY_BILLS = "ctx_bills"
         const val KEY_BUDGETS = "ctx_budgets"
         const val KEY_JOURNAL = "ctx_journal"
         const val KEY_JOURNAL_TIME = "ctx_journal_time"
         const val KEY_NOTIFIED = "ctx_notified"
+        /** Kunci proses: semua instance ContextReminderPrefs berbagi satu SharedPreferences. */
+        private val NOTIFIED_LOCK = Any()
     }
 }

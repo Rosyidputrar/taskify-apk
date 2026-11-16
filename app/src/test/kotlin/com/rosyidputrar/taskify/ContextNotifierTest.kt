@@ -21,6 +21,7 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Notifikasi tagihan / anggaran / jurnal: kanal sendiri, aksi Catat/Lewati, isi bisa disembunyikan. */
@@ -66,6 +67,20 @@ class ContextNotifierTest {
         assertTrue(byChannel.getValue(ContextNotifier.CHANNEL_BUDGETS).extras.getString("android.title")!!.contains("terlampaui"))
         assertTrue(byChannel.getValue(ContextNotifier.CHANNEL_JOURNAL).extras.getString("android.title")!!.contains("5 hari"))
         assertNotNull(nm.getNotificationChannel(ContextNotifier.CHANNEL_JOURNAL))
+    }
+
+    @Test fun hiddenContentHidesJournalStreakAndAutoPostedCount() {
+        reminderPrefs.hideContent = true
+        notifier.journal(streak = 5)
+        notifier.autoPosted(3)
+        val byChannel = shadowOf(nm).allNotifications.associateBy { it.channelId }
+        val journal = byChannel.getValue(ContextNotifier.CHANNEL_JOURNAL)
+        assertEquals("Pengingat jurnal", journal.extras.getString("android.title"))
+        assertFalse((journal.extras.getString("android.title") ?: "").contains("5"))
+        assertNull(journal.extras.getString("android.text"))
+        val auto = byChannel.getValue(ContextNotifier.CHANNEL_BILLS)
+        assertFalse((auto.extras.getString("android.title") ?: "").contains("3"))
+        assertNull(auto.extras.getString("android.text"))
     }
 
     @Test fun prefsDefaultsAndHistoryReset() {
