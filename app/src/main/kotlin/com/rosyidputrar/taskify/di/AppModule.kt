@@ -25,6 +25,8 @@ import com.rosyidputrar.taskify.feature.sandi.AccountEmail
 import com.rosyidputrar.taskify.feature.files.FilesConfig
 import com.rosyidputrar.taskify.feature.files.OnlineStatus
 import com.rosyidputrar.taskify.feature.files.filesFeatureModule
+import com.rosyidputrar.taskify.feature.review.reviewFeatureModule
+import com.rosyidputrar.taskify.core.store.review.ReviewRepository
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
 import com.rosyidputrar.taskify.core.store.files.TempFileRepository
@@ -112,6 +114,7 @@ private val deviceModule = module {
     single { SandiSession(get(), get(), get(APP_SCOPE)) }
     single { SandiService(get(), get(), get(), get(), getOrNull<VaultServer>(), get(), get(), get(), get(APP_SCOPE)) }
     single { AccountEmail { getOrNull<AuthRepository>()?.currentEmail() } }
+    single { ReviewRepository(get()) }
     single { TempFileRepository(get()) }
     // Tanpa SupabaseClient (konfigurasi belum lengkap) halaman unduh publik tetap bisa memakai URL-nya.
     single { TempFilesApi(getOrNull<SupabaseClient>(), AppConfig.supabaseUrl) }
@@ -144,4 +147,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

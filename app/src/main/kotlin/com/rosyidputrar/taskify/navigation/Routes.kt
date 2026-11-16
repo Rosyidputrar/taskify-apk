@@ -56,6 +56,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object FilesRoute
 
+@Serializable data object ReviewRoute
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
@@ -72,5 +74,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Vault -> VaultRoute
     TaskifyModule.Sandi -> SandiRoute
     TaskifyModule.Files -> FilesRoute
+    TaskifyModule.Review -> ReviewRoute
     else -> ModuleRoute(name)
 }

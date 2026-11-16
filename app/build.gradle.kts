@@ -106,6 +106,7 @@ dependencies {
     implementation(projects.feature.attachments)
     implementation(projects.feature.sandi)
     implementation(projects.feature.files)
+    implementation(projects.feature.review)
     implementation(projects.core.files)
     implementation(projects.core.ui)
     implementation(projects.core.reminders)

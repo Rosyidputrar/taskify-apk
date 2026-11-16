@@ -2,7 +2,6 @@ package com.rosyidputrar.taskify
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -81,15 +80,6 @@ class ShellScreenshotTest {
         AppEvents.send(AppEvent.OpenSpotlight)
         compose.waitForIdle()
         capture("spotlight_light")
-    }
-
-    @Test fun moduleDark() {
-        setApp(dark = true)
-        compose.onNodeWithContentDescription("Ruang").performClick()
-        compose.waitForIdle()
-        compose.onNodeWithText("Review").performClick()
-        compose.waitForIdle()
-        capture("module_placeholder_dark")
     }
 
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")

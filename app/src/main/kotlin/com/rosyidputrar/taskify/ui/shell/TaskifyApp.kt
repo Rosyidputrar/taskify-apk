@@ -72,6 +72,11 @@ import com.rosyidputrar.taskify.navigation.ConfigFileRoute
 import com.rosyidputrar.taskify.navigation.ConfigEditRoute
 import com.rosyidputrar.taskify.navigation.SandiRoute
 import com.rosyidputrar.taskify.navigation.FilesRoute
+import com.rosyidputrar.taskify.navigation.ReviewRoute
+import com.rosyidputrar.taskify.feature.review.ReviewNav
+import com.rosyidputrar.taskify.feature.review.ReviewScreen
+import com.rosyidputrar.taskify.core.domain.review.ReviewPeriod
+import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.feature.files.FilesScreen
 import com.rosyidputrar.taskify.feature.sandi.SandiScreen
 import com.rosyidputrar.taskify.feature.vault.config.ConfigEditorScreen
@@ -184,6 +189,7 @@ fun TaskifyApp(
             destination.hasRoute<ConfigFileRoute>() || destination.hasRoute<ConfigEditRoute>() -> TaskifyModule.Vault
         destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
         destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
+        destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
         destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
         else -> null
     }
@@ -382,6 +388,22 @@ private fun TaskifyNavHost(
                     if (route.fileId == null) navController.navigate(ConfigFileRoute(id))
                 },
                 onOpenSandi = { navController.navigate(SandiRoute) },
+                backButton = { BackButton(it) },
+            )
+        }
+        composable<ReviewRoute> {
+            ReviewScreen(
+                contentPadding = contentPadding,
+                nav = ReviewNav(
+                    openDay = { navController.navigate(CalendarRoute(it)) },
+                    openJournal = { navController.navigate(JournalEntryRoute(id = it)) },
+                    openFinance = { navController.navigate(FinanceRoute) },
+                    openVault = { navController.navigate(VaultRoute) },
+                    reflect = { period, from, to ->
+                        navController.navigate(JournalEntryRoute(date = Dates.today(), template = if (period == ReviewPeriod.Month) "month" else "week", from = from, to = to))
+                    },
+                ),
+                onBack = navController.backIfPossible(),
                 backButton = { BackButton(it) },
             )
         }

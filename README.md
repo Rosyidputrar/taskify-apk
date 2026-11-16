@@ -39,15 +39,16 @@ app/                 Gerbang (konfigurasi → masuk → MFA → database → PIN
                      Pengaturan (akun, keamanan, sinkronisasi), koordinator sesi
 core/common          Utilitas murni: rupiah, UUIDv7, tanggal WIB, timestamp ISO, batas teks, hash
 core/domain          Logika murni teruji JVM: aturan upload, rotasi brankas, gerbang MFA, PIN,
-                     RRULE, Markdown, simpan otomatis, insight mood, kripto Sandi (PBKDF2/HKDF/AES-GCM,
+                     RRULE, Markdown, simpan otomatis, insight mood, periode & ringkasan Review, kripto Sandi (PBKDF2/HKDF/AES-GCM,
                      diuji dua arah melawan crypto.ts webapp), TOTP RFC 6238, generator, parser .env/JSON
 core/store           Skema PowerSync (identik webapp) + repository Tugas, Tag, Beranda, Kalender,
-                     Jurnal, Catatan, Keuangan, Vault, Lampiran — diuji di JVM
+                     Jurnal, Catatan, Keuangan, Vault, Lampiran, Berkas, Review — diuji di JVM
                      terhadap PowerSync sungguhan (SQLite + ekstensi PowerSync)
 core/data            Database Android, Supabase client, connector upload
 core/auth            AuthRepository (login, MFA aal2, ingat 30 hari), kunci PIN (Keystore)
 core/designsystem    "Kertas & Tinta": palet, tipografi, kartu indeks, Dok
-core/ui              Editor Markdown kertas bergaris + pratinjau native, indikator simpan, tag & tanggal
+core/ui              Editor Markdown kertas bergaris + pratinjau native, indikator simpan, tag & tanggal,
+                     heatmap aktivitas 26 minggu
 core/files           Lampiran: presign Edge Function `files`, unggah R2 via WorkManager (outbox),
                      salinan offline, kompres foto, baca ZIP. Berkas publik: Edge Function `tempfiles`,
                      unggah streaming langsung dari content:// (sampai 1 GB) dengan progres & batal
@@ -65,6 +66,8 @@ feature/vault        Vault Kode: snippet ber-template, project dengan versi ZIP,
 feature/files        Berkas: kuota 1 GB, unggah dengan masa berlaku, tautan publik (salin/bagikan,
                      privat, cabut & buat baru), ganti nama, unduh, hapus; halaman unduh publik
                      `/unduh/<token>` sebagai App Link tanpa login
+feature/review       Review mingguan/bulanan: ringkasan kalimat, statistik + delta vs periode lalu,
+                     grafik per hari dengan mood, kategori pengeluaran, sorotan, heatmap, tulis refleksi
 feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, daftar sandi, kode 2FA dengan
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
