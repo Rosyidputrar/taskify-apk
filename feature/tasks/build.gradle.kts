@@ -1,0 +1,21 @@
+plugins {
+    alias(libs.plugins.taskify.android.library)
+    alias(libs.plugins.taskify.android.compose)
+}
+
+android {
+    namespace = "com.rosyidputrar.taskify.feature.tasks"
+}
+
+dependencies {
+    implementation(projects.feature.links)
+    api(projects.core.data)
+    implementation(projects.core.designsystem)
+    implementation(projects.core.ui)
+    implementation(projects.feature.attachments)
+    implementation(projects.core.reminders)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.androidx.compose)
+}

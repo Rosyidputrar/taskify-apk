@@ -1,0 +1,46 @@
+{
+  "user": "11111111-2222-3333-4444-555555555555",
+  "password": "ｋｕｄａ-biru minum kopi pagi ☕ Ünïcödé",
+  "recoveryKey": "9T82-ZMN3-VTHJ-JREX-S8X7-5BYK-N4",
+  "record": {
+    "version": 1,
+    "kdf": "pbkdf2-sha256",
+    "iterations": 100000,
+    "salt": "2AXiDq2zopYHs46jPQlHhg==",
+    "wrapped_key": "NXKdt49SkyG13nFzoQfbf5SElXS4yS+hXU9HRM24t2+9xh48aWbYpXfrUqN9/GfafVvgmA5aejRCf0Rl",
+    "recovery_salt": "djWptkJMcrOpQzDpjhCLUQ==",
+    "recovery_wrapped_key": "GigyZbg9rYaitBmQyq/9JbIKtMcKCWyMPJazZrwoY/tegq5B7/ClZTvfuX2xS7eHQL+An0szP9GM01jJ"
+  },
+  "ref": "0a7cc0e0f9a135d0",
+  "item": {
+    "id": "item-1",
+    "enc": "0a7cc0e0f9a135d0.WmCkSmzMcdBDRjp3BuucOxh1E0kKxn8m6UqJJ7NXsqO9a6ee8GQ1SQ1i4kutdUoU3nK6sqvOfRDXI4Fa6SgP8Acq6wxU0c3EZXtPmGplR89nCzd4ajwaAiAoWYBW71Xhh7v2Ah50ynS0mZw4nyfp26bIhEMFRZXUp2X65agw9rEPsnzyoNeemj3/tG+ChB+vz/NAWWbPiKgp9RHTNHz6Lgd9ydP3yKuxVXDTnGH0r3XyL3k5epp4uoBQ73ia8B28M50bb0QJUh42dvvXZgQ4jm10b+8wo9AKJinlkCLvvmU0uDLok3FH6eFJQVOo6fWFEa2Bfw11drDoe9PKqtSWFlsrGK04H+s2+IMLIJdtsLhBi29tG+qRFBTn9bQ=",
+    "payload": {
+      "title": "GitHub",
+      "url": "https://github.com/login",
+      "username": "rosyid",
+      "password": "Zk9#mQ2$vL7!pXr4 ünï",
+      "notes": "baris 1\nbaris 2 \"kutip\"",
+      "favorite": true,
+      "totp": {
+        "secret": "JBSWY3DPEHPK3PXP",
+        "digits": 6,
+        "period": 30,
+        "algorithm": "SHA1"
+      }
+    }
+  },
+  "itemNoTotp": {
+    "id": "item-2",
+    "enc": "0a7cc0e0f9a135d0.bGUTWCOY7KuDge7uI8f1BMUcAG630oXmAGctEFuaLszXWHpSkZfox7oAYdnrOlsGFD+J5Ccr1lQoDoBkEh+TED+ITRh3tWSu5hqE52dI0f5qBawrVJxxGIwQFuA4+IhJT62TBH1k+Lzkdok/01zqerWlN85P4UA5X52D4j6AdQFcwPTib5W6TrrjL9HR1vsiIV9FpT2C33sMLHVL6R9EQ1gxJlhKWq/Tdi7Wduaej4OrhPVOC7KlnYfG/diMuuH4AzKU7gyHpu0re1xy4Q/XJItljnnJlip/smHxIJ3wCVEm0T0eC8ioy5zdkon0EGWa96H8HSCfESQZV0M+3VHfISbd2ouGNrNkzBH5c4hV9GeXMTUFjf2SvdGuhb8="
+  },
+  "log": {
+    "id": "log-1",
+    "enc": "0a7cc0e0f9a135d0.oBbiSS082nnj9zNNTW/aavOjzC3PXieJcmVewKYT5Qy/KcjCiziX4SDAvYqs9tzmsCtW32kJy7J632cBTKLTdN3W+hT6zkSOM0Z6icsVaLuKPGNZBAqhJsR39QtgsFqe9+bPQFUZ//oOEquSxjaR/flH8o55Y7hn+3MZPzfL85DhRJZ8Kj/P3sgtsi9/tVnLBhzRNvczwqAxEPBfpZW5MQT4AbnsmyfvkxEgtIAM9NCQ7DJIyZ3eFGkHrvsb+xIUyplbyQ65xuo28Y5Ga/TQeRgczVzREa5FfXEKkIWrHLZuO6HoVGzJPLkEc1dez92K0UyIOTJ8uZfQt3PDHedqop/p6wwuroX9Q8T69x9d87qsdl9uJ6NnMFDQUjg="
+  },
+  "config": {
+    "fileId": "file-1",
+    "versionId": "ver-1",
+    "enc": "0a7cc0e0f9a135d0.CLsZEnQU6lAV32ho2bLKkMDbfwV2weNt9nUzfgxGIhy7Xl7wjUHQ1MId+hB2+PdjsjYKR9we7SW2e3ZtD9j05cKLPGDdznLkHsBYpvce7KUau1hsvF81UCS22FLlxFdLAAqZtoTVQj5tN/Ll8N84iPPGqjA58IQPCaT4fVW1aXsYaZHrNsZsvVtJChxbFOGAHueRg/pNtnE6jdeypQtJQxOoF206vEXxTBF67hFecc909/uP9vWnCWJKKVUTHbi2ULu3Wi2CRiQvdBml4WXfGniX1sjzRvI6MAkv6il3IFSmRPIw5AA/edagFodVriZPawMQQzYljWIsxSCbiJXHNmkioFxswhHweabj7o4Sb541ob+kamGsUo94XAg="
+  }
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Build debug = paket com.rosyidputrar.taskify.debug, terpasang berdampingan dengan versi rilis. -->
+    <string name="app_name">Taskify Debug</string>
+</resources>
