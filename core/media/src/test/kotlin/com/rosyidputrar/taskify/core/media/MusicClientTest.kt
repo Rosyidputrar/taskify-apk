@@ -156,7 +156,7 @@ class MusicClientTest {
         assertFalse(info.isOpus)
     }
 
-    @Test fun forceConverterSendsFlagOnlyWhenAsked() = runTest {
+    @Test fun forceConverterSendsDirectFalseOnlyWhenAsked() = runTest {
         val bodies = mutableListOf<String>()
         val c = client { request ->
             bodies += ((request.body as? TextContent)?.text ?: "")
@@ -165,7 +165,7 @@ class MusicClientTest {
         c.resolveStreamInfo("vid12345678")
         c.resolveStreamInfo("vid12345678", forceConverter = true)
         assertEquals(2, bodies.size)
-        assertFalse(bodies[0].contains("forceConverter"))
-        assertTrue(bodies[1].contains("\"forceConverter\":true"))
+        assertFalse(bodies[0].contains("\"direct\""))
+        assertTrue(bodies[1].contains("\"direct\":false"))
     }
 }

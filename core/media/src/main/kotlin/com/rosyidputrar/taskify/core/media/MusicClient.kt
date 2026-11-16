@@ -179,10 +179,9 @@ open class MusicClient(private val baseUrl: String, private val token: suspend (
      * sampai `url` muncul (sumbernya konverter, format yang diminta mp3).
      *
      * [forceConverter] meminta jalur konverter walau direct tersedia — dikirim sebagai
-     * `"forceConverter": true` di bodi init. Catatan: Worker saat ini (dicek 2026-11-16,
-     * `worker/index.ts` rute `/v1/stream/init`) HANYA membaca `format`/`quality`, jadi field
-     * ini diabaikan server sampai Worker menyediakan param pemaksa konverter; namanya harus
-     * dicocokkan dengan implementasi Worker bila sudah ada. Default mati.
+     * `"direct": false` di bodi init (param yang dikenali Worker, `worker/index.ts` rute
+     * `/v1/stream/init`). Bila tidak diminta, field `direct` tidak dikirim sama sekali
+     * sehingga perilaku default tetap jalur direct. Default mati.
      */
     open suspend fun resolveStreamInfo(
         videoId: String,
@@ -192,7 +191,7 @@ open class MusicClient(private val baseUrl: String, private val token: suspend (
         onProgress(0, MusicQueue.progressLabel(0))
         val init = post("/v1/stream/init", buildJsonObject {
             put("videoId", videoId); put("format", "mp3")
-            if (forceConverter) put("forceConverter", true)
+            if (forceConverter) put("direct", false)
         })
         val info = StreamInfo.fromInit(init)
         info.url?.let { onProgress(100, ""); return record(videoId, info) }
@@ -216,7 +215,7 @@ open class MusicClient(private val baseUrl: String, private val token: suspend (
     /** Simpan + catat asal audio supaya bisa dilacak (dan di-fallback bila opus bermasalah). */
     private fun record(videoId: String, info: StreamInfo): StreamInfo {
         lastStreamInfo = info
-        if (info.isOpus) Log.w(TAG, "stream $videoId direct opus itag=${info.itag} — awasi pemutaran, fallback konverter via forceConverter=true")
+        if (info.isOpus) Log.w(TAG, "stream $videoId direct opus itag=${info.itag} — awasi pemutaran, fallback konverter via direct=false")
         else Log.i(TAG, "stream $videoId source=${info.source} mimeType=${info.mimeType} itag=${info.itag}")
         return info
     }
