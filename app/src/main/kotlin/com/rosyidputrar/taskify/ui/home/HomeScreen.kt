@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.home
 
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.FilledTonalButton
 import com.rosyidputrar.taskify.core.domain.home.HomeTile
 import com.rosyidputrar.taskify.core.domain.home.HomeSection
 import com.rosyidputrar.taskify.core.domain.home.HomeLayout
@@ -312,6 +314,12 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                     }
                 }
                 state.progress[top.id]?.takeIf { it.total > 0 }?.let { ProgressRing(it.done, it.total, accent, size = 40.dp, stroke = 4.dp, showLabel = true) }
+            }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = { AppEvents.send(AppEvent.OpenFocus(top.id)) }) {
+                Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Mulai fokus")
             }
             val rest = state.focus.drop(1).take(4)
             val largeFont = LocalDensity.current.fontScale > 1.3f

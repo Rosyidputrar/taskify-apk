@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.ui.focus.FocusScreen
+import com.rosyidputrar.taskify.navigation.FocusRoute
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.AnimatedVisibility
@@ -204,6 +206,7 @@ fun TaskifyApp(
                 is AppEvent.OpenEntity -> openEntity(event.type, event.id)
                 is AppEvent.OpenModule -> { spotlight.close(); navController.navigate(event.module.route()) { launchSingleTop = true } }
                 AppEvent.OpenShare -> { spotlight.close(); navController.navigate(ShareRoute) { launchSingleTop = true } }
+                is AppEvent.OpenFocus -> { spotlight.close(); navController.navigate(FocusRoute(event.taskId)) { launchSingleTop = true } }
                 AppEvent.OpenSpotlight -> spotlight.open()
                 is AppEvent.OpenCapture -> openCapture(event.text)
                 is AppEvent.OpenCalendar -> {
@@ -257,7 +260,7 @@ fun TaskifyApp(
     }
     LaunchedEffect(currentModule) { currentModule?.let { com.rosyidputrar.taskify.widget.ModuleShortcuts.report(shortcutContext, it) } }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
-    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() } == true
+    val immersive = destination?.let { it.hasRoute<JournalEntryRoute>() || it.hasRoute<NoteEditRoute>() || it.hasRoute<TransactionRoute>() || it.hasRoute<SnippetRoute>() || it.hasRoute<ZipRoute>() || it.hasRoute<ConfigEditRoute>() || it.hasRoute<FocusRoute>() } == true
     val selectedKey = when (currentModule) {
         TaskifyModule.Home -> KEY_HOME
         TaskifyModule.Calendar -> KEY_CALENDAR
@@ -514,6 +517,14 @@ private fun TaskifyNavHost(
             ShareScreen(
                 contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
                 onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
+            )
+        }
+        composable<FocusRoute> { entry ->
+            FocusScreen(
+                taskId = entry.toRoute<FocusRoute>().taskId,
+                contentPadding = contentPadding,
+                backButton = { BackButton(it) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable<MusicRoute> {

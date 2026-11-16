@@ -35,6 +35,8 @@ class TaskifySchemaTest {
         "config_versions" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "file_id" to "TEXT", "enc" to "TEXT", "v" to "INTEGER"),
         "temp_files" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "deleted_at" to "TEXT", "file_name" to "TEXT", "mime_type" to "TEXT", "size_bytes" to "INTEGER", "storage_key" to "TEXT", "status" to "TEXT", "etag" to "TEXT", "share_token" to "TEXT", "is_public" to "INTEGER", "expires_at" to "TEXT", "download_count" to "INTEGER", "last_download_at" to "TEXT"),
         "upload_errors" to mapOf("op" to "TEXT", "table_name" to "TEXT", "row_id" to "TEXT", "payload" to "TEXT", "error_code" to "TEXT", "error_message" to "TEXT", "created_at" to "TEXT"),
+        // Lokal saja (Mode Fokus) — bukan bagian schema.ts webapp.
+        "focus_sessions" to mapOf("task_id" to "TEXT", "task_title" to "TEXT", "day" to "TEXT", "started_at" to "TEXT", "ended_at" to "TEXT", "minutes" to "INTEGER"),
     )
 
     @Test fun schemaIsValid() = TaskifySchema.schema.validate()
@@ -47,6 +49,7 @@ class TaskifySchemaTest {
 
     @Test fun uploadErrorsIsLocalOnlyAndVaultTablesTrackOldEnc() {
         assertTrue(TaskifySchema.uploadErrors.options.localOnly)
+        assertTrue(TaskifySchema.focusSessions.options.localOnly)
         listOf(TaskifySchema.pwItems, TaskifySchema.pwTotpLog, TaskifySchema.configVersions).forEach {
             assertEquals(listOf("enc"), it.options.trackPreviousValues?.columnFilter, it.name)
         }

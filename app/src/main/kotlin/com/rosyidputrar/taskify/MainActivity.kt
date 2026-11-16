@@ -51,6 +51,7 @@ class MainActivity : FragmentActivity() {
     private val messenger: Messenger by inject()
     private val shareInbox: com.rosyidputrar.taskify.ui.share.ShareInbox by inject()
     private val lock: LockManager by inject()
+    private val focus: com.rosyidputrar.taskify.focus.FocusController by inject()
     private val recents = RecentsPrivacy(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,6 +116,8 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         recents.onResume()
+        // Fase Mode Fokus yang habis selagi proses mati (alarm terlewat) disusulkan diam-diam.
+        lifecycleScope.launch { focus.catchUp(alert = false) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -127,6 +130,7 @@ class MainActivity : FragmentActivity() {
             ACTION_CAPTURE -> AppEvents.send(AppEvent.OpenCapture())
             ACTION_SEARCH -> AppEvents.send(AppEvent.OpenSpotlight)
             ACTION_CALENDAR -> AppEvents.send(AppEvent.OpenCalendar())
+            ACTION_FOCUS -> AppEvents.send(AppEvent.OpenFocus())
             Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> {
                 // Salin isi selagi izin baca dari aplikasi pengirim masih berlaku, lalu buka layar Bagikan.
                 lifecycleScope.launch { if (shareInbox.receive(intent)) AppEvents.send(AppEvent.OpenShare) }
@@ -155,5 +159,6 @@ class MainActivity : FragmentActivity() {
         const val ACTION_CAPTURE = "com.rosyidputrar.taskify.action.CAPTURE"
         const val ACTION_SEARCH = "com.rosyidputrar.taskify.action.SEARCH"
         const val ACTION_CALENDAR = "com.rosyidputrar.taskify.action.CALENDAR"
+        const val ACTION_FOCUS = "com.rosyidputrar.taskify.action.FOCUS"
     }
 }

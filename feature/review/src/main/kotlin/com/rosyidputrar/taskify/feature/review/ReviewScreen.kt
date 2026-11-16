@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.review
 
+import com.rosyidputrar.taskify.core.domain.focus.formatMinutes
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -168,6 +170,17 @@ fun ReviewContent(
                     Stat(Icons.Outlined.EditNote, TaskifyModule.Journal, "Hari berjurnal", "${now.journalDays}/${state.elapsed}", null, Modifier.weight(1f),
                         hint = now.moodAvg?.let { "mood ${"%.1f".format(it).replace('.', ',')} · ${moodLabel(it)?.lowercase()}" } ?: "belum ada mood")
                 }
+                val f = state.focus
+                Stat(
+                    Icons.Outlined.Timer, TaskifyModule.Tasks, "Waktu fokus",
+                    if (f.minutes == 0L) "–" else formatMinutes(f.minutes),
+                    Review.percentChange(f.minutes, state.focusBefore.minutes), Modifier.fillMaxWidth(),
+                    hint = when {
+                        f.sessions == 0 -> "belum ada sesi Mode Fokus"
+                        f.topTask != null -> "${f.sessions} sesi · terbanyak: ${f.topTask} (${formatMinutes(f.topTaskMinutes)})"
+                        else -> "${f.sessions} sesi"
+                    },
+                )
             }
         }
         item(key = "daily") {

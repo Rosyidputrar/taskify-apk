@@ -21,6 +21,9 @@ sealed interface AppEvent {
     data class OpenModule(val module: com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule) : AppEvent
     /** Kotak masuk "Bagikan ke Taskify" sudah terisi. */
     data object OpenShare : AppEvent
+
+    /** Layar Mode Fokus; [taskId] = tugas yang disiapkan (belum mulai). */
+    data class OpenFocus(val taskId: String? = null) : AppEvent
     /** Buka entitas lintas modul (hasil pencarian, tag, tautan, Sampah). */
     data class OpenEntity(val type: com.rosyidputrar.taskify.core.domain.files.EntityType, val id: String) : AppEvent
 }

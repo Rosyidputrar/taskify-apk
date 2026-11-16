@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.di
 
+import com.rosyidputrar.taskify.ui.focus.FocusViewModel
+import com.rosyidputrar.taskify.focus.FocusController
+import com.rosyidputrar.taskify.core.store.focus.FocusRepository
 import com.rosyidputrar.taskify.AppConfig
 import com.rosyidputrar.taskify.core.auth.AuthRepository
 import com.rosyidputrar.taskify.core.auth.KeystorePinMac
@@ -146,7 +149,17 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
     single { com.rosyidputrar.taskify.ui.capture.CaptureDraft(androidContext()) }
-    single { DeviceLeftovers(androidContext(), get(), get(), get(), get()) }
+    single { FocusRepository(get()) }
+    single {
+        val history = get<FocusRepository>()
+        val reminderPrefs = get<com.rosyidputrar.taskify.core.reminders.ReminderPrefs>()
+        FocusController(
+            androidContext(),
+            record = { r -> history.record(r.taskId, r.taskTitle, r.day, r.startedAt, r.endedAt, r.minutes) },
+            hideContent = { reminderPrefs.hideContent },
+        )
+    }
+    single { DeviceLeftovers(androidContext(), get(), get(), get(), get(), get()) }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
     single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
     single { MusicPlayer(androidContext(), get()) }
@@ -171,6 +184,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs(get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
+    viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get()) }
     viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }

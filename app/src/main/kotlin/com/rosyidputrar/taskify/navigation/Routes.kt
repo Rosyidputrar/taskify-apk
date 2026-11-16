@@ -66,6 +66,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object ShareRoute
 
+/** Mode Fokus (Pomodoro); [taskId] = tugas yang disiapkan bila belum ada sesi berjalan. */
+@Serializable data class FocusRoute(val taskId: String? = null)
+
 @Serializable data object MusicRoute
 
 /** Pengunduh TikTok; [input] = link yang langsung diambil (dari Bagikan). */

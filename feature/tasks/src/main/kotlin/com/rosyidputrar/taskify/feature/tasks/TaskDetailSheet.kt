@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import androidx.compose.material.icons.outlined.Timer
+import com.rosyidputrar.taskify.core.designsystem.component.FocusLauncher
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.Surface
@@ -145,6 +147,14 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
         Row(verticalAlignment = Alignment.CenterVertically) {
             IndexTab(TaskifyModule.Tasks, text = if (task.isRecurring) "Tugas berulang" else "Tugas")
             Spacer(Modifier.weight(1f))
+            if (!inTrash && task.status != TaskStatus.Done && FocusLauncher.available) {
+                // Mode Fokus untuk tugas ini (Pomodoro + checklist subtask).
+                TextButton(onClick = { onClose(); FocusLauncher.open(task.id) }) {
+                    Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Fokus")
+                }
+            }
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Tutup") }
         }
         if (inTrash) {

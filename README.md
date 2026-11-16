@@ -161,6 +161,23 @@ Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **
   warna modul diselaraskan ke warna utama dengan tone terkunci. ThemeEngineTest memeriksa setiap palet ×
   kontras × terang/gelap dan ratusan tema kustom dari warna ekstrem: teks/latar utama & warna modul ≥ 4.5:1.
 
+### Mode Fokus & Beranda
+
+- **Mode Fokus (Pomodoro)** — dari tombol *Mulai fokus* di kartu Fokus Beranda, tombol *Fokus* di
+  detail tugas, atau tile Quick Settings *Fokus*. Fokus 15/25/45/60 menit → istirahat 5 menit,
+  istirahat panjang 15 menit tiap 4 putaran. Checklist subtask tampil di layar fokus; layar tetap
+  menyala selama hitung mundur.
+- Tanpa foreground service: notifikasi berjalan memakai hitung mundur bawaan sistem dan akhir fase
+  dibangunkan AlarmManager (Jeda/Lanjut, Lewati, Berhenti langsung dari notifikasi). Status disimpan
+  sebagai jam dinding, jadi tetap benar walau aplikasi ditutup paksa.
+- Opsional **Jangan Ganggu** selama fase fokus (perlu akses di Setelan sistem). Hanya dimatikan lagi
+  bila Taskify yang menyalakannya.
+- Riwayat fokus disimpan di tabel lokal `focus_sessions` (tidak disinkronkan; ikut terhapus saat
+  Keluar) dan tampil di Review sebagai *Waktu fokus*.
+- **Susun Beranda** (ikon di samping sapaan): urutkan atau sembunyikan pita minggu, Fokus, Ringkasan,
+  dan Aktivitas; pilih ubin ringkasan (termasuk *Saldo semua dompet* dan *Masuk bulan ini*). Pita
+  minggu menampilkan titik tugas/jurnal/catatan/transaksi per hari.
+
 ### Pengaturan
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —

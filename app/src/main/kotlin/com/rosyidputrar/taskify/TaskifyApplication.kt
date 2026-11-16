@@ -46,6 +46,9 @@ class TaskifyApplication : Application() {
         com.rosyidputrar.taskify.session.RejectedChangesNotifier(get<com.rosyidputrar.taskify.core.data.TaskifyDatabase>().watchUploadErrorCount(), messenger, get(APP_SCOPE_QUALIFIER)).start()
         // Item yang baru dibuka → shortcut launcher dinamis (tidak saat PIN aktif; dihapus saat PIN dinyalakan).
         val lock = get<LockManager>()
+        com.rosyidputrar.taskify.core.designsystem.component.FocusLauncher.install { taskId ->
+            com.rosyidputrar.taskify.ui.shell.AppEvents.send(com.rosyidputrar.taskify.ui.shell.AppEvent.OpenFocus(taskId))
+        }
         com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.install { type, id, title ->
             com.rosyidputrar.taskify.widget.EntityShortcuts.report(this, type, id, title, pinActive = lock.state.value.config != null)
         }

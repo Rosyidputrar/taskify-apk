@@ -38,6 +38,7 @@ class DeviceLeftovers(
     private val lock: LockManager,
     private val captureDraft: com.rosyidputrar.taskify.ui.capture.CaptureDraft? = null,
     private val contextPrefs: com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs? = null,
+    private val focus: com.rosyidputrar.taskify.focus.FocusController? = null,
 ) {
     suspend fun clear() {
         // Notifikasi pengingat yang masih tampil memuat judul tugas akun lama.
@@ -48,6 +49,8 @@ class DeviceLeftovers(
         captureDraft?.clear()
         // Riwayat "tagihan/anggaran sudah diberitahukan" milik akun lama.
         contextPrefs?.forgetHistory()
+        // Sesi Mode Fokus (judul tugas akun lama di notifikasi, alarm, Jangan Ganggu yang kita nyalakan).
+        focus?.clear()
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()
