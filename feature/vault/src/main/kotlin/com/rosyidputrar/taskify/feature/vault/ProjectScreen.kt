@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.ConfirmDeleteDialog
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import android.net.Uri
@@ -265,6 +266,7 @@ private fun VersionRow(v: Attachment, actions: ProjectActions, onViewZip: (Strin
     val flow = remember(v.id) { runCatching { actions.progress(v) }.getOrElse { emptyFlow() } }
     val progress by flow.collectAsState(initial = null)
     var menu by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let { actions.saveTo(v, it) } }
     val date = Dates.isoToLocal(v.createdAt)?.first?.let { Dates.format(it, "d MMM yyyy") } ?: ""
     val status = when {
@@ -292,8 +294,16 @@ private fun VersionRow(v: Attachment, actions: ProjectActions, onViewZip: (Strin
                             DropdownMenuItem(text = { Text("Lihat isi") }, onClick = { menu = false; onViewZip(v.id) })
                             DropdownMenuItem(text = { Text("Simpan ke perangkat…") }, onClick = { menu = false; save.launch(v.fileName) })
                             DropdownMenuItem(text = { Text("Buka dengan aplikasi lain") }, onClick = { menu = false; actions.open(v) })
-                            DropdownMenuItem(text = { Text("Hapus versi") }, onClick = { menu = false; actions.remove(v) })
+                            DropdownMenuItem(text = { Text("Hapus versi") }, onClick = { menu = false; confirmDelete = true })
                         }
+                    }
+                    if (confirmDelete) {
+                        ConfirmDeleteDialog(
+                            title = "Hapus versi ${v.versionLabel ?: v.fileName}?",
+                            message = "Arsip ${v.fileName} (${formatBytes(v.sizeBytes)}) dihapus dari perangkat ini dan dari server. Tidak bisa dibatalkan.",
+                            onConfirm = { confirmDelete = false; actions.remove(v) },
+                            onDismiss = { confirmDelete = false },
+                        )
                     }
                 }
                 if (progress?.running == true) LinearProgressIndicator(progress = { progress?.fraction ?: 0f }, modifier = Modifier.fillMaxWidth())

@@ -1,5 +1,13 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
@@ -146,6 +154,7 @@ private const val KEY_PIN = "pin"
 /** Lebar minimum untuk tata letak rail + dua panel (tablet, Chromebook, lanskap lebar). */
 private val ExpandedWidth = 840.dp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskifyApp(
     preferences: AppPreferences.Snapshot,
@@ -276,11 +285,14 @@ fun TaskifyApp(
             musicPlayer?.state?.map { it.status != com.rosyidputrar.taskify.core.domain.media.YtStatus.Idle } ?: kotlinx.coroutines.flow.flowOf(false)
         }.collectAsState(false)
         val onMusic = destination?.hasRoute<MusicRoute>() == true
-        val showMini = musicActive && !immersive && !onMusic
+        // Keyboard tampil → dok & pemutar mini disembunyikan, area konten berhenti di atas keyboard
+        // (edge-to-edge membuat jendela tidak lagi mengecil sendiri).
+        val imeVisible = WindowInsets.isImeVisible
+        val showMini = musicActive && !immersive && !onMusic && !imeVisible
         // Ruang di bawah konten supaya item terakhir tidak tertutup dok mengambang.
         val contentPadding = PaddingValues(
             top = statusTop,
-            bottom = navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
+            bottom = if (imeVisible) 16.dp else navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
         )
 
         val host: @Composable (Modifier) -> Unit = { modifier ->
@@ -309,12 +321,17 @@ fun TaskifyApp(
                     onCalendar = { navController.navigateTopLevel(CalendarRoute()) },
                     onRoom = { navController.navigateTopLevel(RoomRoute) },
                 )
-                host(Modifier.weight(1f))
+                host(Modifier.weight(1f).imePadding())
             }
         } else {
-            host(Modifier.fillMaxSize())
+            host(Modifier.fillMaxSize().imePadding())
         }
-        if (!expanded && !immersive) {
+        AnimatedVisibility(
+            visible = !expanded && !immersive && !imeVisible,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(200)) { it / 2 },
+            exit = fadeOut(tween(100)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
             val modules = TaskifyTheme.modules
             val home = DockDestination(KEY_HOME, "Hari Ini", TaskifyModule.Home.icon, modules.accent(TaskifyModule.Home))
             val calendar = DockDestination(KEY_CALENDAR, "Kalender", TaskifyModule.Calendar.icon, modules.accent(TaskifyModule.Calendar))
@@ -339,7 +356,6 @@ fun TaskifyApp(
                 onPullEnd = { velocity -> spotlight.release(velocity) },
                 onOpenSearch = { spotlight.open() },
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 12.dp),
             )
@@ -370,12 +386,22 @@ fun TaskifyApp(
                 }
             }
         }
+        // Selalu di atas keyboard, dok, dan pemutar mini — "Urungkan" tidak pernah tertutup.
         SnackbarHost(
             snackbar,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = if (expanded) 16.dp else if (immersive) 64.dp else 96.dp, start = 16.dp, end = 16.dp),
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                .padding(
+                    bottom = when {
+                        imeVisible -> 8.dp
+                        expanded -> 16.dp + if (showMini) 68.dp else 0.dp
+                        immersive -> 64.dp
+                        else -> 96.dp + if (showMini) 68.dp else 0.dp
+                    },
+                    start = 16.dp,
+                    end = 16.dp,
+                ),
         )
 
         Spotlight(

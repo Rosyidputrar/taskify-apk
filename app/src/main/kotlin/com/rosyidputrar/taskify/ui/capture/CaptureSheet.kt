@@ -1,5 +1,11 @@
 package com.rosyidputrar.taskify.ui.capture
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -69,30 +75,67 @@ fun CaptureSheet(
 ) {
     val haptics = rememberHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var text by rememberSaveable { mutableStateOf(initialText) }
+    // Draf yang tertinggal (sheet sebelumnya tertutup tanpa disimpan) dipulihkan.
+    val restored = remember { initialText.isBlank() && viewModel.draftText.isNotBlank() }
+    var text by rememberSaveable { mutableStateOf(initialText.ifBlank { viewModel.draftText }) }
+    val error by viewModel.error.collectAsStateWithLifecycle()
     var kind by rememberSaveable { mutableStateOf(CaptureKind.Auto) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (!startWithTypePicker) focusRequester.requestFocus() }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        CaptureForm(
+            text = text,
+            kind = kind,
+            error = error,
+            restored = restored,
+            title = if (startWithTypePicker) "Mau menangkap apa?" else "Tulis apa saja",
+            focusRequester = focusRequester,
+            onText = {
+                text = it
+                viewModel.keepDraft(it)
+                if (error != null) viewModel.clearError()
+            },
+            onKind = { kind = it; focusRequester.requestFocus() },
+            onDiscardDraft = { text = ""; viewModel.discardDraft() },
+            onDismiss = onDismiss,
+            onSave = { viewModel.save(kind, text) { haptics.success(); onDismiss() } },
+        )
+    }
+}
+
+/**
+ * Isi sheet Tangkap (tanpa ViewModel — bisa diuji). Bagian atas bisa digulir & kotak teks dibatasi
+ * 8 baris; baris Tutup/Simpan disematkan di bawah supaya SELALU terlihat, sepanjang apa pun teks
+ * yang ditempel.
+ */
+@Composable
+fun CaptureForm(
+    text: String,
+    kind: CaptureKind,
+    error: String?,
+    restored: Boolean,
+    title: String,
+    onText: (String) -> Unit,
+    onKind: (CaptureKind) -> Unit,
+    onDiscardDraft: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+    focusRequester: FocusRequester = remember { FocusRequester() },
+) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp),
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("TANGKAP", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.primary)
-            Text(
-                if (startWithTypePicker) "Mau menangkap apa?" else "Tulis apa saja",
-                style = MaterialTheme.typography.headlineSmall,
-            )
+            Text(title, style = MaterialTheme.typography.headlineSmall)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(CaptureKind.entries, key = { it.name }) { option ->
                     val accent = option.module?.let { TaskifyTheme.modules.accent(it) } ?: MaterialTheme.colorScheme.primary
                     FilterChip(
                         selected = option == kind,
-                        onClick = {
-                            kind = option
-                            focusRequester.requestFocus()
-                        },
+                        onClick = { onKind(option) },
                         label = { Text(option.label) },
                         leadingIcon = { Icon(option.icon(), contentDescription = null) },
                         colors = FilterChipDefaults.filterChipColors(
@@ -105,29 +148,40 @@ fun CaptureSheet(
             }
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = onText,
                 placeholder = { Text(kind.placeholder()) },
                 minLines = 3,
+                // Teks panjang bergulir DI DALAM kotak, tidak mendorong tombol keluar layar.
+                maxLines = 8,
+                isError = error != null,
+                supportingText = error?.let { e -> { Text(e) } },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
+            if (restored && text.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Draf sebelumnya dipulihkan.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDiscardDraft) { Text("Hapus draf") }
+                }
+            }
             Text(
                 "Contoh: \"besok jam 9 rapat #kerja\", \"makan siang 35rb\", \"j: hari yang tenang\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    kind.hint(text),
+                    remember(kind, text) { kind.hint(text) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onDismiss) { Text("Tutup") }
-                Button(onClick = { viewModel.save(kind, text) { haptics.success(); onDismiss() } }, enabled = text.isNotBlank()) { Text("Simpan") }
+                Button(onClick = onSave, enabled = text.isNotBlank()) { Text("Simpan") }
             }
         }
-    }
 }
 
 private fun CaptureKind.icon(): ImageVector = module?.icon ?: Icons.Outlined.AutoAwesome

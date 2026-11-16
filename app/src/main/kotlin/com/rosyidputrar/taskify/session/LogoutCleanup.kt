@@ -32,12 +32,19 @@ internal suspend fun runLogoutSteps(steps: List<LogoutStep>): List<String> {
 }
 
 /** Sisa akun di perangkat di luar database: notifikasi, kotak masuk Bagikan, PIN, widget. */
-class DeviceLeftovers(private val context: Context, private val shareInbox: ShareInbox, private val lock: LockManager) {
+class DeviceLeftovers(
+    private val context: Context,
+    private val shareInbox: ShareInbox,
+    private val lock: LockManager,
+    private val captureDraft: com.rosyidputrar.taskify.ui.capture.CaptureDraft? = null,
+) {
     suspend fun clear() {
         // Notifikasi pengingat yang masih tampil memuat judul tugas akun lama.
         NotificationManagerCompat.from(context).cancelAll()
         // Berkas/teks yang dibagikan ke Taskify tetapi belum diproses.
         shareInbox.clear()
+        // Draf sheet Tangkap yang belum disimpan.
+        captureDraft?.clear()
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()

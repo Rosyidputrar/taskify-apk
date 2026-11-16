@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import androidx.activity.compose.BackHandler
+import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
@@ -294,7 +296,18 @@ fun ConfigEditorScreen(fileId: String?, projectId: String?, contentPadding: Padd
     val state by vm.state.collectAsStateWithLifecycle()
     // Editor selalu menampilkan teks polos konfigurasi.
     SecureWindow()
-    ConfigEditorContent(state, vm, contentPadding, onBack, onSaved, onOpenSandi, backButton)
+    var confirmLeave by remember { mutableStateOf(false) }
+    val back = { if (state.dirty && !state.saving) confirmLeave = true else onBack() }
+    BackHandler(onBack = back)
+    ConfigEditorContent(state, vm, contentPadding, back, onSaved, onOpenSandi, backButton)
+    if (confirmLeave) {
+        DiscardChangesDialog(
+            if (state.isNew) "konfigurasi baru ini" else "\"${state.name}\"",
+            onSave = { confirmLeave = false; vm.save(onSaved) },
+            onDiscard = { confirmLeave = false; onBack() },
+            onDismiss = { confirmLeave = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

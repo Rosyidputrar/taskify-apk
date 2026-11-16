@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.ui.capture
 
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,7 +38,21 @@ class CaptureViewModel(
     private val journal: JournalRepository,
     private val notes: NoteRepository,
     private val finance: FinanceRepository,
+    private val draft: CaptureDraft? = null,
 ) : ViewModel() {
+
+    private val _error = MutableStateFlow<String?>(null)
+    /** Alasan simpan ditolak — ditampilkan DI DALAM sheet (snackbar shell tertutup sheet). */
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    fun clearError() { _error.value = null }
+
+    /** Teks draf terakhir (dipulihkan saat sheet dibuka lagi). */
+    val draftText: String get() = draft?.text.orEmpty()
+
+    fun keepDraft(text: String) { draft?.text = text }
+
+    fun discardDraft() { draft?.clear() }
 
     fun save(kind: CaptureKind, text: String, onSaved: () -> Unit) {
         if (text.isBlank()) return
@@ -51,13 +68,17 @@ class CaptureViewModel(
                 }
                 CaptureKind.Task -> saveTask(text, today)
                 CaptureKind.Transaction -> if (c.amount != null) saveTransaction(c) else {
-                    messenger.show("Sertakan nominal, mis. \"kopi 25rb\"")
+                    _error.value = "Sertakan nominal, mis. \"kopi 25rb\"."
                     false
                 }
                 CaptureKind.Journal -> extractTags(text).let { (body, t) -> saveJournal(body, t, today) }
                 CaptureKind.Note -> extractTags(text).let { (body, t) -> saveNote(body, t) }
             }
-            if (ok) onSaved()
+            if (ok) {
+                _error.value = null
+                draft?.clear()
+                onSaved()
+            }
         }
     }
 
@@ -75,7 +96,7 @@ class CaptureViewModel(
         val amount = c.amount ?: return false
         val wallet = finance.watchWallets(includeArchived = false).first().firstOrNull()
         if (wallet == null) {
-            messenger.show("Buat dompet dulu di Keuangan › Kelola")
+            _error.value = "Belum ada dompet. Buat dulu di Keuangan › Kelola."
             return false
         }
         val kind = if (c.type == CaptureType.Income) TxKind.Income else TxKind.Expense
@@ -87,7 +108,7 @@ class CaptureViewModel(
     }
 
     private suspend fun saveJournal(body: String, tagNames: List<String>, today: String): Boolean {
-        if (body.isBlank()) return false
+        if (body.isBlank()) return false.also { _error.value = "Isi jurnalnya masih kosong." }
         val id = journal.create(today, content = body)
         if (tagNames.isNotEmpty()) tags.addByName("journal_entry", id, tagNames)
         messenger.undoable("Masuk ke jurnal hari ini") { journal.remove(id) }
@@ -95,7 +116,7 @@ class CaptureViewModel(
     }
 
     private suspend fun saveNote(body: String, tagNames: List<String>): Boolean {
-        if (body.isBlank()) return false
+        if (body.isBlank()) return false.also { _error.value = "Isi catatannya masih kosong." }
         val id = notes.create(content = body)
         if (tagNames.isNotEmpty()) tags.addByName("note", id, tagNames)
         messenger.undoable("Catatan disimpan") { notes.remove(id) }

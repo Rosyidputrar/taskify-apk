@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import androidx.compose.runtime.remember
+import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -82,11 +84,21 @@ import org.koin.core.parameter.parametersOf
 fun TxEditorScreen(args: TxEditorArgs, onBack: () -> Unit) {
     val vm: TxEditorViewModel = koinViewModel(key = "tx-$args") { parametersOf(args) }
     val state by vm.state.collectAsStateWithLifecycle()
-    BackHandler(onBack = onBack)
+    var confirmLeave by remember { mutableStateOf(false) }
+    val back = { if (vm.dirty) confirmLeave = true else onBack() }
+    BackHandler(onBack = back)
+    if (confirmLeave) {
+        DiscardChangesDialog(
+            "transaksi ini",
+            onSave = { confirmLeave = false; vm.save(onBack) },
+            onDiscard = { confirmLeave = false; onBack() },
+            onDismiss = { confirmLeave = false },
+        )
+    }
     TxEditorContent(
         state, Dates.today(),
         object : TxEditorActions {
-            override fun back() = onBack()
+            override fun back() = back()
             override fun update(block: (TxDraft) -> TxDraft) = vm.update(block)
             override fun kind(kind: TxKind) = vm.setKind(kind)
             override fun add(delta: Long) = vm.addAmount(delta)
