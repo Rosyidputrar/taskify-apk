@@ -51,6 +51,8 @@ class DeviceLeftovers(
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()
+        // Shortcut launcher berisi judul catatan/jurnal/tugas akun lama.
+        com.rosyidputrar.taskify.widget.EntityShortcuts.clear(context)
         TodayWidget.refresh(context)
     }
 

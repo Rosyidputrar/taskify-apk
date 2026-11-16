@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.feature.links.LinksSection
 import com.rosyidputrar.taskify.core.domain.files.EntityType
@@ -62,6 +63,11 @@ import org.koin.core.parameter.parametersOf
 fun NoteEditorScreen(args: NoteEditorArgs, onBack: () -> Unit) {
     val vm: NoteEditorViewModel = koinViewModel(key = "note-editor-$args") { parametersOf(args) }
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // Item yang dibuka → shortcut launcher "terakhir dibuka" (aplikasi yang memutuskan boleh/tidak).
+    LaunchedEffect(ui.id, ui.loaded, ui.title) {
+        val id = ui.id
+        if (ui.loaded && id != null && !ui.trashed) com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.report("note", id, ui.title)
+    }
     val saveState by vm.saveState.collectAsStateWithLifecycle()
     val tags by vm.tagState.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.flush() }

@@ -134,6 +134,8 @@ class MainActivity : FragmentActivity() {
             com.rosyidputrar.taskify.widget.ModuleShortcuts.ACTION_OPEN_MODULE ->
                 com.rosyidputrar.taskify.widget.ModuleShortcuts.moduleOf(intent)?.let { AppEvents.send(AppEvent.OpenModule(it)) }
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
+            com.rosyidputrar.taskify.widget.EntityShortcuts.ACTION_OPEN_ENTITY ->
+                com.rosyidputrar.taskify.widget.EntityShortcuts.entityOf(intent)?.let { (type, id) -> AppEvents.send(AppEvent.OpenEntity(type, id)) }
         }
     }
 

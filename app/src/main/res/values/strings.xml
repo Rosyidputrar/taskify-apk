@@ -9,4 +9,6 @@
     <string name="shortcut_calendar_long">Buka Kalender</string>
     <string name="widget_today_label">Taskify · Hari ini</string>
     <string name="widget_today_description">Tugas hari ini &amp; terlambat, centang langsung, tombol Tangkap</string>
+    <string name="tile_capture_label">Tangkap</string>
+    <string name="tile_capture_subtitle">Taskify</string>
 </resources>

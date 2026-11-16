@@ -4,9 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
-import androidx.core.graphics.drawable.IconCompat
 import com.rosyidputrar.taskify.MainActivity
-import com.rosyidputrar.taskify.R
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 
 /**
@@ -27,7 +25,7 @@ object ModuleShortcuts {
             val info = ShortcutInfoCompat.Builder(context, "module-${module.name}")
                 .setShortLabel(module.label)
                 .setLongLabel("Buka ${module.label}")
-                .setIcon(IconCompat.createWithResource(context, R.drawable.ic_launcher_foreground))
+                .setIcon(ShortcutIcons.letter(module))
                 .setIntent(intent)
                 .setRank(1)
                 .build()

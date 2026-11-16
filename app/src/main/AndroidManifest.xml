@@ -78,5 +78,16 @@
                 <data android:pathPrefix="/unduh" />
             </intent-filter>
         </activity>
+        <!-- Tile Quick Settings "Tangkap". -->
+        <service
+            android:name=".widget.CaptureTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_capture"
+            android:label="@string/tile_capture_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

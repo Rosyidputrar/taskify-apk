@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.Surface
 import android.Manifest
@@ -101,6 +102,9 @@ fun TaskDetailSheet(taskId: String, today: String, onDismiss: () -> Unit) {
     val viewModel: TaskDetailViewModel = koinViewModel(key = "task-$taskId") { parametersOf(taskId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    LaunchedEffect(state.task?.id, state.task?.title) {
+        state.task?.takeIf { it.deletedAt == null }?.let { com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.report("task", it.id, it.title) }
+    }
     // Ketikan judul/catatan yang belum tersimpan ikut disimpan saat sheet ditutup dengan cara apa pun.
     val close = { viewModel.flushEdits(); onDismiss() }
     ModalBottomSheet(onDismissRequest = close, sheetState = sheet) {
