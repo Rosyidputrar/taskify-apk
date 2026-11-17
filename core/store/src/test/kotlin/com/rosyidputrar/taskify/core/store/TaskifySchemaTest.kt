@@ -36,6 +36,15 @@ class TaskifySchemaTest {
         "temp_files" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "deleted_at" to "TEXT", "file_name" to "TEXT", "mime_type" to "TEXT", "size_bytes" to "INTEGER", "storage_key" to "TEXT", "status" to "TEXT", "etag" to "TEXT", "share_token" to "TEXT", "is_public" to "INTEGER", "expires_at" to "TEXT", "download_count" to "INTEGER", "last_download_at" to "TEXT"),
         "upload_errors" to mapOf("op" to "TEXT", "table_name" to "TEXT", "row_id" to "TEXT", "payload" to "TEXT", "error_code" to "TEXT", "error_message" to "TEXT", "created_at" to "TEXT"),
         // Lokal saja (Mode Fokus) — bukan bagian schema.ts webapp.
+        "notif_log" to mapOf(
+            "package" to "TEXT", "app_label" to "TEXT", "n_key" to "TEXT", "conversation" to "TEXT", "title" to "TEXT", "text" to "TEXT",
+            "category" to "TEXT", "posted_ms" to "INTEGER", "day" to "TEXT", "hidden" to "INTEGER", "handled" to "TEXT", "money_amount" to "INTEGER",
+            "money_kind" to "TEXT", "money_party" to "TEXT", "money_source" to "TEXT", "draft" to "TEXT", "parcel_stage" to "TEXT", "parcel_ref" to "TEXT",
+        ),
+        "notif_daily" to mapOf("day" to "TEXT", "package" to "TEXT", "app_label" to "TEXT", "count" to "INTEGER"),
+        "usage_sessions" to mapOf("day" to "TEXT", "package" to "TEXT", "start_ms" to "INTEGER", "end_ms" to "INTEGER"),
+        "usage_daily" to mapOf("day" to "TEXT", "package" to "TEXT", "app_label" to "TEXT", "foreground_ms" to "INTEGER", "opens" to "INTEGER", "longest_ms" to "INTEGER"),
+        "device_daily" to mapOf("day" to "TEXT", "screen_ms" to "INTEGER", "unlocks" to "INTEGER", "first_pickup_ms" to "INTEGER"),
         "focus_sessions" to mapOf("task_id" to "TEXT", "task_title" to "TEXT", "day" to "TEXT", "started_at" to "TEXT", "ended_at" to "TEXT", "minutes" to "INTEGER"),
     )
 
@@ -50,6 +59,8 @@ class TaskifySchemaTest {
     @Test fun uploadErrorsIsLocalOnlyAndVaultTablesTrackOldEnc() {
         assertTrue(TaskifySchema.uploadErrors.options.localOnly)
         assertTrue(TaskifySchema.focusSessions.options.localOnly)
+        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily)
+            .forEach { assertTrue(it.options.localOnly, it.name) }
         listOf(TaskifySchema.pwItems, TaskifySchema.pwTotpLog, TaskifySchema.configVersions).forEach {
             assertEquals(listOf("enc"), it.options.trackPreviousValues?.columnFilter, it.name)
         }

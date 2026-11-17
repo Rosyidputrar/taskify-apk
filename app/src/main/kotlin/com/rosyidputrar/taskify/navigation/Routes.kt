@@ -67,6 +67,12 @@ import kotlinx.serialization.Serializable
 @Serializable data object ShareRoute
 
 /** Mode Fokus (Pomodoro); [taskId] = tugas yang disiapkan bila belum ada sesi berjalan. */
+/** Modul Notifikasi; [app] = saring satu aplikasi, [drafts] = langsung buka draf transaksi. */
+@Serializable data class NotificationsRoute(val app: String? = null, val drafts: Boolean = false)
+
+/** Modul Kesehatan Digital. */
+@Serializable data object WellbeingRoute
+
 @Serializable data class FocusRoute(val taskId: String? = null)
 
 @Serializable data object MusicRoute
@@ -95,5 +101,7 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Trash -> TrashRoute
     TaskifyModule.Music -> MusicRoute
     TaskifyModule.TikTok -> TikTokRoute()
+    TaskifyModule.Notifications -> NotificationsRoute()
+    TaskifyModule.Wellbeing -> WellbeingRoute
     else -> ModuleRoute(name)
 }

@@ -196,6 +196,31 @@ layanan isi otomatis*).
   kredensial hanya dititipkan di memori proses sampai brankas dibuka.
 - Jendela isi otomatis memakai `FLAG_SECURE` dan tidak muncul di Recents.
 
+### Notifikasi & Kesehatan Digital
+
+Dua modul yang membaca data perangkat. Datanya **hanya di HP ini** (tabel lokal, tidak pernah
+disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi data), dan terhapus saat Keluar.
+
+**Notifikasi** (izin *Akses notifikasi*; APK dari GitHub di Android 13+ perlu *Izinkan setelan terbatas* dulu)
+- Lini waktu per jam, ringkasan + grafik 24 jam, pita hari sesuai masa simpan (1–30 hari), saringan
+  kategori & "Perlu ditindak", per aplikasi, pencarian (juga di Spotlight).
+- Percakapan beruntun digabung; geser kanan = jadikan tugas (tenggat dibaca dari teks), geser kiri =
+  sembunyikan; detail: buka di aplikasi, jadikan tugas/catatan, catat transaksi, salin, kecualikan.
+- **Draf transaksi** dari notifikasi bank & e-wallet (BCA, Livin', BRImo, BNI, BSI, Jago, SeaBank, blu,
+  GoPay, OVO, DANA, ShopeePay, LinkAja, …): nominal, masuk/keluar, merchant, tebakan kategori; dompet
+  diingat per aplikasi. Tidak pernah tersimpan otomatis — juga muncul sebagai kartu di Keuangan.
+- **Paket**: status terakhir per resi dari marketplace & kurir.
+- Kode OTP disensor; tingkat penyimpanan Lengkap / Judul saja / Hitungan saja; notifikasi berjalan
+  diabaikan; spanduk + tips Autostart bila pencatat dimatikan sistem.
+
+**Kesehatan Digital** (izin *Akses penggunaan*; data ±7 hari terakhir langsung diimpor)
+- Waktu layar per hari & per aplikasi, berapa kali dibuka, buka kunci (+ jeda rata-rata), jam pertama
+  HP dipegang (vs biasanya), jumlah notifikasi.
+- *Sepanjang hari*: pita 24 jam aplikasi yang dipakai + titik notifikasi; ketuk jam untuk rinciannya.
+- Mode Minggu: batang bertumpuk per aplikasi + rata-rata; detail aplikasi: per jam, riwayat 7/30 hari,
+  daftar sesi. Jam pergantian hari bisa diatur (mis. 04.00); aplikasi bisa dikecualikan.
+- Disalin dari sistem tiap jam (WorkManager). Ubin di Beranda (Susun Beranda) & bagian di Review.
+
 ### Pengaturan
 
 Akun & nama tampilan, kunci PIN, verifikasi dua langkah (tambah authenticator cadangan, hapus —

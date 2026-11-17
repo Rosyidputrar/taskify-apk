@@ -80,6 +80,8 @@ fun FinanceScreen(
     onNewTx: (walletId: String?) -> Unit,
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
+    /** Konten tambahan di bawah kepala layar (mis. kartu draf transaksi dari Notifikasi). */
+    topSlot: @Composable () -> Unit = {},
     viewModel: FinanceViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -92,6 +94,7 @@ fun FinanceScreen(
     }
     FinanceContent(
         state, viewModel, contentPadding, onOpenTx, onNewTx, onBack, backButton,
+        topSlot = topSlot,
         onExport = {
             viewModel.exportCsv()?.let { (name, csv) ->
                 pendingCsv = csv
@@ -116,6 +119,7 @@ fun FinanceContent(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     onExport: () -> Unit = {},
+    topSlot: @Composable () -> Unit = {},
 ) {
     val haptics = rememberHaptics()
     @Suppress("NAME_SHADOWING")
@@ -138,6 +142,7 @@ fun FinanceContent(
                 },
             )
         }
+        item(key = "top-slot") { topSlot() }
         item(key = "hero") {
             if (state.loaded) BalanceHero(state, actions)
             else SkeletonCard(TaskifyModule.Finance, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), lines = 3, leadingDot = false)
