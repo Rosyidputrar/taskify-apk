@@ -1,6 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
-import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
+import com.rosyidputrar.taskify.core.innertube.utils.hasFullYouTubeLoginSession
 import java.net.URI
 
 /**
@@ -30,13 +30,21 @@ const val YOUTUBE_MUSIC_PACKAGE_NAME = "com.google.android.apps.youtube.music"
  * terakhir supaya cookie yang sama bisa ditangkap lagi — ini yang
  * dipanggil handler "Coba lagi" (PLAN §B.2/§D.1): tanpa reset, retry
  * sesudah login Google berhasil di WebView akan didiamkan selamanya.
+ *
+ * Syarat lengkap di sini adalah SESI PENUH ([hasFullYouTubeLoginSession],
+ * PLAN §C.2/§C.4): `LOGIN_INFO` + satu SID + `HSID` + `SSID` + satu
+ * APISID. Gate lama (`hasCompleteYouTubeLoginCookies`, hanya `LOGIN_INFO`
+ * + satu PAPISID) TERLALU LEMAH: tes HP 18 Nov 01:54 membuktikan sesi
+ * parsial itu ditolak server (`"logged_in":"0"` di `account_menu`)
+ * padahal WebView login berhasil, jadi sesi parsial TIDAK BOLEH lagi
+ * diteruskan ke verifikasi.
  */
 class LoginCookieCaptureGate {
     private var lastCapturedCookie: String? = null
 
-    /** true bila cookie lengkap dan belum pernah ditangkap sejak reset terakhir; mencatatnya. */
+    /** true bila cookie berisi sesi penuh dan belum pernah ditangkap sejak reset terakhir; mencatatnya. */
     fun shouldCapture(cookie: String?): Boolean {
-        if (!hasCompleteYouTubeLoginCookies(cookie)) return false
+        if (!hasFullYouTubeLoginSession(cookie)) return false
         if (cookie == lastCapturedCookie) return false
         lastCapturedCookie = cookie
         return true

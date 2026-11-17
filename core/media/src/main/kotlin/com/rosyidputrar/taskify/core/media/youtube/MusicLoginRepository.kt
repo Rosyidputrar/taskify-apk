@@ -5,7 +5,9 @@ import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
 import com.rosyidputrar.taskify.core.innertube.UnrecognizedAccountResponseException
 import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.utils.cookieNames
 import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
+import com.rosyidputrar.taskify.core.innertube.utils.hasFullYouTubeLoginSession
 import com.rosyidputrar.taskify.core.innertube.utils.hasYouTubeLoginCookie
 import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
@@ -100,7 +102,13 @@ open class MusicLoginRepository(
      * Selesaikan login dari cookie hasil WebView.
      *
      * 1. Normalisasi cookie; gagal bila cookie login tidak lengkap →
-     *    [MusicLoginError.IncompleteCookies].
+     *    [MusicLoginError.IncompleteCookies]. Gate lama
+     *    (`hasYouTubeLoginCookie` / `hasCompleteYouTubeLoginCookies`)
+     *    dipertahankan, lalu pertahanan kedua: sesi harus PENUH
+     *    ([hasFullYouTubeLoginSession] — LOGIN_INFO + satu SID + HSID +
+     *    SSID + satu APISID); sesi parsial ditolak di sini dengan
+     *    rawDetail `"cookie: <nama, dipisah koma>"` (nama saja, tanpa
+     *    nilai) dan TIDAK PERNAH mencapai `youTube.accountInfo()`.
      * 2. Terapkan state awal dengan `dataSyncId = null`, lalu verifikasi akun
      *    lewat `youTube.accountInfo()`; gagal → klasifikasi
      *    [classifyVerificationFailure] ([MusicLoginError.Network] /
@@ -127,6 +135,24 @@ open class MusicLoginRepository(
         if (!hasYouTubeLoginCookie(normalizedCookie) || !hasCompleteYouTubeLoginCookies(normalizedCookie)) {
             Log.w(TAG, "completeLogin: cookie tidak lengkap kind=IncompleteCookies parseNull=false")
             return Result.failure(MusicLoginException(MusicLoginError.IncompleteCookies))
+        }
+        // Pertahanan kedua (PLAN §C.3 butir 1): sesi parsial yang lolos
+        // gate lama (LOGIN_INFO + satu PAPISID) DITOLAK di sini, sebelum
+        // `accountInfo()` — tes HP 18 Nov 01:54 membuktikan server tidak
+        // mengenali sesi seperti itu (`"logged_in":"0"` di `account_menu`)
+        // padahal WebView login berhasil. rawDetail hanya berisi NAMA
+        // cookie (dari `cookieNames`), tanpa nilai.
+        val names = cookieNames(normalizedCookie)
+        if (!hasFullYouTubeLoginSession(normalizedCookie)) {
+            val detail = "cookie: ${names.joinToString(", ")}"
+            logFailure(
+                "completeLogin",
+                MusicLoginError.IncompleteCookies,
+                null,
+                rawDetail = detail,
+                cookies = names,
+            )
+            return Result.failure(MusicLoginException(MusicLoginError.IncompleteCookies, detail))
         }
 
         val initial = PlaybackAuthState(
@@ -159,20 +185,20 @@ open class MusicLoginRepository(
                         return@getOrElse selected.info
                     }
                 }
-                val rawDetail = rawDetailForVerification(error, cause)
-                logFailure("verifikasi", error, cause, rawDetail = rawDetail)
+                val rawDetail = rawDetailForVerification(error, cause, names)
+                logFailure("verifikasi", error, cause, rawDetail = rawDetail, cookies = names)
                 return Result.failure(MusicLoginException(error, rawDetail))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             val error = MusicLoginError.Network
-            logFailure("verifikasi", error, e)
+            logFailure("verifikasi", error, e, cookies = names)
             return Result.failure(MusicLoginException(error))
         } catch (e: Exception) {
             val error = classifyVerificationFailure(e)
-            val rawDetail = rawDetailForVerification(error, e)
-            logFailure("verifikasi", error, e, rawDetail = rawDetail)
+            val rawDetail = rawDetailForVerification(error, e, names)
+            logFailure("verifikasi", error, e, rawDetail = rawDetail, cookies = names)
             return Result.failure(MusicLoginException(error, rawDetail))
         }
 
@@ -193,7 +219,7 @@ open class MusicLoginRepository(
                 // sukses tapi tidak berisi dataSyncId (parse null).
                 val error = dataSyncIdFailure?.let(::classifyVerificationFailure)
                     ?: MusicLoginError.UnrecognizedResponse
-                logFailure("dataSyncId", error, dataSyncIdFailure, dataSyncIdFailure == null)
+                logFailure("dataSyncId", error, dataSyncIdFailure, dataSyncIdFailure == null, cookies = names)
                 return Result.failure(MusicLoginException(MusicLoginError.MissingDataSyncId))
             }
 
@@ -298,14 +324,31 @@ private fun isParseNull(cause: Throwable?): Boolean =
  * - [MusicLoginError.HttpRejected] → `"HTTP $status"`.
  * - [MusicLoginError.UnrecognizedResponse] → cuplikan dari
  *   `UnrecognizedAccountResponseException.rawSnippet` (Agen A), di-scrub
- *   sekali lagi secara defensif di sini.
+ *   sekali lagi secara defensif di sini, DITAMBAH baris akhir
+ *   `"cookie: <nama, dipisah koma>"` (PLAN §C.3 butir 2). Bila tidak ada
+ *   cuplikan, rawDetail menjadi baris cookie saja. [names] HANYA berisi
+ *   nama cookie (dari `cookieNames`), tanpa nilai — baris ini ditambah
+ *   SETELAH scrub, jadi tidak pernah melewati scrub kedua yang beda gaya.
  * - Lainnya → null (jangan karang).
  */
-private fun rawDetailForVerification(error: MusicLoginError, cause: Throwable?): String? =
+private fun rawDetailForVerification(
+    error: MusicLoginError,
+    cause: Throwable?,
+    names: List<String> = emptyList(),
+): String? =
     when (error) {
         is MusicLoginError.HttpRejected -> "HTTP ${error.status}"
-        is MusicLoginError.UnrecognizedResponse ->
-            rawSnippetFrom(cause)?.let(::scrubRawDetail)?.takeIf { it.isNotEmpty() }
+        is MusicLoginError.UnrecognizedResponse -> {
+            val snippet = rawSnippetFrom(cause)?.let(::scrubRawDetail)?.takeIf { it.isNotEmpty() }
+            val cookieLine = names.takeIf { it.isNotEmpty() }
+                ?.let { "cookie: ${it.joinToString(", ")}" }
+            when {
+                snippet != null && cookieLine != null -> "$snippet\n$cookieLine"
+                snippet != null -> snippet
+                cookieLine != null -> cookieLine
+                else -> null
+            }
+        }
         else -> null
     }
 
@@ -352,11 +395,11 @@ internal fun scrubRawDetail(raw: String?): String {
 
 /**
  * Satu baris log diagnostik per kegagalan `completeLogin` (kontrak PLAN
- * D.3). Hanya jenis + status HTTP + flag parse-null + [rawDetail] bila
- * ada; TIDAK PERNAH nilai cookie, SAPISID, token, visitorData,
- * dataSyncId, nama/email akun, atau badan respons. [rawDetail] yang
- * di-log adalah persis yang ditampilkan ke user (sudah scrub), bukan
- * lebih dari itu.
+ * D.3). Hanya jenis + status HTTP + flag parse-null + daftar NAMA cookie
+ * + [rawDetail] bila ada; TIDAK PERNAH nilai cookie, SAPISID, token,
+ * visitorData, dataSyncId, nama/email akun, atau badan respons. [cookies]
+ * berisi nama saja (dari `cookieNames`); [rawDetail] yang di-log adalah
+ * persis yang ditampilkan ke user (sudah scrub), bukan lebih dari itu.
  */
 private fun logFailure(
     step: String,
@@ -364,12 +407,14 @@ private fun logFailure(
     cause: Throwable?,
     parseNull: Boolean = isParseNull(cause),
     rawDetail: String? = null,
+    cookies: List<String> = emptyList(),
 ) {
     val status = (error as? MusicLoginError.HttpRejected)?.status
     val statusPart = if (status != null) " status=$status" else ""
+    val cookiesPart = if (cookies.isNotEmpty()) " cookies=[${cookies.joinToString(", ")}]" else ""
     val rawPart = if (rawDetail != null) " rawDetail=$rawDetail" else ""
     Log.w(
         TAG,
-        "completeLogin: $step gagal kind=${error::class.simpleName}$statusPart parseNull=$parseNull$rawPart",
+        "completeLogin: $step gagal kind=${error::class.simpleName}$statusPart parseNull=$parseNull$cookiesPart$rawPart",
     )
 }

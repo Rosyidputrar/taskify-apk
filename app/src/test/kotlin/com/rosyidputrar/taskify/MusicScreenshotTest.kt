@@ -205,12 +205,15 @@ class MusicScreenshotTest {
     }
 
     // Teks mentah error tampil langsung di bawah pesan ramah (perintah sir):
-    // golden baru, fixture error lama tidak diubah.
+    // golden baru, fixture error lama tidak diubah. Baris "cookie: ..."
+    // di akhir rawDetail adalah format baru PLAN §C.3 butir 2 (Agen B):
+    // nama cookie sesi penuh, tanpa nilai — satu-satunya perbedaan dari
+    // golden sebelumnya, diverifikasi visual sebelum rekam ulang.
     @Test fun loginErrorRaw() = shot("music_login_error_raw_light", false) {
         MusicLoginStateContent(
             MusicLoginScreenState.Error(
                 MusicLoginError.UnrecognizedResponse.message,
-                rawDetail = "HTTP 200\n{\"accountMenu\":{\"items\":[]},\"responseContext\":{\"serviceTrackingParams\":[]}}",
+                rawDetail = "HTTP 200\n{\"accountMenu\":{\"items\":[]},\"responseContext\":{\"serviceTrackingParams\":[]}}\ncookie: HSID, LOGIN_INFO, SAPISID, SID, SSID",
             ),
             onRetry = {},
         )
