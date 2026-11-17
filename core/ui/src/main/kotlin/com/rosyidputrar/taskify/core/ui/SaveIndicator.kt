@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.core.ui
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,7 +34,8 @@ import com.rosyidputrar.taskify.core.domain.editor.SaveState
 @Composable
 fun SaveIndicator(state: SaveState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    AnimatedContent(state, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "save", modifier = modifier) { s ->
+    // "Menyimpan…" → "Tersimpan": label lama hilang dulu, tidak bertumpuk dengan yang baru.
+    AnimatedContent(state, transitionSpec = { TaskifyMotion.fadeThroughIn() togetherWith TaskifyMotion.fadeThroughOut() }, label = "save", modifier = modifier) { s ->
         val (icon, text) = when (s) {
             SaveState.Idle -> Icons.Outlined.EditNote to "Draf"
             SaveState.Pending -> Icons.Outlined.EditNote to "Mengetik…"

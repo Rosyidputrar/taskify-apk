@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.gate
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,7 +38,8 @@ fun GateHost(
     AnimatedContent(
         targetState = gate,
         contentKey = { if (it is GateUi.Open) "open" else it::class.simpleName },
-        transitionSpec = { fadeIn() togetherWith fadeOut() },
+        // Kunci ↔ aplikasi: "fade through" supaya layar kunci dan isi tidak tampil bertumpuk.
+        transitionSpec = { TaskifyMotion.fadeThroughIn() togetherWith TaskifyMotion.fadeThroughOut() },
         label = "gate",
     ) { target ->
         if (target is GateUi.Open) {

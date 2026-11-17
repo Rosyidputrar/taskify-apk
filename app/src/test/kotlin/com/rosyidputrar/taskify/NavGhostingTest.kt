@@ -126,4 +126,50 @@ class NavGhostingTest {
         assertTrue(left.blue < 0.5f, "sisi kiri saat back ditahan harus sudah menampakkan Ruang: ${Integer.toHexString(left.toArgb())}")
         compose.runOnIdle { back.dispatchOnBackCancelled() }
     }
+
+    /**
+     * Tab dok (Hari Ini → Ruang) dan editor layar penuh memakai "fade through": di frame mana pun,
+     * isi dua layar tidak boleh tampil bersamaan (dulu keduanya memudar bersamaan → bertumpuk).
+     */
+    private fun assertNeverStacked(go: (NavHostController) -> Unit) {
+        val bottom = Color(1f, 0f, 0f)
+        val top = Color(0f, 1f, 0f)
+        compose.setContent {
+            TaskifyTheme {
+                background = MaterialTheme.colorScheme.background
+                val controller = rememberNavController().also { nav.value = it }
+                NavHost(
+                    controller, com.rosyidputrar.taskify.navigation.HomeRoute, Modifier.fillMaxSize().testTag("host"),
+                    enterTransition = { enter(null) }, exitTransition = { exit(null) },
+                    popEnterTransition = { popEnter(null) }, popExitTransition = { popExit(null) },
+                    predictivePopEnterTransition = { popEnter(null) }, predictivePopExitTransition = { popExit(null) },
+                ) {
+                    composable<com.rosyidputrar.taskify.navigation.HomeRoute> { Screen { Box(Modifier.fillMaxSize().background(bottom)) } }
+                    composable<com.rosyidputrar.taskify.navigation.RoomRoute> { Screen { Box(Modifier.fillMaxSize().background(top)) } }
+                    composable<com.rosyidputrar.taskify.navigation.NoteEditRoute> { Screen { Box(Modifier.fillMaxSize().background(top)) } }
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { go(nav.value!!) }
+        val bg = background
+        var sawTop = false
+        repeat(24) { frame ->
+            compose.mainClock.advanceTimeBy(16)
+            val c = pixelAt(0.5f, 0.5f)
+            // c = a·merah + b·hijau + k·latar → k dari kanal biru (merah & hijau tak punya biru).
+            val k = (c.blue / bg.blue).coerceIn(0f, 1f)
+            val a = (c.red - k * bg.red).coerceAtLeast(0f)
+            val b = (c.green - k * bg.green).coerceAtLeast(0f)
+            if (b > 0.5f) sawTop = true
+            assertTrue(minOf(a, b) < 0.06f, "frame ${frame * 16} ms: dua layar bertumpuk (merah ${"%.2f".format(a)}, hijau ${"%.2f".format(b)})")
+        }
+        compose.mainClock.autoAdvance = true
+        assertTrue(sawTop, "layar tujuan harus sudah tampil")
+    }
+
+    @Test fun dockTabSwitchNeverStacksScreens() = assertNeverStacked { it.navigate(com.rosyidputrar.taskify.navigation.RoomRoute) }
+
+    @Test fun fullScreenEditorNeverStacksScreens() = assertNeverStacked { it.navigate(com.rosyidputrar.taskify.navigation.NoteEditRoute()) }
 }

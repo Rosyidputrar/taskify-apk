@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import androidx.compose.animation.core.animateDpAsState
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.runtime.CompositionLocalProvider
@@ -313,9 +315,11 @@ fun TaskifyApp(
         val imeVisible = WindowInsets.isImeVisible
         val showMini = musicActive && !immersive && !onMusic && !imeVisible
         // Ruang di bawah konten supaya item terakhir tidak tertutup dok mengambang.
+        // Ruang bilah mini ikut beranimasi supaya isi layar tidak melompat 68dp saat musik mulai/berhenti.
+        val miniSpace by animateDpAsState(if (showMini) 68.dp else 0.dp, TaskifyMotion.screenDpSpec, label = "mini-space")
         val contentPadding = PaddingValues(
             top = statusTop,
-            bottom = if (imeVisible) 16.dp else navBottom + (if (expanded) 24.dp else 112.dp) + if (showMini) 68.dp else 0.dp,
+            bottom = if (imeVisible) 16.dp else navBottom + (if (expanded) 24.dp else 112.dp) + miniSpace,
         )
 
         val host: @Composable (Modifier) -> Unit = { modifier ->
@@ -352,8 +356,8 @@ fun TaskifyApp(
         }
         AnimatedVisibility(
             visible = !expanded && !immersive && !imeVisible,
-            enter = fadeIn(tween(160)) + slideInVertically(tween(200)) { it / 2 },
-            exit = fadeOut(tween(100)),
+            enter = TaskifyMotion.chromeEnter,
+            exit = TaskifyMotion.chromeExit,
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             val modules = TaskifyTheme.modules
@@ -385,15 +389,18 @@ fun TaskifyApp(
             )
         }
 
-        if (showMini) {
-            MiniPlayer(
-                onOpen = { navController.navigate(MusicRoute()) { launchSingleTop = true } },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = if (expanded) 16.dp else 92.dp, start = 16.dp, end = 16.dp)
-                    .widthIn(max = 560.dp),
-            )
+        // Bilah mini naik/turun dengan gerak yang sama dengan dok (tidak muncul/hilang mendadak).
+        AnimatedVisibility(
+            visible = showMini,
+            enter = TaskifyMotion.chromeEnter,
+            exit = TaskifyMotion.chromeExit,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (expanded) 16.dp else 92.dp, start = 16.dp, end = 16.dp)
+                .widthIn(max = 560.dp),
+        ) {
+            MiniPlayer(onOpen = { navController.navigate(MusicRoute()) { launchSingleTop = true } })
         }
 
         val snackbar = remember { SnackbarHostState() }
@@ -775,27 +782,28 @@ internal fun AnimatedVisibilityScope.Screen(content: @Composable () -> Unit) {
  * (paralaks 1/3). Layar teratas selalu buram penuh; hanya layar di bawahnya yang meredup.
  */
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(pinned: TaskifyModule?): EnterTransition = when {
-    targetState.destination.isFullScreenEditor() -> fadeIn(Motion.screenFloat) + scaleIn(Motion.screenFloat, 0.96f)
-    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeIn(Motion.screenFloat) + scaleIn(Motion.screenFloat, 0.985f)
+    // Editor & tab dok: "fade through" — layar lama hilang dulu, baru yang baru muncul (tanpa tumpuk).
+    targetState.destination.isFullScreenEditor() -> TaskifyMotion.fadeThroughIn(0.96f)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> TaskifyMotion.fadeThroughIn(0.985f)
     // Layar baru di ATAS & buram penuh (tanpa fade) supaya layar di bawahnya tidak tembus.
     else -> slideInHorizontally(Motion.screenOffset) { it }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(pinned: TaskifyModule?): ExitTransition = when {
-    targetState.destination.isFullScreenEditor() -> fadeOut(Motion.screenFloat)
-    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeOut(Motion.screenFloat)
+    targetState.destination.isFullScreenEditor() -> TaskifyMotion.fadeThroughOut()
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> TaskifyMotion.fadeThroughOut()
     else -> slideOutHorizontally(Motion.screenOffset) { -it / 3 } + fadeOut(Motion.screenFloat, 0.4f)
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(pinned: TaskifyModule?): EnterTransition = when {
-    initialState.destination.isFullScreenEditor() -> fadeIn(Motion.screenFloat)
-    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeIn(Motion.screenFloat)
+    initialState.destination.isFullScreenEditor() -> TaskifyMotion.fadeThroughIn()
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> TaskifyMotion.fadeThroughIn(0.985f)
     else -> slideInHorizontally(Motion.screenOffset) { -it / 3 } + fadeIn(Motion.screenFloat, 0.4f)
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(pinned: TaskifyModule?): ExitTransition = when {
-    initialState.destination.isFullScreenEditor() -> fadeOut(Motion.screenFloat) + scaleOut(Motion.screenFloat, 0.96f)
-    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> fadeOut(Motion.screenFloat)
+    initialState.destination.isFullScreenEditor() -> TaskifyMotion.fadeThroughOut(0.96f)
+    initialState.isTopLevel(pinned) && targetState.isTopLevel(pinned) -> TaskifyMotion.fadeThroughOut()
     // Saat kembali, layar yang ditutup tetap di ATAS (zIndex NavHost) — geser keluar tanpa fade,
     // jadi tidak ada "hantu" Keuangan di balik Ruang.
     else -> slideOutHorizontally(Motion.screenOffset) { it }

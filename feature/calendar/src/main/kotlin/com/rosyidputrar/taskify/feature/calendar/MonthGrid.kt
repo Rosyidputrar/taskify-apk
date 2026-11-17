@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.calendar
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -90,9 +91,12 @@ fun MonthGrid(
     val threshold = with(LocalDensity.current) { 64.dp.toPx() }
     AnimatedContent(
         targetState = month to grid,
+        // Hanya ganti BULAN yang menggeser; data bulan yang sama diperbarui tanpa animasi.
+        contentKey = { it.first },
         transitionSpec = {
             val forward = targetState.first > initialState.first
-            (slideInHorizontally { if (forward) it else -it }) togetherWith (slideOutHorizontally { if (forward) -it else it })
+            (slideInHorizontally(TaskifyMotion.screenOffset) { if (forward) it else -it }) togetherWith
+                (slideOutHorizontally(TaskifyMotion.screenOffset) { if (forward) -it else it })
         },
         label = "month",
         modifier = modifier.pointerInput(Unit) {

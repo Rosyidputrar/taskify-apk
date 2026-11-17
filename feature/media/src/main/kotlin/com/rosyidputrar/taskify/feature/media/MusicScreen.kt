@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.spring
@@ -144,8 +145,8 @@ private data class MusicFrame(val page: BrowsePage?, val depth: Int)
  * paralaks 1/3), supaya membuka album/artis terasa sama dengan membuka layar lain.
  */
 private object MusicMotion {
-    val offset = spring(dampingRatio = 0.95f, stiffness = 420f, visibilityThreshold = IntOffset(1, 1))
-    val float = spring<Float>(dampingRatio = 1f, stiffness = 420f)
+    val offset get() = TaskifyMotion.screenOffset
+    val float get() = TaskifyMotion.screenFloat
 }
 
 @Composable
@@ -492,8 +493,12 @@ private fun SyncedLyrics(state: MusicUiState, actions: MusicActions) {
 fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val vm: MusicViewModel = koinViewModel(key = "mini-player")
     val state by vm.state.collectAsStateWithLifecycle()
-    if (state.player.status == YtStatus.Idle) return
-    MiniPlayerBar(state, vm, onOpen, modifier)
+    // Simpan keadaan terakhir yang aktif: saat musik dihentikan, bilah tetap berisi lagu terakhir
+    // selama animasi turunnya (bukan kosong mendadak).
+    var last by remember { mutableStateOf<MusicUiState?>(null) }
+    if (state.player.status != YtStatus.Idle) last = state
+    val shown = last ?: return
+    MiniPlayerBar(shown, vm, onOpen, modifier)
 }
 
 @Composable

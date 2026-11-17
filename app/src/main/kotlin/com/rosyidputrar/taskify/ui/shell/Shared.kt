@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.shell
 
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.SharedTransitionScope
@@ -38,11 +39,8 @@ fun Modifier.sharedBounds(key: String?): Modifier = composed {
     }
 }
 
-/** Spesifikasi gerak transisi layar (sama dengan Animeru). */
+/** Spesifikasi gerak transisi layar — satu sumber di [TaskifyMotion] (dipakai juga modul fitur). */
 object Motion {
-    /** Geser layar: pegas hampir tanpa pantulan. */
-    val screenOffset: FiniteAnimationSpec<IntOffset> = spring(dampingRatio = 0.95f, stiffness = 420f, visibilityThreshold = IntOffset(1, 1))
-
-    /** Pudar & skala layar. */
-    val screenFloat: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 420f)
+    val screenOffset: FiniteAnimationSpec<IntOffset> get() = TaskifyMotion.screenOffset
+    val screenFloat: FiniteAnimationSpec<Float> get() = TaskifyMotion.screenFloat
 }
