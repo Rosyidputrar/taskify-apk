@@ -79,6 +79,21 @@ data class GetSearchSuggestionsBody(
 )
 
 /**
+ * Badan `account/account_menu` dan `account/accounts_list` — hanya `context`
+ * (PLAN C.2, pola `BrowseBody`). Identitas akun dibaca dari respons mentah
+ * oleh `pages/AccountMenuParser`.
+ */
+@Serializable
+data class AccountMenuBody(
+    val context: Context,
+)
+
+@Serializable
+data class AccountsListBody(
+    val context: Context,
+)
+
+/**
  * Badan `get_transcript` — diadaptasi dari ArchiveTune
  * `innertube/models/body/GetTranscriptBody.kt` (GPL-3.0; lihat
  * `licenses/ARCHIVETUNE.md`). `params` = base64 dari `"\n\x0b<videoId>"`.

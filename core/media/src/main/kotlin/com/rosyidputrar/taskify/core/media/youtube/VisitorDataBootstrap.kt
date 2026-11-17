@@ -43,7 +43,11 @@ class VisitorDataBootstrap(
             val fetched = withTimeoutOrNull(timeoutMs) {
                 youTube.visitorData().getOrNull()
             }?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-            val state = PlaybackAuthState(visitorData = fetched).normalized()
+            // MERGE (Tahap 3): gabungkan visitorData baru ke state tersimpan —
+            // cookie/dataSyncId/akun yang sudah login TIDAK BOLEH hilang hanya
+            // karena visitorData belum ada. Menyimpan state baru yang hanya
+            // berisi visitorData akan menghapus sesi login.
+            val state = stored.copy(visitorData = fetched).normalized()
             authStore.saveAuthState(state)
             youTube.applyAuthState(state)
             return state.visitorData

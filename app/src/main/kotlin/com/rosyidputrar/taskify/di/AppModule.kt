@@ -48,6 +48,7 @@ import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
 import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
@@ -191,11 +192,13 @@ private val deviceModule = module {
         YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
     }
     single {
-        MusicPlayer(androidContext(), get()).also { player ->
+        MusicPlayer(androidContext(), get(), loginEvents = get<MusicLoginRepository>()).also { player ->
             // Pesan pemutar (lewati sponsor, pewaktu tidur) tampil sebagai snackbar aplikasi, sekali saja.
             get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }
         }
     }
+    // Musik login (PLAN C.5/C.6): repo login + hook kedaluwarsa pemutar.
+    single { MusicLoginRepository(get(), get()) }
     // Musik direct (Tahap 5): auth anonim — visitorData tersimpan di
     // SharedPreferences "youtube_auth", di-bootstrap sekali saat start dari
     // TaskifyApplication. Login/PoToken belum ada (follow-up, PLAN G.10).

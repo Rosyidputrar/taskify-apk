@@ -14,11 +14,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -67,6 +69,20 @@ fun MusicSettingsContent(state: MusicUiState, actions: MusicActions) {
     val s = state.settings
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Pengaturan musik", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
+        // Seksi AKUN paling atas (kontrak PLAN C.9).
+        Text("AKUN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+        when (val login = state.login) {
+            is MusicLoginUiState.LoggedIn -> {
+                Text(login.account.name, style = MaterialTheme.typography.bodyLarge)
+                login.account.email?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                login.account.channelHandle?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                OutlinedButton(onClick = actions::logout, modifier = Modifier.padding(top = 8.dp)) { Text("Keluar") }
+            }
+            else -> {
+                Text("Belum masuk", style = MaterialTheme.typography.bodyLarge)
+                Button(onClick = actions::openLogin, modifier = Modifier.padding(top = 8.dp)) { Text("Masuk dengan Google") }
+            }
+        }
         Text("KUALITAS AUDIO", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
         MusicQuality.entries.forEach { q ->
             Row(Modifier.fillMaxWidth().selectable(s.quality == q, role = Role.RadioButton) { actions.setQuality(q) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
