@@ -26,12 +26,21 @@ import com.rosyidputrar.taskify.core.domain.media.TrackDetails
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
+import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
+import com.rosyidputrar.taskify.core.media.youtube.DirectStream
+import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
+import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
+import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,16 +54,30 @@ fun Track.toDetails() = TrackDetails(lyricsId, upNext, loudnessDb, lyrics, lyric
 
 /**
  * Pemutar musik tunggal untuk seluruh aplikasi (padanan `useMusicPlayer` + `music-store`).
- * Keadaan antrean = [MusicQueue.reduce]; efek samping (resolve audio lewat now-playing, prefetch
- * lagu berikut, lanjutan radio, SponsorBlock, arsip R2) dijalankan di sini. ExoPlayer hidup di
+ * Keadaan antrean = [MusicQueue.reduce]; efek samping (resolve audio direct, prefetch
+ * lagu berikut, lanjutan radio, SponsorBlock) dijalankan di sini. ExoPlayer hidup di
  * thread utama dan dibungkus [MusicService] (MediaSession) supaya musik tetap berbunyi di latar.
+ *
+ * Sumber data direct (rewrite, Tahap 6): katalog + `track()` lewat fasad [YouTube],
+ * stream audio lewat [DirectStreamResolver], SponsorBlock lewat [SponsorBlockRepository].
+ * Tidak ada lagi panggilan ke Worker dari pemutar ini.
+ *
+ * Auth (gap Tahap 5): [DirectStreamResolver] punya instance `InnerTube` sendiri yang
+ * tidak disinkronkan bootstrap — karena itu SETIAP panggilan ke `youTube`/`streamResolver`
+ * meneruskan [authState] eksplisit dari [YouTubeAuthStore] (dibaca segar dari
+ * SharedPreferences `"youtube_auth"`), bukan mengandalkan state internal transport.
+ * Instance tidak disatukan di sini supaya DI Tahap 7 bebas memilih bentuknya;
+ * explicit passing tetap benar apa pun bentuk DI-nya.
  *
  * Antrean disimpan ke [MusicPrefs] tiap kali berubah dan dipulihkan (dalam keadaan jeda) saat
  * proses dibuat ulang; URL tidak ikut disimpan.
  */
 class MusicPlayer(
     private val context: Context,
-    private val client: MusicClient,
+    private val youTube: YouTube = YouTube(),
+    private val streamResolver: DirectStreamResolver = DirectStreamResolver(),
+    private val sponsorBlock: SponsorBlockRepository = SponsorBlockRepository(),
+    private val authStore: YouTubeAuthStore = YouTubeAuthStore(context),
     private val prefs: MusicPrefs = MusicPrefs(context),
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -71,8 +94,6 @@ class MusicPlayer(
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
-    val configured: Boolean get() = client.configured
-
     private var resolveJob: Job? = null
     private var resolving: String? = null
     private var tickJob: Job? = null
@@ -83,7 +104,6 @@ class MusicPlayer(
     private val prefetchJobs = mutableMapOf<String, Job>()
     private val sponsor = mutableMapOf<String, List<SponsorSegment>>()
     private val sponsorPending = mutableSetOf<String>()
-    private val archiving = mutableSetOf<String>()
     /** Posisi lanjut untuk antrean yang dipulihkan (hanya bila audionya bisa di-seek). */
     private var resumeId: String? = null
     private var resumeMs: Long = 0
@@ -116,8 +136,8 @@ class MusicPlayer(
             val song = _state.value.current ?: return
             loadedId = null
             loadedUrl = null
-            Log.w(MusicClient.TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName}")
-            // Direct (opus/webm) gagal → otomatis coba konverter MP3 sekali; selain itu galat.
+            Log.w(TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName}")
+            // Direct gagal → langsung galat (tidak ada lagi fallback konverter).
             dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi."))
         }
     }
@@ -165,8 +185,7 @@ class MusicPlayer(
     fun toggleAutoContinue() = dispatch(YtEvent.ToggleAutoContinue)
 
     /**
-     * Seek hanya bila audionya mendukung `Range` (direct/R2). URL konverter tidak bisa di-seek;
-     * bila sementara itu arsip R2 sudah siap, media dimuat ulang dari R2 di posisi tujuan.
+     * Seek hanya bila audionya mendukung `Range` (direct). Siaran langsung tidak bisa di-seek.
      */
     fun seekTo(ms: Long): Boolean {
         val s = _state.value
@@ -231,7 +250,7 @@ class MusicPlayer(
         if (_state.value.status == YtStatus.Playing) startTicker()
     }
 
-    suspend fun lyrics(lyricsId: String): String = client.lyrics(lyricsId)
+    suspend fun lyrics(lyricsId: String): String = youTube.lyrics(lyricsId, authState()).getOrThrow()
 
     // ------------------------------------------------------------------ efek
 
@@ -283,37 +302,76 @@ class MusicPlayer(
         }
     }
 
-    private fun options(videoId: String): StreamOptions {
-        val fallback = videoId in _state.value.fallbacks
-        return StreamOptions(_settings.value.quality, forceConverter = _settings.value.forceMp3 || fallback, force = fallback)
+    /**
+     * State auth tersimpan, dibaca segar tiap panggilan (lihat dok kelas: gap Tahap 5).
+     * `visitorData` hasil bootstrap ikut di sini; tanpa login/cookie/PoToken di tahap ini.
+     */
+    private fun authState(): PlaybackAuthState = authStore.loadAuthState()
+
+    /** [DirectStream] → [StreamSource] domain; `expiresInSeconds` jadi epoch ms. */
+    private fun DirectStream.toStreamSource(): StreamSource = StreamSource(
+        StreamSource.SOURCE_DIRECT, mimeType, itag,
+        expiresAt = expiresInSeconds?.let { now() + it * 1000L },
+        loudnessDb = loudnessDb,
+    )
+
+    /** Pesan galat yang jelas untuk tiap kegagalan resolve (PLAN G.4): bukan retry tanpa akhir. */
+    private fun streamErrorMessage(failure: StreamFailure): String = when (failure) {
+        is StreamFailure.LoginRequired -> "Audio tidak bisa dimuat dari YouTube (login diperlukan)."
+        is StreamFailure.Unplayable -> "Audio tidak bisa dimuat dari YouTube."
+        StreamFailure.NoFormat -> "Audio tidak bisa dimuat dari YouTube (format tidak tersedia)."
+        is StreamFailure.Http -> if (failure.status == 429) "YouTube membatasi permintaan, coba lagi sebentar lagi."
+            else "Audio tidak bisa dimuat dari YouTube."
+        StreamFailure.Timeout -> "Audio tidak bisa dimuat dari YouTube (waktu habis)."
+        is StreamFailure.Network -> "Gagal memuat audio. Periksa koneksi."
+        StreamFailure.InvalidResponse -> "Audio tidak bisa dimuat dari YouTube."
     }
 
     private fun resolveCurrent(song: Song) {
         if (resolving == song.videoId) return
         resolveJob?.cancel()
         resolving = null
-        // Item 5: lagu ini sedang di-prefetch (jalur konverter) — jangan mulai resolve kedua
-        // (2x resolveStream + 2x loop poll > batas 60/menit, satu loop kena 429). Tunggu
+        // Siaran langsung tidak pernah di-resolve: URL-nya sudah ada dari stasiun.
+        if (song.live) { dispatch(YtEvent.Error("Siaran tidak bisa diputar sekarang.")); return }
+        // Item 5: lagu ini sedang di-prefetch — jangan mulai resolve kedua
+        // (2x resolve + 2x `player` > batas, satu kena 429). Tunggu
         // PrefetchDone: dispatch-nya memanggil effects() lagi, lalu URL yang sudah ada di-load.
         if (song.videoId in _state.value.prefetching) return
         cancelPrefetchExcept(setOf(song.videoId))
         val id = song.videoId
         resolving = id
         val s = _state.value
-        // Lagu yang belum punya keterangan: satu panggilan now-playing (lagu + lirik + audio).
+        // Lagu yang belum punya keterangan: satu komposisi track + stream.
         val withTrack = !song.live && !s.details.containsKey(id) && id !in s.detailsPending
         if (withTrack) dispatch(YtEvent.DetailsStart(id))
         val job = scope.launch(start = CoroutineStart.LAZY) {
             var detailsDone = !withTrack
             try {
-                val pb = client.playback(id, options(id), withTrack) { p, label -> dispatch(YtEvent.Progress(p, label)) }
-                if (withTrack) { detailsDone = true; pb.track?.let { dispatch(YtEvent.DetailsDone(id, it.toDetails())) } ?: dispatch(YtEvent.DetailsFailed(id)) }
-                val info = pb.info
-                val url = info.url ?: throw MusicException("Server musik tidak memberi URL audio.")
-                dispatch(YtEvent.StreamInfo(id, info.toSource()))
-                maybeArchive(id, info)
+                val auth = authState()
+                // Komposisi direct (pola Worker `loadTrack` + `tryDirectStream`):
+                // `track()` (next + loudness player, paralel di dalam) dan
+                // `resolveStream()` jalan BERDAMPINGAN — keduanya independen.
+                val trackDeferred = async { if (withTrack) youTube.track(id, auth) else null }
+                val streamDeferred = async { streamResolver.resolve(id, _settings.value.quality, auth, _settings.value.preferMp4a) }
+                if (withTrack) {
+                    // Keterangan datang duluan (walau stream masih jalan): upNext
+                    // langsung disambung ke antrean serupa (PR #8) tanpa menunggu audio.
+                    val track = trackDeferred.await()?.getOrNull()
+                    detailsDone = true
+                    if (track != null) dispatch(YtEvent.DetailsDone(id, track.toDetails()))
+                    else dispatch(YtEvent.DetailsFailed(id))
+                }
+                val streamResult = streamDeferred.await()
+                val stream = streamResult.getOrNull()
+                if (stream == null) {
+                    val failure = (streamResult.exceptionOrNull() as? StreamFailureException)?.failure
+                    val message = failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
+                    if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message))
+                    return@launch
+                }
+                dispatch(YtEvent.StreamInfo(id, stream.toStreamSource()))
                 if (_state.value.current?.videoId != id) return@launch
-                dispatch(YtEvent.Ready(id, url))
+                dispatch(YtEvent.Ready(id, stream.url))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -332,15 +390,16 @@ class MusicPlayer(
         if (prefetchJobs[videoId]?.isActive == true) return
         dispatch(YtEvent.PrefetchStart(videoId))
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            runCatching { client.playback(videoId, options(videoId), withTrack = false).info }
-                .onSuccess { info ->
-                    info.url?.let {
-                        dispatch(YtEvent.StreamInfo(videoId, info.toSource()))
-                        dispatch(YtEvent.PrefetchDone(videoId, it))
-                        maybeArchive(videoId, info)
-                    } ?: dispatch(YtEvent.PrefetchFailed(videoId))
-                }
-                .onFailure { if (it !is CancellationException) dispatch(YtEvent.PrefetchFailed(videoId)) }
+            // Satu lagu berikut, resolve direct saja (pola `tryDirectStream`:
+            // gagal apa pun → null, bukan galat — lagu itu akan di-resolve
+            // ulang saat gilirannya tiba).
+            val stream = streamResolver.tryResolve(videoId, _settings.value.quality, authState(), _settings.value.preferMp4a)
+            if (stream != null) {
+                dispatch(YtEvent.StreamInfo(videoId, stream.toStreamSource()))
+                dispatch(YtEvent.PrefetchDone(videoId, stream.url))
+            } else {
+                dispatch(YtEvent.PrefetchFailed(videoId))
+            }
         }
         prefetchJobs[videoId] = job
         job.invokeOnCompletion { cause ->
@@ -355,30 +414,26 @@ class MusicPlayer(
     private fun details(videoId: String) {
         dispatch(YtEvent.DetailsStart(videoId))
         scope.launch {
-            runCatching { client.track(videoId, includeLyrics = true) }
-                .onSuccess { dispatch(YtEvent.DetailsDone(videoId, it.toDetails())) }
-                .onFailure { if (it !is CancellationException) dispatch(YtEvent.DetailsFailed(videoId)) else dispatch(YtEvent.DetailsCancelled(videoId)) }
+            try {
+                youTube.track(videoId, authState())
+                    .onSuccess { dispatch(YtEvent.DetailsDone(videoId, it.toDetails())) }
+                    .onFailure { dispatch(YtEvent.DetailsFailed(videoId)) }
+            } catch (e: CancellationException) {
+                dispatch(YtEvent.DetailsCancelled(videoId))
+            }
         }
     }
 
     private fun moreRadio(cursor: String) {
         dispatch(YtEvent.RadioStart)
         scope.launch {
-            runCatching { client.radioMore(cursor) }
-                .onSuccess { dispatch(YtEvent.RadioPage(it.songs, it.cursor)) }
-                .onFailure { if (it !is CancellationException) dispatch(YtEvent.RadioFailed) }
-        }
-    }
-
-    /** Hasil konverter diarsipkan ke R2 di latar → lain kali (dan saat seek) memakai URL R2. */
-    private fun maybeArchive(videoId: String, info: StreamInfo) {
-        val job = info.job ?: return
-        if (info.source != StreamSource.SOURCE_CONVERTER || !_settings.value.archive || !client.archiveAvailable || !archiving.add(videoId)) return
-        scope.launch {
             try {
-                client.archive(videoId, job)?.let { r2 -> r2.url?.let { dispatch(YtEvent.Archived(videoId, it, r2.toSource())) } }
-            } finally {
-                archiving -= videoId
+                youTube.radioMore(cursor, authState())
+                    .onSuccess { dispatch(YtEvent.RadioPage(it.songs, it.cursor)) }
+                    .onFailure { dispatch(YtEvent.RadioFailed) }
+            } catch (_: CancellationException) {
+                // Pengambilan radio batal (lagu berganti): radio tetap pending=false
+                // lewat RadioStart berikutnya; tidak ada state galat yang perlu dikirim.
             }
         }
     }
@@ -388,7 +443,8 @@ class MusicPlayer(
         val id = song.videoId
         if (sponsor.containsKey(id) || !sponsorPending.add(id)) return
         scope.launch {
-            val segs = try { client.sponsorSegments(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+            // Langsung ke sponsor.ajay.app (Tahap 4): gagal apa pun → tanpa segmen.
+            val segs = try { sponsorBlock.segments(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
             sponsor[id] = segs
             sponsorPending -= id
         }
@@ -446,7 +502,7 @@ class MusicPlayer(
     private fun tick(posMs: Long, durMs: Long) {
         val s = _state.value
         val song = s.current ?: return
-        // SponsorBlock: hanya bila audio bisa di-seek (direct/R2); konverter diputar penuh.
+        // SponsorBlock: hanya bila audio bisa di-seek (direct).
         if (_settings.value.sponsorBlock && s.seekable && s.status == YtStatus.Playing) {
             val durSec = (durMs.takeIf { it > 0 }?.div(1000.0)) ?: song.seconds?.toDouble()
             SponsorBlock.skipTarget(sponsor[song.videoId].orEmpty(), posMs / 1000.0, durSec)?.let { seg ->
@@ -503,5 +559,9 @@ class MusicPlayer(
         prefs.clear()
         savedKey = null
         _settings.value = MusicSettings()
+    }
+
+    companion object {
+        const val TAG = "MusicPlayer"
     }
 }

@@ -76,7 +76,7 @@ object Loudness {
     }
 }
 
-/** Kualitas jalur direct (`quality`); konverter mengabaikannya. */
+/** Kualitas jalur direct (`quality`) — dipetakan ke `pickAudioFormat`. */
 enum class MusicQuality(val value: String, val label: String, val hint: String) {
     Auto("auto", "Otomatis", "Opus terbaik (~170 kbps)"),
     High("high", "Hemat", "Opus tengah (~68 kbps)"),
@@ -93,10 +93,13 @@ data class MusicSettings(
     val normalize: Boolean = true,
     /** Lompati segmen SponsorBlock (hanya bila audio bisa di-seek). */
     val sponsorBlock: Boolean = true,
-    /** Selalu lewat konverter MP3 (untuk perangkat yang gagal memutar opus/webm). */
-    val forceMp3: Boolean = false,
-    /** Arsipkan hasil konverter ke R2 supaya bisa di-seek & diputar ulang tanpa konversi. */
-    val archive: Boolean = true,
+    /**
+     * Utamakan MP4A (itag 140) daripada opus — pengganti `forceMp3` (Tahap 7):
+     * untuk perangkat yang gagal memutar opus/webm. Bukan larangan opus:
+     * bila tidak ada format mp4a sama sekali, pemilihan kembali ke aturan
+     * biasa (opus tertinggi). Lihat `pickAudioFormat`.
+     */
+    val preferMp4a: Boolean = false,
 )
 
 /** Pewaktu tidur: berhenti pada [endsAt] (epoch ms) atau di akhir lagu ini. */

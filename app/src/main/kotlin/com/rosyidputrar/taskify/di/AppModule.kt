@@ -43,13 +43,18 @@ import com.rosyidputrar.taskify.ui.shell.AppEvent
 import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.share.ShareInbox
 import com.rosyidputrar.taskify.core.media.MediaSaver
-import com.rosyidputrar.taskify.core.media.MusicClient
 import com.rosyidputrar.taskify.core.media.MusicPlayer
+import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
+import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
+import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
+import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
 import com.rosyidputrar.taskify.core.media.TikTokClient
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import com.rosyidputrar.taskify.feature.media.TikTokConfig
 import com.rosyidputrar.taskify.feature.media.mediaFeatureModule
-import io.github.jan.supabase.auth.auth
 import com.rosyidputrar.taskify.ui.share.ShareViewModel
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
@@ -175,16 +180,15 @@ private val deviceModule = module {
             devicePrefs = get(), deviceScheduler = get(),
         )
     }
-    // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
-    // Argumen bernama: parameter terakhir MusicClient kini `http` (khusus tes), jadi lambda di
-    // akhir (`MusicClient(url) { … }`) akan salah terikat ke `http`, bukan ke `token`.
-    // 401 dari Worker → refresh sesi Supabase sekali lalu permintaan diulang.
+    // Musik direct (Tahap 7): tidak ada lagi klien Worker — katalog/lirik/
+    // SponsorBlock lewat fasad YouTubeMusicClient. MUSIC_API_URL tidak lagi
+    // dipakai musik (secret GitHub-nya dipertahankan untuk rollback, lihat
+    // AppConfig); Supabase tetap dipakai auth/database, bukan musik.
+    single { DirectStreamResolver() }
+    single { SponsorBlockRepository() }
+    single { LyricsRepository(youTube = get()) }
     single {
-        MusicClient(
-            AppConfig.musicApiUrl,
-            token = { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() },
-            refresh = { getOrNull<SupabaseClient>()?.auth?.refreshCurrentSession() },
-        )
+        YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
     }
     single {
         MusicPlayer(androidContext(), get()).also { player ->
@@ -192,6 +196,12 @@ private val deviceModule = module {
             get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }
         }
     }
+    // Musik direct (Tahap 5): auth anonim — visitorData tersimpan di
+    // SharedPreferences "youtube_auth", di-bootstrap sekali saat start dari
+    // TaskifyApplication. Login/PoToken belum ada (follow-up, PLAN G.10).
+    single { YouTube() }
+    single { YouTubeAuthStore(androidContext()) }
+    single { VisitorDataBootstrap(get(), get()) }
     // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
     single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }
     single { TikTokConfig(AppConfig.publicWebOrigin) }

@@ -7,7 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Fase 1–4 pemutar musik: fallback konverter, kedaluwarsa URL, seek aman, radio, katalog, lirik, SponsorBlock. */
+/** Fase 1–4 pemutar musik: kedaluwarsa URL, seek aman, radio, katalog, lirik, SponsorBlock. */
 class MusicUpgradeTest {
     private fun song(id: String, seconds: Int? = 185) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList(), durationSeconds = seconds)
     private val a = song("a"); private val b = song("b"); private val c = song("c")
@@ -15,7 +15,6 @@ class MusicUpgradeTest {
         MusicQueue.reduce(YtState(), YtEvent.SetQueue(songs.toList(), pos)).copy(status = YtStatus.Playing)
 
     private val direct = StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm; codecs=\"opus\"", 251, expiresAt = 1_000_000L)
-    private val converter = StreamSource(StreamSource.SOURCE_CONVERTER, "audio/mpeg", null, job = "job-1")
 
     // ------------------------------------------------------------------ durasi
 
@@ -33,36 +32,39 @@ class MusicUpgradeTest {
 
     // ------------------------------------------------------------------ seek & sumber audio
 
-    @Test fun onlyDirectAndR2AreSeekable() {
+    @Test fun onlyDirectIsSeekable() {
         assertTrue(direct.seekable)
-        assertTrue(StreamSource(StreamSource.SOURCE_R2, "audio/mpeg", null).seekable)
-        assertFalse(converter.seekable, "URL konverter tidak mendukung Range")
-        val s = playing(a).copy(streams = mapOf(a.videoId to converter))
-        assertFalse(s.seekable)
-        assertTrue(s.copy(streams = mapOf(a.videoId to direct)).seekable)
+        assertFalse(StreamSource(StreamSource.SOURCE_LIVE, null, null).seekable, "siaran langsung tidak bisa digeser")
+        assertFalse(StreamSource("unknown", "audio/mpeg", null).seekable, "sumber tak dikenal tidak bisa digeser")
+        val s = playing(a).copy(streams = mapOf(a.videoId to direct))
+        assertTrue(s.seekable)
         assertFalse(playing(a).seekable, "asal audio belum diketahui → jangan izinkan seek")
-        val archived = MusicQueue.reduce(s, YtEvent.Archived(a.videoId, "https://api/v1/audio/a/mp3?token=t", StreamSource(StreamSource.SOURCE_R2, "audio/mpeg", null)))
-        assertTrue(archived.seekable, "setelah arsip R2 siap, lagu bisa digeser")
-        assertEquals("https://api/v1/audio/a/mp3?token=t", archived.urls[a.videoId])
     }
 
-    @Test fun directPlaybackFailureFallsBackToConverterOnce() {
+    @Test fun directPlaybackFailureIsAnErrorImmediately() {
         val s = playing(a).copy(urls = mapOf(a.videoId to "https://direct"), streams = mapOf(a.videoId to direct))
-        val fb = MusicQueue.reduce(s, YtEvent.PlaybackFailed(a.videoId, "Audio gagal diputar."))
-        assertEquals(YtStatus.Preparing, fb.status)
-        assertEquals(listOf(a.videoId), fb.fallbacks)
-        assertNull(fb.urls[a.videoId], "URL direct yang gagal dibuang")
-        assertNull(fb.streams[a.videoId])
-        // Konverter pun gagal → baru galat (tidak berputar terus).
-        val again = MusicQueue.reduce(fb.copy(urls = mapOf(a.videoId to "https://conv"), streams = mapOf(a.videoId to converter), status = YtStatus.Playing),
-            YtEvent.PlaybackFailed(a.videoId, "Audio gagal diputar."))
-        assertEquals(YtStatus.Error, again.status)
-        assertEquals("Audio gagal diputar.", again.error)
+        val failed = MusicQueue.reduce(s, YtEvent.PlaybackFailed(a.videoId, "Audio gagal diputar."))
+        assertEquals(YtStatus.Error, failed.status, "tidak ada lagi fallback konverter — langsung galat")
+        assertEquals("Audio gagal diputar.", failed.error)
+        assertNull(failed.urls[a.videoId], "URL direct yang gagal dibuang")
+        assertNull(failed.streams[a.videoId])
+        // Galat untuk lagu yang bukan lagu saat ini: hanya URL-nya dibuang, status tidak berubah.
+        val s2 = playing(a, b).copy(urls = mapOf(b.videoId to "https://u2"), streams = mapOf(b.videoId to direct))
+        val other = MusicQueue.reduce(s2, YtEvent.PlaybackFailed(b.videoId, "Audio gagal diputar."))
+        assertEquals(YtStatus.Playing, other.status)
+        assertNull(other.urls[b.videoId])
+        // Siaran langsung menyimpan URL-nya supaya bisa dicoba lagi apa adanya.
+        val live = RadioStation("soma", "Drone Zone", "https://ice1.somafm.com/dronezone-128-mp3", "deep", "", "SomaFM").toSong()
+        val liveState = MusicQueue.settle(MusicQueue.reduce(YtState(), YtEvent.SetQueue(listOf(live))))
+        val liveFailed = MusicQueue.reduce(liveState, YtEvent.PlaybackFailed(live.videoId, "Siaran tidak bisa diputar sekarang."))
+        assertEquals(YtStatus.Error, liveFailed.status)
+        assertEquals(live.url, liveFailed.urls[live.videoId])
     }
 
     @Test fun expiredDirectUrlsAreDropped() {
+        val noExpiry = StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm; codecs=\"opus\"", 251)
         val s = playing(a, b).copy(urls = mapOf(a.videoId to "u1", b.videoId to "u2"),
-            streams = mapOf(a.videoId to direct, b.videoId to converter))
+            streams = mapOf(a.videoId to direct, b.videoId to noExpiry))
         val stillFresh = MusicQueue.reduce(s, YtEvent.Expire(1_000_000L - MusicQueue.EXPIRY_MARGIN_MS - 1))
         assertEquals(2, stillFresh.urls.size)
         val expired = MusicQueue.reduce(s, YtEvent.Expire(1_000_000L - MusicQueue.EXPIRY_MARGIN_MS))
@@ -119,11 +121,10 @@ class MusicUpgradeTest {
         assertNull(last.radio!!.cursor)
     }
 
-    @Test fun newQueueResetsRadioAndFallbacks() {
-        val s = MusicQueue.reduce(YtState(), YtEvent.SetQueue(listOf(a), radio = RadioSource("RD", "c"))).copy(fallbacks = listOf(a.videoId))
+    @Test fun newQueueResetsRadio() {
+        val s = MusicQueue.reduce(YtState(), YtEvent.SetQueue(listOf(a), radio = RadioSource("RD", "c")))
         val next = MusicQueue.reduce(s, YtEvent.SetQueue(listOf(b)))
         assertNull(next.radio)
-        assertTrue(next.fallbacks.isEmpty())
     }
 
     // ------------------------------------------------------------------ katalog & link

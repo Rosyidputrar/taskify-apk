@@ -58,6 +58,12 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // Preship: aktifkan v1+v2+v3 supaya semua installer menerima APK debug.
+            // AGP 9: API baru enableV1/V2/V3Signing (isV1/V2SigningEnabled deprecated
+            // dan tidak lagi berpengaruh, itu sebabnya v1 tetap mati sebelumnya).
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
         val releaseStore = config("RELEASE_KEYSTORE_PATH")
         if (releaseStore.isNotEmpty() && file(releaseStore).exists()) {
@@ -145,6 +151,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.koin.test)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(platform(libs.compose.bom))

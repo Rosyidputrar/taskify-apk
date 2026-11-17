@@ -113,7 +113,6 @@ import com.rosyidputrar.taskify.core.domain.media.RepeatMode
 import com.rosyidputrar.taskify.core.domain.media.SearchFilter
 import com.rosyidputrar.taskify.core.domain.media.SleepTimer
 import com.rosyidputrar.taskify.core.domain.media.Song
-import com.rosyidputrar.taskify.core.domain.media.StreamSource
 import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import org.koin.compose.viewmodel.koinViewModel
@@ -188,12 +187,8 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
                         page != null -> { { backButton { actions.back() } } }
                         else -> onBack?.let { { backButton(it) } }
                     },
-                    actions = { if (state.configured) IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
+                    actions = { IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
                 )
-            }
-            if (!state.configured) {
-                item(key = "off") { EmptyState(TaskifyModule.Music, "Pemutar musik belum diatur", "Isi MUSIC_API_URL saat build (GitHub Secrets) untuk mengaktifkan pemutar.") }
-                return@LazyColumn
             }
             state.busy?.let { label ->
                 item(key = "busy") {
@@ -295,10 +290,7 @@ private fun SeekBar(state: MusicUiState, actions: MusicActions) {
         // Durasi tidak diketahui (null) → tanpa total, bukan "0:00".
         if (dur > 0) Text(MusicQueue.formatClock(dur / 1000), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
     }
-    if (!p.seekable && p.currentStream?.source == StreamSource.SOURCE_CONVERTER) {
-        Text("Audio dari konverter tidak bisa digeser" + if (state.settings.archive) " — menunggu arsip…" else "",
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    // Audio direct selalu bisa digeser; siaran langsung tidak (Slider sudah nonaktif + berlabel).
 }
 
 @Composable

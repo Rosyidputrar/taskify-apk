@@ -3,10 +3,12 @@ package com.rosyidputrar.taskify
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import android.app.Application
 import android.util.Log
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
+import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.ui.shell.userMessageFor
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.rosyidputrar.taskify.core.auth.LockManager
@@ -63,6 +65,18 @@ class TaskifyApplication : Application() {
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launchPinShortcutGuard(lock, this)
         // Widget "Hari ini" mengikuti perubahan tugas (lokal maupun dari sinkron).
         com.rosyidputrar.taskify.widget.WidgetUpdater(this, get(), get(), get(APP_SCOPE_QUALIFIER)).start()
+        // Musik direct (Tahap 5): bootstrap visitorData anonim sekali saat
+        // start — best-effort, gagal = lanjut tanpa visitorData (player
+        // ANDROID tidak butuhnya). Tidak pernah memblokir start aplikasi.
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            try {
+                get<VisitorDataBootstrap>().ensureVisitorData()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: bootstrap visitorData gagal, lanjut anonim", e)
+            }
+        }
     }
 }
 
