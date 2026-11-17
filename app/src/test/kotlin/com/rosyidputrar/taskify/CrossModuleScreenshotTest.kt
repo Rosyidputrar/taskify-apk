@@ -14,6 +14,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.domain.files.EntityType
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.RepeatMode
 import com.rosyidputrar.taskify.core.domain.media.SearchFilter
 import com.rosyidputrar.taskify.core.domain.media.Song
@@ -30,6 +31,7 @@ import com.rosyidputrar.taskify.feature.links.LinksContent
 import com.rosyidputrar.taskify.feature.media.MiniPlayerBar
 import com.rosyidputrar.taskify.feature.media.MusicActions
 import com.rosyidputrar.taskify.feature.media.MusicContent
+import com.rosyidputrar.taskify.feature.media.MusicLoginUiState
 import com.rosyidputrar.taskify.feature.media.MusicSearch
 import com.rosyidputrar.taskify.feature.media.MusicTab
 import com.rosyidputrar.taskify.feature.media.MusicUiState
@@ -86,8 +88,13 @@ object SampleCross {
     val songs = listOf(song("s1", "Hujan di Bulan Juni", "Kopi Senja", "4.12"), song("s2", "Lampu Kota", "Orkes Malam", "3.48"),
         song("s3", "Pulang", "Rumah Kaca", "5.03"), song("s4", "Jalan Pagi", "Sinar Tujuh", "3.21"), song("s5", "Daun", "Gema Hutan", "4.40"))
 
+    // Akun contoh untuk shot musik: konten musik hanya tampil bila login
+    // (gate Tahap 6); shot konten memakai keadaan LoggedIn ini.
+    val sampleAccount = AccountInfo("Kopi Senja", "kopi@contoh.id", "@kopisenja")
+
     fun music(tab: MusicTab = MusicTab.Search) = MusicUiState(
         tab = tab,
+        login = MusicLoginUiState.LoggedIn(sampleAccount),
         search = MusicSearch("lagu santai", SearchFilter.Songs, com.rosyidputrar.taskify.core.domain.media.SearchResults(songs = songs, cursor = "c"), searched = true),
         player = YtState(queue = songs, order = listOf(0, 1, 2, 3, 4), position = 1, status = YtStatus.Playing, repeat = RepeatMode.All),
         position = PlaybackPosition(83_000, 228_000),

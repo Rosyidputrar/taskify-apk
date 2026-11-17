@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify.core.media.youtube
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
 import org.junit.Before
 import org.junit.Test
@@ -79,5 +80,55 @@ class YouTubeAuthStoreTest {
         store.clear()
         assertNull(store.visitorData)
         assertEquals(PlaybackAuthState.EMPTY, store.loadAuthState())
+    }
+
+    // ------------------------------------------------------------ akun (Tahap 3)
+
+    @Test fun `akun kosong saat belum ada`() {
+        assertNull(store.loadAccount())
+    }
+
+    @Test fun `simpan dan baca akun bolak-balik`() {
+        val account = AccountInfo(
+            name = "Nama Tes",
+            email = "tes@example.com",
+            channelHandle = "@tes",
+            thumbnailUrl = "https://example.com/foto.jpg",
+        )
+        store.saveAccount(account)
+        assertEquals(account, store.loadAccount())
+        // Instans baru membaca simpanan yang sama.
+        assertEquals(account, YouTubeAuthStore(context).loadAccount())
+    }
+
+    @Test fun `simpan akun hanya nama, sisanya null`() {
+        store.saveAccount(AccountInfo(name = "Nama Tes"))
+        assertEquals(AccountInfo(name = "Nama Tes"), store.loadAccount())
+    }
+
+    @Test fun `nilai akun kosong menghapus kuncinya`() {
+        store.saveAccount(AccountInfo(name = "Nama Tes", email = "tes@example.com"))
+        store.saveAccount(AccountInfo(name = "Nama Tes", email = "   ", channelHandle = "", thumbnailUrl = null))
+        assertEquals(AccountInfo(name = "Nama Tes"), store.loadAccount())
+    }
+
+    @Test fun `nama akun kosong berarti tidak ada akun`() {
+        store.saveAccount(AccountInfo(name = "   "))
+        assertNull(store.loadAccount())
+    }
+
+    @Test fun `clearAccount hanya menghapus akun, state auth tetap`() {
+        store.saveAuthState(PlaybackAuthState(cookie = "SAPISID=x", visitorData = "Cgtv"))
+        store.saveAccount(AccountInfo(name = "Nama Tes", email = "tes@example.com"))
+        store.clearAccount()
+        assertNull(store.loadAccount())
+        assertEquals("SAPISID=x", store.loadAuthState().cookie)
+        assertEquals("Cgtv", store.loadAuthState().visitorData)
+    }
+
+    @Test fun `clear menghapus akun juga`() {
+        store.saveAccount(AccountInfo(name = "Nama Tes"))
+        store.clear()
+        assertNull(store.loadAccount())
     }
 }

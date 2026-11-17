@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.innertube.InnerTube
+import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
 import com.rosyidputrar.taskify.core.innertube.YouTube
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -103,5 +104,38 @@ class VisitorDataBootstrapTest {
         }
         assertNull(bootstrap.ensureVisitorData())
         assertNull(store.visitorData)
+    }
+
+    @Test fun `regresi merge - cookie dan dataSyncId tetap saat visitorData diambil`() = runBlocking {
+        // Sesi login sudah ada, visitorData belum pernah di-bootstrap.
+        store.saveAuthState(
+            PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", dataSyncId = "delegated||user"),
+        )
+        var calls = 0
+        val bootstrap = bootstrapFor {
+            calls++
+            okText(swJsData("noise", "CgttZXN0dmVzdA"))
+        }
+        assertEquals("CgttZXN0dmVzdA", bootstrap.ensureVisitorData())
+        assertEquals(1, calls)
+        val stored = store.loadAuthState()
+        assertEquals("CgttZXN0dmVzdA", stored.visitorData)
+        // Regresi Tahap 3: cookie + dataSyncId TIDAK BOLEH hilang.
+        assertEquals("SAPISID=dummy; LOGIN_INFO=dummy", stored.cookie)
+        assertEquals("delegated||user", stored.dataSyncId)
+    }
+
+    @Test fun `sudah tersimpan beserta cookie tidak menyentuh jaringan`() = runBlocking {
+        store.saveAuthState(
+            PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", visitorData = "CgttZXN0"),
+        )
+        var calls = 0
+        val bootstrap = bootstrapFor {
+            calls++
+            okText(swJsData("Cgtlain"))
+        }
+        assertEquals("CgttZXN0", bootstrap.ensureVisitorData())
+        assertEquals(0, calls)
+        assertEquals("SAPISID=dummy; LOGIN_INFO=dummy", store.loadAuthState().cookie)
     }
 }

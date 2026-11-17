@@ -31,6 +31,7 @@ import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import com.rosyidputrar.taskify.core.media.youtube.DirectStream
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
@@ -80,6 +81,8 @@ class MusicPlayer(
     private val authStore: YouTubeAuthStore = YouTubeAuthStore(context),
     private val prefs: MusicPrefs = MusicPrefs(context),
     private val now: () -> Long = System::currentTimeMillis,
+    /** Hook sesi kedaluwarsa (PLAN C.6): repo login; null = tanpa hook (tes lama). */
+    private val loginEvents: MusicLoginEvents? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(YtState())
@@ -143,12 +146,18 @@ class MusicPlayer(
     }
 
     init {
-        prefs.loadQueue()?.let { snap ->
-            _state.value = MusicQueue.reduce(_state.value, YtEvent.Restore(snap))
-            resumeId = _state.value.current?.videoId
-            resumeMs = snap.positionMs
-            _position.value = PlaybackPosition(snap.positionMs, (_state.value.current?.seconds ?: 0) * 1000L)
-            savedKey = persistKey(_state.value)
+        // Gate login (PLAN C.6): antrean tersimpan hanya dipulihkan bila ada
+        // konteks login pemutaran DAN identitas akun; bila tidak, mulai kosong
+        // (prefs TIDAK disentuh — antrean lama tetap tersimpan sampai logout
+        // membersihkannya lewat wipe(), bukan di sini).
+        if (authStore.loadAuthState().hasPlaybackLoginContext && authStore.loadAccount() != null) {
+            prefs.loadQueue()?.let { snap ->
+                _state.value = MusicQueue.reduce(_state.value, YtEvent.Restore(snap))
+                resumeId = _state.value.current?.videoId
+                resumeMs = snap.positionMs
+                _position.value = PlaybackPosition(snap.positionMs, (_state.value.current?.seconds ?: 0) * 1000L)
+                savedKey = persistKey(_state.value)
+            }
         }
     }
 
@@ -365,7 +374,15 @@ class MusicPlayer(
                 val stream = streamResult.getOrNull()
                 if (stream == null) {
                     val failure = (streamResult.exceptionOrNull() as? StreamFailureException)?.failure
-                    val message = failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
+                    // Sesi kedaluwarsa (PLAN C.6): resolve kena LoginRequired
+                    // PADAHAL cookie login ada → sesi yang dulu sah sudah habis;
+                    // beri tahu repo lewat hook (VM menampilkan prompt login
+                    // ulang) dan pakai pesan kedaluwarsa. Bila tidak login,
+                    // pesan lama tetap (tidak ada sesi yang bisa habis).
+                    val message = if (failure is StreamFailure.LoginRequired && authState().hasLoginCookie) {
+                        loginEvents?.onSessionExpired()
+                        "Sesi login YouTube berakhir. Masuk lagi."
+                    } else failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
                     if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message))
                     return@launch
                 }

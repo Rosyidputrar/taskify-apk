@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify.core.media
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.RadioPageResult
 import com.rosyidputrar.taskify.core.domain.media.RadioSource
@@ -14,6 +15,7 @@ import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import com.rosyidputrar.taskify.core.media.youtube.DirectStream
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
@@ -122,9 +124,15 @@ class MusicPlayerTest {
         HttpClient(MockEngine { respond("[]", HttpStatusCode.NotFound, headersOf()) }) { expectSuccess = false },
     )
 
-    private fun player(tube: FakeYouTube, fake: FakeResolver, authStore: YouTubeAuthStore? = null): MusicPlayer {
+    private fun player(tube: FakeYouTube, fake: FakeResolver, authStore: YouTubeAuthStore? = null, loginEvents: MusicLoginEvents? = null): MusicPlayer {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        return MusicPlayer(context, tube, fake, sponsorEmpty(), authStore ?: YouTubeAuthStore(context))
+        return MusicPlayer(context, tube, fake, sponsorEmpty(), authStore ?: YouTubeAuthStore(context), loginEvents = loginEvents)
+    }
+
+    /** Cookie login dummy + dataSyncId + akun, supaya state terhitung login (PLAN C.6). */
+    private fun seedLogin(authStore: YouTubeAuthStore) {
+        authStore.saveAuthState(PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", dataSyncId = "delegated||user"))
+        authStore.saveAccount(AccountInfo("Tes Akun", "tes@example.com"))
     }
 
     private fun stream(id: String) = DirectStream(
@@ -303,12 +311,18 @@ class MusicPlayerTest {
     @Test fun queueSurvivesProcessDeathPausedAndWipeForgetsIt() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val authStore = YouTubeAuthStore(context)
+            authStore.clear()
+            // Gate login (PLAN C.6): antrean hanya dipulihkan bila login,
+            // jadi tes pemulihan ini memakai sesi login dummy.
+            seedLogin(authStore)
             val tube = FakeYouTube()
             val fake = FakeResolver()
-            val player = player(tube, fake)
+            val player = player(tube, fake, authStore)
             player.playQueue(listOf(a, b, c), 1)
             advanceUntilIdle()
-            val reborn = player(tube, fake)
+            val reborn = player(tube, fake, authStore)
             assertEquals(YtStatus.Paused, reborn.state.value.status, "dipulihkan dalam keadaan jeda, tidak langsung berbunyi")
             assertEquals(b, reborn.state.value.current)
             assertEquals(listOf(a, b, c), reborn.state.value.ordered)
@@ -316,8 +330,65 @@ class MusicPlayerTest {
 
             reborn.wipe()
             advanceUntilIdle()
-            val afterLogout = player(tube, fake)
+            val afterLogout = player(tube, fake, authStore)
             assertEquals(YtStatus.Idle, afterLogout.state.value.status, "logout menghapus antrean tersimpan")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun queueIsNotRestoredWithoutLogin() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b, c), 1)
+            advanceUntilIdle()
+            // Tanpa sesi login, pemutar baru mulai kosong walau antrean tersimpan.
+            val reborn = player(tube, fake)
+            assertEquals(YtStatus.Idle, reborn.state.value.status, "tanpa login antrean tidak dipulihkan")
+            assertTrue(reborn.state.value.ordered.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun loginRequiredWhileLoggedInExpiresSession() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val authStore = YouTubeAuthStore(context)
+            authStore.clear()
+            seedLogin(authStore)
+            var expiredCalls = 0
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { StreamFailure.LoginRequired() }
+            val player = player(tube, fake, authStore, loginEvents = MusicLoginEvents { expiredCalls++ })
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Sesi login YouTube berakhir. Masuk lagi.", player.state.value.error)
+            assertEquals(1, expiredCalls, "hook onSessionExpired dipanggil sekali")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun loginRequiredWithoutLoginKeepsOldMessage() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            var expiredCalls = 0
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { StreamFailure.LoginRequired() }
+            val player = player(tube, fake, loginEvents = MusicLoginEvents { expiredCalls++ })
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Audio tidak bisa dimuat dari YouTube (login diperlukan).", player.state.value.error)
+            assertEquals(0, expiredCalls, "tanpa cookie login hook tidak dipanggil")
         } finally {
             Dispatchers.resetMain()
         }

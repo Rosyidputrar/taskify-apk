@@ -12,6 +12,7 @@ import com.rosyidputrar.taskify.core.media.TikTokClient
 import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
 import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
 import com.rosyidputrar.taskify.core.auth.NetworkMonitor
@@ -99,12 +100,15 @@ class KoinGraphTest {
                 YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
             }
             single {
-                MusicPlayer(androidContext(), get()).also { player ->
+                MusicPlayer(androidContext(), get(), loginEvents = get<MusicLoginRepository>()).also { player ->
                     get<CoroutineScope>(appScopeQualifier).launch {
                         player.notice.filterNotNull().collect { get<Messenger>().show(it) }
                     }
                 }
             }
+            // Cermin wiring Tahap 5 (AppModule.kt): repo login (dipakai
+            // MusicPlayer sebagai loginEvents + MusicViewModel param ke-5).
+            single { MusicLoginRepository(get<YouTube>(), get<YouTubeAuthStore>()) }
             single { YouTube() }
             single { YouTubeAuthStore(androidContext()) }
             single { VisitorDataBootstrap(get(), get()) }

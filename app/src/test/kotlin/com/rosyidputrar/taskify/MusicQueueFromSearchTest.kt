@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.SearchFilter
 import com.rosyidputrar.taskify.core.domain.media.SearchResults
 import com.rosyidputrar.taskify.core.domain.media.Song
@@ -15,6 +16,8 @@ import com.rosyidputrar.taskify.core.media.MusicPlayer
 import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import com.rosyidputrar.taskify.core.media.youtube.DirectStream
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
 import com.rosyidputrar.taskify.feature.media.MusicViewModel
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import kotlinx.coroutines.CompletableDeferred
@@ -60,9 +63,15 @@ class MusicQueueFromSearchTest {
     }
 
     private fun setUp(): Pair<MusicViewModel, MusicPlayer> {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val authStore = YouTubeAuthStore(context).also { it.clear() }
+        // Gate login (Tahap 5): cari/putar hanya jalan bila login — tes ini
+        // memakai sesi login dummy supaya perilaku antreannya tetap teruji.
+        authStore.saveAuthState(PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", dataSyncId = "delegated||user"))
+        authStore.saveAccount(AccountInfo("Tes Akun", "tes@example.com"))
         val tube = FakeTube()
-        val player = MusicPlayer(ApplicationProvider.getApplicationContext(), tube, FakeResolver())
-        val vm = MusicViewModel(player, YouTubeMusicClient(tube), OnlineFlow { flowOf(true) })
+        val player = MusicPlayer(context, tube, FakeResolver(), authStore = authStore)
+        val vm = MusicViewModel(player, YouTubeMusicClient(tube), OnlineFlow { flowOf(true) }, null, MusicLoginRepository(tube, authStore))
         vm.setQuery("lagu")
         vm.search()
         shadowOf(Looper.getMainLooper()).idle()

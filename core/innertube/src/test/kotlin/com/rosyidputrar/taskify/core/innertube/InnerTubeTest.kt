@@ -188,7 +188,33 @@ class InnerTubeTest {
     }
 
     @Test
-    fun cookieTidakDikirimPadaSearchAnonimWalauAuthStatePunyaCookie() = runTest {
+    fun searchMengirimCookieSaatLogin() = runTest {
+        var cookieHeader: String? = null
+        var authHeader: String? = null
+        var pageIdHeader: String? = null
+        val tube = InnerTube(mockClient {
+            cookieHeader = it.headers["cookie"]
+            authHeader = it.headers["Authorization"]
+            pageIdHeader = it.headers["X-Goog-PageId"]
+            okJson()
+        })
+        // PLAN G.3: useLoginForBrowse = true — search berkirim cookie +
+        // SAPISIDHASH + X-Goog-PageId bila authState membawa sesi login.
+        tube.search(
+            YouTubeClient.WEB_REMIX,
+            query = "x",
+            authState = PlaybackAuthState(
+                cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                dataSyncId = "delegatedDummy||userDummy",
+            ),
+        )
+        assertEquals("SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login", cookieHeader)
+        assertTrue(authHeader?.startsWith("SAPISIDHASH ") == true)
+        assertEquals("delegatedDummy", pageIdHeader)
+    }
+
+    @Test
+    fun browseMengirimCookieSaatLogin() = runTest {
         var cookieHeader: String? = null
         var authHeader: String? = null
         val tube = InnerTube(mockClient {
@@ -196,15 +222,105 @@ class InnerTubeTest {
             authHeader = it.headers["Authorization"]
             okJson()
         })
-        // Tahap 5: tidak ada login — search tidak pernah mengirim cookie /
-        // SAPISIDHASH, walau authState kebetulan membawa cookie.
-        tube.search(
+        // PLAN G.3: browse ikut useLoginForBrowse — tanpa setLogin eksplisit
+        // pun cookie terkirim bila ada sesi login.
+        tube.browse(
             YouTubeClient.WEB_REMIX,
-            query = "x",
-            authState = PlaybackAuthState(cookie = "SAPISID=abc; SID=def"),
+            browseId = "FEmusic_home",
+            authState = PlaybackAuthState(cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login"),
         )
-        assertNull(cookieHeader)
-        assertNull(authHeader)
+        assertEquals("SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login", cookieHeader)
+        assertTrue(authHeader?.startsWith("SAPISIDHASH ") == true)
+    }
+
+    @Test
+    fun tanpaCookieTidakAdaHeaderLogin() = runTest {
+        val loginHeaders = mutableMapOf<String, String?>()
+        val tube = InnerTube(mockClient {
+            loginHeaders["cookie"] = it.headers["cookie"]
+            loginHeaders["Authorization"] = it.headers["Authorization"]
+            loginHeaders["X-Goog-PageId"] = it.headers["X-Goog-PageId"]
+            okJson()
+        })
+        tube.search(YouTubeClient.WEB_REMIX, query = "x")
+        tube.accountMenu(YouTubeClient.WEB_REMIX)
+        assertNull(loginHeaders["cookie"])
+        assertNull(loginHeaders["Authorization"])
+        assertNull(loginHeaders["X-Goog-PageId"])
+    }
+
+    @Test
+    fun accountMenuMengirimCookieSapisidhashDanPageId() = runTest {
+        var capturedUrl = ""
+        var capturedBody = ""
+        val capturedHeaders = mutableMapOf<String, String>()
+        val tube = InnerTube(mockClient {
+            capturedUrl = it.url.toString()
+            capturedBody = (it.body as TextContent).text
+            it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
+            okJson()
+        })
+        tube.accountMenu(
+            YouTubeClient.WEB_REMIX,
+            authState = PlaybackAuthState(
+                cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                visitorData = "CgtDummyVisitor",
+                dataSyncId = "delegatedDummy||userDummy",
+            ),
+        )
+        assertEquals("https://music.youtube.com/youtubei/v1/account/account_menu?prettyPrint=false", capturedUrl)
+        assertEquals("SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login", capturedHeaders["cookie"])
+        assertTrue(capturedHeaders["Authorization"]?.startsWith("SAPISIDHASH ") == true)
+        assertEquals("delegatedDummy", capturedHeaders["X-Goog-PageId"])
+        assertEquals("CgtDummyVisitor", capturedHeaders["X-Goog-Visitor-Id"])
+        val body = json.parseToJsonElement(capturedBody).jsonObject
+        val ctx = body["context"]?.jsonObject
+        assertEquals("WEB_REMIX", ctx?.get("client")?.jsonObject?.get("clientName")?.jsonPrimitive?.content)
+        // onBehalfOfUser = sisi delegated dari dataSyncId.
+        assertEquals("delegatedDummy", ctx?.get("user")?.jsonObject?.get("onBehalfOfUser")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun accountChannelsMengirimCookieSapisidhashDanPageId() = runTest {
+        var capturedUrl = ""
+        val capturedHeaders = mutableMapOf<String, String>()
+        val tube = InnerTube(mockClient {
+            capturedUrl = it.url.toString()
+            it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
+            okJson()
+        })
+        tube.accountChannels(
+            YouTubeClient.WEB_REMIX,
+            authState = PlaybackAuthState(
+                cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                dataSyncId = "delegatedDummy||userDummy",
+            ),
+        )
+        assertEquals("https://music.youtube.com/youtubei/v1/account/accounts_list?prettyPrint=false", capturedUrl)
+        assertEquals("SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login", capturedHeaders["cookie"])
+        assertTrue(capturedHeaders["Authorization"]?.startsWith("SAPISIDHASH ") == true)
+        assertEquals("delegatedDummy", capturedHeaders["X-Goog-PageId"])
+    }
+
+    @Test
+    fun playerDenganCookieMengirimPageIdDariDataSyncId() = runTest {
+        var pageIdHeader: String? = null
+        var cookieHeader: String? = null
+        val tube = InnerTube(mockClient {
+            pageIdHeader = it.headers["X-Goog-PageId"]
+            cookieHeader = it.headers["cookie"]
+            okJson()
+        })
+        tube.player(
+            YouTubeClient.WEB_REMIX,
+            "QqJ-Vp8mvbk",
+            authState = PlaybackAuthState(
+                cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                dataSyncId = "delegatedDummy||userDummy",
+            ),
+        )
+        assertEquals("SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login", cookieHeader)
+        assertEquals("delegatedDummy", pageIdHeader)
     }
 
     @Test

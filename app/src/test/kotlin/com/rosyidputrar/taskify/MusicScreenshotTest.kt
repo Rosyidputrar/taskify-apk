@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.domain.media.AlbumRef
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.ArtistPage
 import com.rosyidputrar.taskify.core.domain.media.ArtistRef
 import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
@@ -48,6 +49,9 @@ import com.rosyidputrar.taskify.feature.media.FocusMusicActions
 import com.rosyidputrar.taskify.feature.media.LyricsState
 import com.rosyidputrar.taskify.feature.media.MusicActions
 import com.rosyidputrar.taskify.feature.media.MusicContent
+import com.rosyidputrar.taskify.feature.media.MusicLoginScreenState
+import com.rosyidputrar.taskify.feature.media.MusicLoginStateContent
+import com.rosyidputrar.taskify.feature.media.MusicLoginUiState
 import com.rosyidputrar.taskify.feature.media.MusicSearch
 import com.rosyidputrar.taskify.feature.media.MusicSettingsContent
 import com.rosyidputrar.taskify.feature.media.MusicTab
@@ -165,6 +169,38 @@ class MusicScreenshotTest {
 
     @Test fun settings() = shot("music_settings_light", false) {
         MusicContentSettings(MusicSettings(sponsorBlock = true, preferMp4a = true))
+    }
+
+    // Tahap 6 login (PLAN C.9): prompt gate, seksi AKUN, state layar login
+    // (statis — WebView tidak bisa di-screenshot di Robolectric).
+    private val sampleAccount = AccountInfo("Kopi Senja", "kopi@contoh.id", "@kopisenja")
+
+    @Test fun loginPromptLight() = shot("music_login_prompt_light", false) {
+        MusicContent(base.copy(login = MusicLoginUiState.LoggedOut), object : MusicActions {}, padding)
+    }
+
+    @Test fun loginPromptDark() = shot("music_login_prompt_dark", true) {
+        MusicContent(base.copy(login = MusicLoginUiState.LoggedOut), object : MusicActions {}, padding)
+    }
+
+    @Test fun loginPromptExpired() = shot("music_login_expired_light", false) {
+        MusicContent(base.copy(login = MusicLoginUiState.Expired(sampleAccount)), object : MusicActions {}, padding)
+    }
+
+    @Test fun settingsAccountLoggedIn() = shot("music_settings_account_in_light", false) {
+        MusicSettingsContent(base.copy(login = MusicLoginUiState.LoggedIn(sampleAccount)), object : MusicActions {})
+    }
+
+    @Test fun settingsAccountLoggedOut() = shot("music_settings_account_out_light", false) {
+        MusicSettingsContent(base.copy(login = MusicLoginUiState.LoggedOut), object : MusicActions {})
+    }
+
+    @Test fun loginLoading() = shot("music_login_loading_light", false) {
+        MusicLoginStateContent(MusicLoginScreenState.Loading, onRetry = {})
+    }
+
+    @Test fun loginError() = shot("music_login_error_light", false) {
+        MusicLoginStateContent(MusicLoginScreenState.Error("Tidak bisa menghubungi YouTube. Periksa koneksi."), onRetry = {})
     }
 
     @Composable

@@ -33,6 +33,8 @@ package com.rosyidputrar.taskify.core.innertube
 
 import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
 import com.rosyidputrar.taskify.core.innertube.models.YouTubeLocale
+import com.rosyidputrar.taskify.core.innertube.models.body.AccountMenuBody
+import com.rosyidputrar.taskify.core.innertube.models.body.AccountsListBody
 import com.rosyidputrar.taskify.core.innertube.models.body.BrowseBody
 import com.rosyidputrar.taskify.core.innertube.models.body.GetSearchSuggestionsBody
 import com.rosyidputrar.taskify.core.innertube.models.body.GetTranscriptBody
@@ -108,7 +110,9 @@ class InnerTube(
             authState = authState.copy(cookie = value).normalized()
         }
 
-    var useLoginForBrowse: Boolean = false
+    // Login adalah syarat musik (PLAN G.3): browse/search selalu berkirim
+    // cookie bila ada, seperti `player`/`next` yang memang `setLogin=true`.
+    var useLoginForBrowse: Boolean = true
 
     fun currentAuthState(): PlaybackAuthState = authState
 
@@ -328,6 +332,46 @@ class InnerTube(
                 GetSearchSuggestionsBody(
                     context = client.toContext(locale, authState.visitorData, null),
                     input = input,
+                ),
+            )
+        }.bodyAsText()
+    }
+
+    /**
+     * Menu akun (`account/account_menu`, PLAN C.2) — dipakai fasad
+     * `YouTube.accountInfo()` untuk verifikasi login. Selalu `setLogin=true`:
+     * tanpa cookie responsnya tidak berisi akun aktif. Mengembalikan JSON
+     * mentah; parsing ada di `pages/AccountMenuParser`.
+     */
+    suspend fun accountMenu(
+        client: YouTubeClient,
+        authState: PlaybackAuthState = currentAuthState(),
+    ): String = withRetry {
+        httpClient.post("account/account_menu") {
+            ytClient(client = client, setLogin = true, authState = authState)
+            jsonBody(
+                AccountMenuBody(
+                    context = client.toContext(locale, authState.visitorData, authState.dataSyncId),
+                ),
+            )
+        }.bodyAsText()
+    }
+
+    /**
+     * Daftar akun (`account/accounts_list`, PLAN C.2) — dipakai fasad
+     * `YouTube.accountDataSyncId()` untuk mengambil `dataSyncId` akun yang
+     * dipilih. Selalu `setLogin=true`. Mengembalikan JSON mentah; parsing
+     * ada di `pages/AccountMenuParser`.
+     */
+    suspend fun accountChannels(
+        client: YouTubeClient,
+        authState: PlaybackAuthState = currentAuthState(),
+    ): String = withRetry {
+        httpClient.post(client.requestApiUrl("account/accounts_list")) {
+            ytClient(client = client, setLogin = true, authState = authState)
+            jsonBody(
+                AccountsListBody(
+                    context = client.toContext(locale, authState.visitorData, authState.dataSyncId),
                 ),
             )
         }.bodyAsText()

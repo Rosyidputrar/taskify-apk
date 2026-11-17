@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.core.innertube
 
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.ArtistPage
 import com.rosyidputrar.taskify.core.domain.media.CollectionKind
 import com.rosyidputrar.taskify.core.domain.media.DiscoverySection
@@ -15,6 +16,8 @@ import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
 import com.rosyidputrar.taskify.core.innertube.models.body.BrowseBody
 import com.rosyidputrar.taskify.core.innertube.pages.CollectionContinuation
 import com.rosyidputrar.taskify.core.innertube.pages.findMoodCategory
+import com.rosyidputrar.taskify.core.innertube.pages.parseAccountDataSyncId
+import com.rosyidputrar.taskify.core.innertube.pages.parseAccountInfo
 import com.rosyidputrar.taskify.core.innertube.pages.parseArtist
 import com.rosyidputrar.taskify.core.innertube.pages.parseCharts
 import com.rosyidputrar.taskify.core.innertube.pages.parseCollection
@@ -109,6 +112,34 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
             candidates.first { element ->
                 (element as? JsonPrimitive)?.contentOrNull?.let { VISITOR_DATA_REGEX.containsMatchIn(it) } ?: false
             }.jsonPrimitive.content
+        }
+
+    /**
+     * Identitas akun aktif (`account/account_menu`, WEB_REMIX, PLAN C.3) —
+     * dipakai repository login untuk verifikasi: cookie boleh lengkap tapi
+     * akun tidak terbaca (mis. sesi kedaluwarsa) → gagal, bukan akun kosong.
+     */
+    open suspend fun accountInfo(
+        authState: PlaybackAuthState = innerTube.currentAuthState(),
+    ): Result<AccountInfo> =
+        resultOf {
+            val raw = innerTube.accountMenu(YouTubeClient.WEB_REMIX, authState)
+            parseAccountInfo(parse(raw))
+                ?: throw IllegalStateException("info akun tidak ditemukan, pengguna mungkin belum login")
+        }
+
+    /**
+     * `dataSyncId` akun terpilih (`account/accounts_list`, WEB_REMIX,
+     * PLAN C.3) — dipakai repository login setelah `accountInfo()` lolos.
+     * Gagal bila respons tidak berisi `dataSyncId` apa pun.
+     */
+    open suspend fun accountDataSyncId(
+        authState: PlaybackAuthState = innerTube.currentAuthState(),
+    ): Result<String> =
+        resultOf {
+            val raw = innerTube.accountChannels(YouTubeClient.WEB_REMIX, authState)
+            parseAccountDataSyncId(parse(raw))
+                ?: throw IllegalStateException("dataSyncId akun tidak ditemukan")
         }
 
     // ------------------------------------------------------------------ cari

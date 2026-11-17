@@ -52,6 +52,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
@@ -159,6 +161,12 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
     val listStates = remember { mutableMapOf<String, LazyListState>() }
     val stackKeys = state.pages.map { it.target.key }
     LaunchedEffect(stackKeys) { listStates.keys.retainAll(stackKeys.toSet() + ROOT_KEY) }
+    // Layar login full-screen: menutup seluruh konten Musik; kembali atau
+    // sukses → actions.closeLogin() (kontrak PLAN C.9).
+    if (state.showLogin) {
+        MusicLoginScreen(onBack = actions::closeLogin, onLoginComplete = actions::closeLogin)
+        return
+    }
     AnimatedContent(
         targetState = MusicFrame(state.page, state.pages.size),
         contentKey = { it.page?.target?.key ?: ROOT_KEY },
@@ -198,6 +206,13 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
                     }
                 }
             }
+            // Gate login (kontrak PLAN C.9): belum login / sesi berakhir →
+            // SELURUH konten tab diganti prompt; header tetap, tab disembunyikan.
+            val login = state.login
+            if (login is MusicLoginUiState.LoggedOut || login is MusicLoginUiState.Expired) {
+                item(key = "login-prompt") { LoginPrompt(login, actions) }
+                return@LazyColumn
+            }
             if (page != null) {
                 if (state.player.status != YtStatus.Idle) item(key = "page-mini") { MiniPlayerBar(state, actions, onOpen = actions::back, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
                 pageContent(page, state, actions)
@@ -218,6 +233,31 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
         }
     }
     if (settingsOpen) MusicSettingsSheet(state, actions) { settingsOpen = false }
+}
+
+/** Prompt gate login (kontrak PLAN C.9): mengganti seluruh konten tab. */
+@Composable
+private fun LoginPrompt(login: MusicLoginUiState, actions: MusicActions) {
+    val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (login is MusicLoginUiState.Expired) {
+            Text(
+                "Sesi login YouTube berakhir. Masuk lagi.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Text("Masuk untuk memakai musik", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
+        Text(
+            "Musik memakai akun YouTube Music kamu. Masuk dengan Google di dalam aplikasi; kata sandi tidak pernah dilihat atau disimpan Taskify.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = actions::openLogin,
+            colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = TaskifyTheme.modules.onAccent(TaskifyModule.Music)),
+        ) { Text("Masuk dengan Google") }
+    }
 }
 
 private const val ROOT_KEY = "root"

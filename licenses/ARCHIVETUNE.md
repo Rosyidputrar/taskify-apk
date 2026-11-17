@@ -28,6 +28,10 @@ pertama, dengan catatan adaptasi tepat di bawahnya. Paket diubah dari
 | `core/media/.../lyrics/YouTubeTranscriptProvider.kt` | `app/.../lyrics/YouTubeSubtitleLyricsProvider.kt` (tanpa PoToken di tahap 1) |
 | `core/media/.../sponsorblock/SponsorBlockModels.kt` | `app/.../sponsorblock/SponsorBlockModels.kt` (kategori memakai 12 slug terbukti Worker; segmen dipetakan ke model domain Taskify) |
 | `core/media/.../sponsorblock/SponsorBlockRepository.kt` | `app/.../sponsorblock/SponsorBlockRepository.kt` (tanpa DataStore/Hilt; validasi kategori ala Worker; `actionTypes` + `"mute"` supaya `SponsorBlock.muted()` tetap bekerja) |
+| `core/innertube/.../pages/AccountMenuParser.kt` | `core/.../innertube/YouTube.kt:2499-2554` (`accountInfo`/`accountDataSyncId`) + `models/response/AccountMenuResponse.kt` (ditulis ulang di atas `JsonElement`; hanya `dataSyncId` akun terpilih, tanpa `AccountChannel`) |
+| `feature/media/.../MusicLoginScreen.kt` | `app/.../ui/screens/LoginScreen.kt` (WebView login + `YouTubeLoginWebViewClient` + `LOGIN_CONTEXT_SCRIPT` verbatim + `mergeYouTubeCookies`; tanpa Hilt/NavController/Toast; pembersih sesi ditulis di file yang sama; state Loading/Error sebagai composable statis) |
+| `feature/media/.../MusicLoginViewModel.kt` | `app/.../viewmodels/LoginViewModel.kt` (state Loading/Success/Error + guard cookie ganda; tanpa Hilt, tanpa `UpdateYouTubeLoginContextUseCase`; pesan error = `MusicLoginError.message` bahasa Indonesia) |
+| `feature/media/.../MusicLoginWebUtils.kt` | `app/.../ui/screens/LoginScreen.kt` (helper URL/cookie `YouTubeLoginWebViewClient` + `mergeYouTubeCookies`, ditulis ulang JVM-murni dengan `java.net.URI`) |
 
 Yang secara sadar TIDAK disalin: `NetworkGatekeeper.kt` (kill-switch
 verifikasi build — dilarang PLAN A.9), mesin PoToken/BotGuard, resolver
