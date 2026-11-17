@@ -125,7 +125,7 @@ fun LazyListScope.discovery(prefix: String, sections: List<DiscoverySection>, ac
         val key = "$prefix-$i"
         when (section) {
             is DiscoverySection.Songs -> cardRow(key, section.title, section.items.mapIndexed { idx, s ->
-                CardItem(s.videoId, s.title, s.artist, s.cover) { actions.playSongs(section.items, idx) }
+                CardItem(s.videoId, s.title, s.artist, s.cover) { actions.playSong(section.items, idx) }
             })
             is DiscoverySection.Albums -> cardRow(key, section.title, section.items.map { a ->
                 CardItem(a.browseId, a.title, listOf(a.artist, a.year).filter { it.isNotBlank() }.joinToString(" · "), a.cover) { actions.open(BrowseTarget.Album(a.browseId, a.title)) }

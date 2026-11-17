@@ -245,4 +245,25 @@ class MusicUpgradeTest {
         assertEquals(SearchFilter.All, SearchFilter.entries.first())
         assertNull(SearchFilter.All.value)
     }
+
+    @Test fun similarQueueFillsFromSeedDetailsImmediately() {
+        val d = song("d"); val e = song("e")
+        var s = MusicQueue.reduce(YtState(autoContinue = false), YtEvent.SetQueue(listOf(a), similar = true))
+        assertEquals(listOf(a), s.ordered, "hanya lagu yang dipilih — bukan seluruh daftar hasil")
+        assertEquals(a.videoId, s.similarSeed)
+        // Keterangan lagu benih datang (now-playing): upNext langsung jadi antrean, walau lanjut-otomatis mati.
+        s = MusicQueue.reduce(s.copy(status = YtStatus.Playing), YtEvent.DetailsDone(a.videoId, TrackDetails("", listOf(a, b, c, d, e))))
+        assertEquals(listOf(a, b, c, d, e), s.ordered, "lagu yang sama tidak diduplikasi")
+        assertNull(s.similarSeed)
+        assertEquals(0, s.position)
+        // Keterangan lagu lain tidak menambah antrean lagi (hanya lagu benih).
+        val again = MusicQueue.reduce(s, YtEvent.DetailsDone(b.videoId, TrackDetails("", listOf(song("f")))))
+        assertEquals(5, again.ordered.size)
+        // Antrean biasa (album/playlist) tidak memakai benih.
+        assertNull(MusicQueue.reduce(YtState(), YtEvent.SetQueue(listOf(a, b))).similarSeed)
+        // Keterangan gagal → benih dilepas, antrean tetap satu lagu.
+        val failed = MusicQueue.reduce(MusicQueue.reduce(YtState(), YtEvent.SetQueue(listOf(a), similar = true)), YtEvent.DetailsFailed(a.videoId))
+        assertNull(failed.similarSeed)
+        assertEquals(listOf(a), failed.ordered)
+    }
 }

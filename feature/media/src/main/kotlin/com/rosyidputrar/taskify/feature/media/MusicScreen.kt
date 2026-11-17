@@ -533,6 +533,7 @@ private class HapticMusicActions(private val a: MusicActions, private val h: Tas
     override fun setFilter(f: SearchFilter) { h.tick(); a.setFilter(f) }
     override fun play(index: Int) { h.tap(); a.play(index) }
     override fun playSongs(songs: List<Song>, index: Int) { h.tap(); a.playSongs(songs, index) }
+    override fun playSong(list: List<Song>, index: Int) { h.tap(); a.playSong(list, index) }
     override fun playPage(shuffle: Boolean) { h.tap(); a.playPage(shuffle) }
     override fun playStation(station: com.rosyidputrar.taskify.core.domain.media.RadioStation) { h.tap(); a.playStation(station) }
     override fun togglePlay() { h.tap(); a.togglePlay() }

@@ -118,6 +118,9 @@ interface MusicActions {
     /** Putar lagu ke-[index] dari daftar lagu hasil pencarian. */
     fun play(index: Int) {}
     fun playSongs(songs: List<Song>, index: Int) {}
+    /** Lagu tunggal dari hasil cari/Jelajah: antrean lagu serupa (atau seluruh [list] bila dimatikan). */
+    fun playSong(list: List<Song>, index: Int) {}
+    fun toggleSimilarQueue() {}
     fun playTop(top: TopResult) {}
     fun togglePlay() {}
     fun next() {}
@@ -220,8 +223,14 @@ class MusicViewModel(
         if (text.length < 2 || MusicCatalog.isLink(text)) { local.update { it.copy(search = it.search.copy(suggestions = emptyList())) }; return }
         suggestJob = launchSafe {
             delay(SUGGEST_DEBOUNCE_MS)
-            val list = runCatching { client.suggest(text) }.getOrDefault(emptyList())
-            if (local.value.search.query.trim() == text) local.update { it.copy(search = it.search.copy(suggestions = list.take(8))) }
+            val r = runCatching { client.suggest(text) }
+            if (local.value.search.query.trim() != text) return@launchSafe
+            val e = r.exceptionOrNull()
+            // Galat jaringan/server sesaat: dropdown disembunyikan diam-diam (bukan fitur utama).
+            // Tapi sesi habis (401) / akun belum diizinkan (403) ditampilkan, kalau tidak saran
+            // "tidak pernah muncul" tanpa petunjuk apa pun.
+            val blocked = (e as? com.rosyidputrar.taskify.core.media.MusicException)?.takeIf { it.status == 401 || it.status == 403 }?.message
+            local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error)) }
         }
     }
 
@@ -297,10 +306,16 @@ class MusicViewModel(
 
     // ------------------------------------------------------------------ pemutaran
 
-    override fun play(index: Int) = player.playQueue(local.value.search.results.songs, index)
+    override fun play(index: Int) = playSong(local.value.search.results.songs, index)
     override fun playSongs(songs: List<Song>, index: Int) = player.playQueue(songs, index)
+    override fun playSong(list: List<Song>, index: Int) {
+        val song = list.getOrNull(index) ?: return
+        if (player.settings.value.similarQueue) player.playSimilar(song) else player.playQueue(list, index)
+    }
     override fun playTop(top: TopResult) {
-        top.toSong()?.let { player.playQueue(listOf(it) + local.value.search.results.songs.filter { s -> s.videoId != it.videoId }, 0); return }
+        top.toSong()?.let { song ->
+            playSong(listOf(song) + local.value.search.results.songs.filter { s -> s.videoId != song.videoId }, 0); return
+        }
         // Hasil teratas bukan lagu: buka artis/album yang cocok di daftar hasil.
         val r = local.value.search.results
         r.artists.firstOrNull { it.name.equals(top.title, true) }?.let { open(BrowseTarget.Artist(it.browseId, it.name)); return }
@@ -497,6 +512,7 @@ class MusicViewModel(
     override fun toggleSponsorBlock() = player.updateSettings { it.copy(sponsorBlock = !it.sponsorBlock) }
     override fun toggleForceMp3() = player.updateSettings { it.copy(forceMp3 = !it.forceMp3) }
     override fun toggleArchive() = player.updateSettings { it.copy(archive = !it.archive) }
+    override fun toggleSimilarQueue() = player.updateSettings { it.copy(similarQueue = !it.similarQueue) }
     override fun setSleep(minutes: Int?) = player.setSleep(minutes)
     override fun sleepEndOfSong() = player.setSleep(null, endOfSong = true)
 

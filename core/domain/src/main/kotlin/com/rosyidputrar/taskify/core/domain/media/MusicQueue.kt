@@ -106,6 +106,11 @@ data class YtState(
     /** Lagu yang jalur direct-nya gagal diputar → diminta ulang lewat konverter (sekali per lagu). */
     val fallbacks: List<String> = emptyList(),
     val radio: RadioSource? = null,
+    /**
+     * Lagu yang antreannya diisi lagu serupa begitu keterangannya datang (upNext dari
+     * now-playing/track) — dipakai saat memutar satu lagu dari hasil cari/Jelajah.
+     */
+    val similarSeed: String? = null,
 ) {
     val current: Song? get() = order.getOrNull(position)?.let { queue.getOrNull(it) }
     val currentUrl: String? get() = current?.let { urls[it.videoId] }
@@ -118,7 +123,7 @@ data class YtState(
 }
 
 sealed interface YtEvent {
-    data class SetQueue(val songs: List<Song>, val startAt: Int = 0, val rng: Random = Random.Default, val radio: RadioSource? = null) : YtEvent
+    data class SetQueue(val songs: List<Song>, val startAt: Int = 0, val rng: Random = Random.Default, val radio: RadioSource? = null, val similar: Boolean = false) : YtEvent
     /** Antrean tersimpan dipulihkan (setelah proses mati) — dalam keadaan jeda, URL diminta ulang saat diputar. */
     data class Restore(val snapshot: QueueSnapshot) : YtEvent
     /** Pemutaran gagal: coba jalur konverter sekali bila sebelumnya direct, kalau tidak jadi galat. */
@@ -251,6 +256,7 @@ object MusicQueue {
                 state.copy(queue = songs, order = order, position = if (state.shuffle) 0 else startAt, status = YtStatus.Preparing,
                     percent = 0, label = "", error = "", prefetching = emptyList(), continued = emptyList(), awaitingMore = false,
                     radio = event.radio, fallbacks = emptyList(),
+                    similarSeed = if (event.similar) songs[startAt].videoId.takeIf { !songs[startAt].live } else null,
                     urls = state.urls + live.associate { it.videoId to it.url },
                     streams = state.streams + live.associate { it.videoId to StreamSource(StreamSource.SOURCE_LIVE, null, null) })
             }
@@ -318,8 +324,13 @@ object MusicQueue {
         is YtEvent.PrefetchFailed -> state.copy(prefetching = state.prefetching - event.videoId)
         is YtEvent.PrefetchCancelled -> state.copy(prefetching = state.prefetching - event.videoId)
         is YtEvent.DetailsStart -> if (event.videoId in state.detailsPending) state else state.copy(detailsPending = state.detailsPending + event.videoId)
-        is YtEvent.DetailsDone -> state.copy(details = state.details + (event.videoId to event.details), detailsPending = state.detailsPending - event.videoId)
+        is YtEvent.DetailsDone -> {
+            val s = state.copy(details = state.details + (event.videoId to event.details), detailsPending = state.detailsPending - event.videoId)
+            // Antrean "lagu serupa": upNext lagu benih langsung disambung (tidak menunggu lagu terakhir).
+            if (event.videoId == state.similarSeed) reduce(s, YtEvent.ContinueQueue(event.videoId, event.details.upNext)).copy(similarSeed = null) else s
+        }
         is YtEvent.DetailsFailed -> state.copy(
+            similarSeed = state.similarSeed.takeIf { it != event.videoId },
             details = state.details + (event.videoId to TrackDetails("", emptyList())),
             detailsPending = state.detailsPending - event.videoId, awaitingMore = false,
         )

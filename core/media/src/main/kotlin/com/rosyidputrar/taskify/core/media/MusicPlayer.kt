@@ -145,6 +145,13 @@ class MusicPlayer(
         dispatch(YtEvent.SetQueue(songs, startAt, radio = radio))
     }
 
+    /** Putar satu lagu; antreannya diisi lagu serupa begitu keterangan lagu itu datang. */
+    fun playSimilar(song: Song) {
+        loadedId = null
+        resumeId = null
+        dispatch(YtEvent.SetQueue(listOf(song), 0, similar = true))
+    }
+
     fun playStation(station: RadioStation) = playQueue(listOf(station.toSong()), 0)
 
     fun next() = dispatch(YtEvent.Next)
