@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.room
 
+import androidx.compose.foundation.background
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,7 +67,7 @@ fun RoomScreen(
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 156.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentPadding = gridPadding,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
