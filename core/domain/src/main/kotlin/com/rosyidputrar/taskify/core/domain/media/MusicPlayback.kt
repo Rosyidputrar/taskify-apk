@@ -97,8 +97,6 @@ data class MusicSettings(
     val forceMp3: Boolean = false,
     /** Arsipkan hasil konverter ke R2 supaya bisa di-seek & diputar ulang tanpa konversi. */
     val archive: Boolean = true,
-    /** Memutar satu lagu dari hasil cari/Jelajah → antrean diisi lagu serupa (bukan seluruh daftar hasil). */
-    val similarQueue: Boolean = true,
 )
 
 /** Pewaktu tidur: berhenti pada [endsAt] (epoch ms) atau di akhir lagu ini. */

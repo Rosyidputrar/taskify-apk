@@ -34,12 +34,10 @@ class MusicPrefs(context: Context) {
             sponsorBlock = prefs.getBoolean("sponsorBlock", true),
             forceMp3 = prefs.getBoolean("forceMp3", false),
             archive = prefs.getBoolean("archive", true),
-            similarQueue = prefs.getBoolean("similarQueue", true),
         )
         set(v) {
             prefs.edit().putString("quality", v.quality.value).putBoolean("normalize", v.normalize).putBoolean("sponsorBlock", v.sponsorBlock)
-                .putBoolean("forceMp3", v.forceMp3).putBoolean("archive", v.archive)
-                .putBoolean("similarQueue", v.similarQueue).apply()
+                .putBoolean("forceMp3", v.forceMp3).putBoolean("archive", v.archive).apply()
         }
 
     fun saveQueue(snapshot: QueueSnapshot?) {

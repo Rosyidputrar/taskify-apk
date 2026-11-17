@@ -118,9 +118,8 @@ interface MusicActions {
     /** Putar lagu ke-[index] dari daftar lagu hasil pencarian. */
     fun play(index: Int) {}
     fun playSongs(songs: List<Song>, index: Int) {}
-    /** Lagu tunggal dari hasil cari/Jelajah: antrean lagu serupa (atau seluruh [list] bila dimatikan). */
-    fun playSong(list: List<Song>, index: Int) {}
-    fun toggleSimilarQueue() {}
+    /** Lagu tunggal dari hasil cari/Jelajah: hanya lagu itu + lagu serupa — hasil lain TIDAK masuk antrean. */
+    fun playSong(song: Song) {}
     fun playTop(top: TopResult) {}
     fun togglePlay() {}
     fun next() {}
@@ -306,15 +305,12 @@ class MusicViewModel(
 
     // ------------------------------------------------------------------ pemutaran
 
-    override fun play(index: Int) = playSong(local.value.search.results.songs, index)
+    override fun play(index: Int) { local.value.search.results.songs.getOrNull(index)?.let(::playSong) }
     override fun playSongs(songs: List<Song>, index: Int) = player.playQueue(songs, index)
-    override fun playSong(list: List<Song>, index: Int) {
-        val song = list.getOrNull(index) ?: return
-        if (player.settings.value.similarQueue) player.playSimilar(song) else player.playQueue(list, index)
-    }
+    override fun playSong(song: Song) = player.playSimilar(song)
     override fun playTop(top: TopResult) {
         top.toSong()?.let { song ->
-            playSong(listOf(song) + local.value.search.results.songs.filter { s -> s.videoId != song.videoId }, 0); return
+            playSong(song); return
         }
         // Hasil teratas bukan lagu: buka artis/album yang cocok di daftar hasil.
         val r = local.value.search.results
@@ -512,7 +508,6 @@ class MusicViewModel(
     override fun toggleSponsorBlock() = player.updateSettings { it.copy(sponsorBlock = !it.sponsorBlock) }
     override fun toggleForceMp3() = player.updateSettings { it.copy(forceMp3 = !it.forceMp3) }
     override fun toggleArchive() = player.updateSettings { it.copy(archive = !it.archive) }
-    override fun toggleSimilarQueue() = player.updateSettings { it.copy(similarQueue = !it.similarQueue) }
     override fun setSleep(minutes: Int?) = player.setSleep(minutes)
     override fun sleepEndOfSong() = player.setSleep(null, endOfSong = true)
 

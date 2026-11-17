@@ -79,8 +79,6 @@ fun MusicSettingsContent(state: MusicUiState, actions: MusicActions) {
         }
         Text("Berlaku untuk lagu berikutnya. Jalur konverter MP3 selalu memakai bitrate bawaannya.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("PEMUTARAN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
-        SettingSwitch("Antrean lagu serupa", "Memutar satu lagu dari Cari atau Jelajah mengisi antrean dengan lagu serupa. Matikan untuk memutar seluruh daftar hasil.",
-            s.similarQueue, actions::toggleSimilarQueue)
         SettingSwitch("Ratakan volume", "Lagu yang keras dilirihkan supaya volume antar lagu seragam.", s.normalize, actions::toggleNormalize)
         SettingSwitch("Lewati sponsor & intro (SponsorBlock)", "Melompati bagian non-musik dari data komunitas. Hanya saat audio bisa digeser.", s.sponsorBlock, actions::toggleSponsorBlock)
         SettingSwitch("Selalu pakai MP3 (konverter)", "Untuk perangkat yang gagal memutar opus/webm. Lebih lambat disiapkan dan tidak bisa digeser.", s.forceMp3, actions::toggleForceMp3)

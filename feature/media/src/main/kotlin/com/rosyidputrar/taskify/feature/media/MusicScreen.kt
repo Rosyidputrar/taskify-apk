@@ -357,8 +357,8 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
     if (r.podcasts.isNotEmpty()) cardRow("podcasts", if (all) "Podcast" else null, r.podcasts.map { p -> CardItem(p.browseId, p.title, p.author, p.cover) { actions.open(BrowseTarget.Podcast(p.browseId, p.title)) } }, grid = !all)
     if (r.episodes.isNotEmpty()) {
         if (all) item(key = "h-episodes") { SectionTitle("Episode") }
-        itemsIndexed(r.episodes, key = { _, e -> "e-" + e.videoId }) { i, e ->
-            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSongs(r.episodes, i) }, modifier = Modifier.animateItem())
+        itemsIndexed(r.episodes, key = { _, e -> "e-" + e.videoId }) { _, e ->
+            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSong(e) }, modifier = Modifier.animateItem())
         }
     }
     if (s.cursor != null) item(key = "more") {
@@ -533,7 +533,7 @@ private class HapticMusicActions(private val a: MusicActions, private val h: Tas
     override fun setFilter(f: SearchFilter) { h.tick(); a.setFilter(f) }
     override fun play(index: Int) { h.tap(); a.play(index) }
     override fun playSongs(songs: List<Song>, index: Int) { h.tap(); a.playSongs(songs, index) }
-    override fun playSong(list: List<Song>, index: Int) { h.tap(); a.playSong(list, index) }
+    override fun playSong(song: Song) { h.tap(); a.playSong(song) }
     override fun playPage(shuffle: Boolean) { h.tap(); a.playPage(shuffle) }
     override fun playStation(station: com.rosyidputrar.taskify.core.domain.media.RadioStation) { h.tap(); a.playStation(station) }
     override fun togglePlay() { h.tap(); a.togglePlay() }
