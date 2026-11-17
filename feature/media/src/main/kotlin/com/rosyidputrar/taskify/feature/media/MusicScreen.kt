@@ -1,6 +1,15 @@
 package com.rosyidputrar.taskify.feature.media
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -88,7 +97,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
-import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
 import com.rosyidputrar.taskify.core.designsystem.component.ModuleHeader
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyLoadingIndicator
@@ -127,62 +136,93 @@ fun SongArt(url: String, size: Dp, modifier: Modifier = Modifier, shape: Shape =
     }
 }
 
+/** Satu "layar" di dalam Musik: akar (tab) atau halaman koleksi pada kedalaman tumpukan tertentu. */
+private data class MusicFrame(val page: BrowsePage?, val depth: Int)
+
+/**
+ * Gerak halaman dalam Musik = gerak layar aplikasi (PR animasi: pegas 0.95/420 geser, 1/420 pudar,
+ * paralaks 1/3), supaya membuka album/artis terasa sama dengan membuka layar lain.
+ */
+private object MusicMotion {
+    val offset = spring(dampingRatio = 0.95f, stiffness = 420f, visibilityThreshold = IntOffset(1, 1))
+    val float = spring<Float>(dampingRatio = 1f, stiffness = 420f)
+}
+
 @Composable
 fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: PaddingValues, onBack: (() -> Unit)? = null, backButton: @Composable (() -> Unit) -> Unit = {}) {
     val haptics = rememberHaptics()
     @Suppress("NAME_SHADOWING")
     val actions = remember(actions, haptics) { HapticMusicActions(actions, haptics) }
     var settingsOpen by remember { mutableStateOf(false) }
-    val page = state.page
-    BackHandler(enabled = page != null) { actions.back() }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
-        item(key = "header") {
-            ModuleHeader(
-                // Judul koleksi tampil besar di kepala halaman; header cukup menyebut jenisnya.
-                TaskifyModule.Music, if (page != null) pageKindLabel(page.target).ifBlank { "Musik" } else "Musik",
-                subtitle = if (page != null) (if (page.loading || page.error != null) page.title.ifBlank { null } else null) else "Jelajah, cari, putar di latar, lirik",
-                navigation = when {
-                    page != null -> { { backButton { actions.back() } } }
-                    else -> onBack?.let { { backButton(it) } }
-                },
-                actions = { if (state.configured) IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
-            )
-        }
-        if (!state.configured) {
-            item(key = "off") { EmptyState(TaskifyModule.Music, "Pemutar musik belum diatur", "Isi MUSIC_API_URL saat build (GitHub Secrets) untuk mengaktifkan pemutar.") }
-            return@LazyColumn
-        }
-        state.busy?.let { label ->
-            item(key = "busy") {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    BackHandler(enabled = state.page != null) { actions.back() }
+    // Posisi gulir tiap halaman diingat selama halaman itu masih di tumpukan.
+    val listStates = remember { mutableMapOf<String, LazyListState>() }
+    val stackKeys = state.pages.map { it.target.key }
+    LaunchedEffect(stackKeys) { listStates.keys.retainAll(stackKeys.toSet() + ROOT_KEY) }
+    AnimatedContent(
+        targetState = MusicFrame(state.page, state.pages.size),
+        contentKey = { it.page?.target?.key ?: ROOT_KEY },
+        transitionSpec = {
+            if (targetState.depth >= initialState.depth) {
+                (slideInHorizontally(MusicMotion.offset) { it } + fadeIn(MusicMotion.float, 0.6f)) togetherWith
+                    (slideOutHorizontally(MusicMotion.offset) { -it / 3 } + fadeOut(MusicMotion.float, 0.4f))
+            } else {
+                (slideInHorizontally(MusicMotion.offset) { -it / 3 } + fadeIn(MusicMotion.float, 0.4f)) togetherWith
+                    (slideOutHorizontally(MusicMotion.offset) { it } + fadeOut(MusicMotion.float, 0.6f))
+            }
+        },
+        label = "music-page",
+    ) { frame ->
+        val page = frame.page
+        val listState = listStates.getOrPut(page?.target?.key ?: ROOT_KEY) { LazyListState() }
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
+            item(key = "header") {
+                ModuleHeader(
+                    // Judul koleksi tampil besar di kepala halaman; header cukup menyebut jenisnya.
+                    TaskifyModule.Music, if (page != null) pageKindLabel(page.target).ifBlank { "Musik" } else "Musik",
+                    subtitle = if (page != null) (if (page.loading || page.error != null) page.title.ifBlank { null } else null) else "Jelajah, cari, putar di latar, lirik",
+                    navigation = when {
+                        page != null -> { { backButton { actions.back() } } }
+                        else -> onBack?.let { { backButton(it) } }
+                    },
+                    actions = { if (state.configured) IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
+                )
+            }
+            if (!state.configured) {
+                item(key = "off") { EmptyState(TaskifyModule.Music, "Pemutar musik belum diatur", "Isi MUSIC_API_URL saat build (GitHub Secrets) untuk mengaktifkan pemutar.") }
+                return@LazyColumn
+            }
+            state.busy?.let { label ->
+                item(key = "busy") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).animateItem()) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
             }
-        }
-        state.notice?.let { n ->
-            item(key = "notice") { Text(n, style = MaterialTheme.typography.labelLarge, color = TaskifyTheme.modules.accent(TaskifyModule.Music), modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
-        }
-        if (page != null) {
-            if (state.player.status != YtStatus.Idle) item(key = "page-mini") { MiniPlayerBar(state, actions, onOpen = actions::back, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
-            pageContent(page, state, actions)
-            return@LazyColumn
-        }
-        if (state.player.status != YtStatus.Idle) item(key = "now") { NowPlaying(state, actions) }
-        item(key = "tabs") {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
-                MusicTab.entries.forEachIndexed { i, t -> SegmentedButton(state.tab == t, { actions.setTab(t) }, SegmentedButtonDefaults.itemShape(i, MusicTab.entries.size), label = { FitText(t.label) }) }
+            if (page != null) {
+                if (state.player.status != YtStatus.Idle) item(key = "page-mini") { MiniPlayerBar(state, actions, onOpen = actions::back, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
+                pageContent(page, state, actions)
+                return@LazyColumn
             }
-        }
-        when (state.tab) {
-            MusicTab.Explore -> exploreTab(state, actions)
-            MusicTab.Search -> searchTab(state, actions)
-            MusicTab.Queue -> queueTab(state, actions)
-            MusicTab.Lyrics -> item(key = "lyrics") { Lyrics(state, actions) }
+            if (state.player.status != YtStatus.Idle) item(key = "now") { NowPlaying(state, actions, Modifier.animateItem()) }
+            item(key = "tabs") {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    MusicTab.entries.forEachIndexed { i, t -> SegmentedButton(state.tab == t, { actions.setTab(t) }, SegmentedButtonDefaults.itemShape(i, MusicTab.entries.size), label = { FitText(t.label) }) }
+                }
+            }
+            when (state.tab) {
+                MusicTab.Explore -> exploreTab(state, actions)
+                MusicTab.Search -> searchTab(state, actions)
+                MusicTab.Queue -> queueTab(state, actions)
+                MusicTab.Lyrics -> item(key = "lyrics") { Lyrics(state, actions) }
+            }
         }
     }
     if (settingsOpen) MusicSettingsSheet(state, actions) { settingsOpen = false }
 }
+
+private const val ROOT_KEY = "root"
 
 private fun pageKindLabel(t: BrowseTarget): String = when (t) {
     is BrowseTarget.Album -> "Album"
@@ -194,11 +234,11 @@ private fun pageKindLabel(t: BrowseTarget): String = when (t) {
 }
 
 @Composable
-private fun NowPlaying(state: MusicUiState, actions: MusicActions) {
+private fun NowPlaying(state: MusicUiState, actions: MusicActions, modifier: Modifier = Modifier) {
     val p = state.player
     val song = p.current ?: return
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
         Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SongArt(song.cover, 220.dp, live = song.live)
             Text(song.title, style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily), textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -292,10 +332,9 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
             }
             if (!state.online) Text("Tidak ada koneksi — pencarian & pemutaran butuh internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
             s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (s.loading) LoadingBlock(Modifier.fillMaxWidth(), label = "Mencari…", module = TaskifyModule.Music)
         }
     }
-    if (s.loading) return
+    if (s.loading) { item(key = "s-skeleton") { ListSkeleton(TaskifyModule.Music, rows = 5, label = "Mencari…") }; return }
     val r = s.results
     if (s.searched && r.isEmpty && s.error == null) item(key = "none") {
         EmptyState(TaskifyModule.Music, "Tidak ada hasil", "Coba kata kunci lain atau ganti filter.")
@@ -306,7 +345,7 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
     if (songs.isNotEmpty()) {
         if (all) item(key = "h-songs") { SectionTitle("Lagu & video") }
         itemsIndexed(songs, key = { _, song -> "r-" + song.videoId }) { i, song ->
-            SongRow(song, playing = state.player.current?.videoId == song.videoId, onClick = { actions.play(i) }, onRadio = { actions.startRadio(song) })
+            SongRow(song, playing = state.player.current?.videoId == song.videoId, onClick = { actions.play(i) }, onRadio = { actions.startRadio(song) }, modifier = Modifier.animateItem())
         }
     }
     if (r.albums.isNotEmpty()) cardRow("albums", if (all) "Album" else null, r.albums.map { a -> CardItem(a.browseId, a.title, listOf(a.artist, a.year).filter { it.isNotBlank() }.joinToString(" · "), a.cover) { actions.open(BrowseTarget.Album(a.browseId, a.title)) } }, grid = !all)
@@ -316,7 +355,7 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
     if (r.episodes.isNotEmpty()) {
         if (all) item(key = "h-episodes") { SectionTitle("Episode") }
         itemsIndexed(r.episodes, key = { _, e -> "e-" + e.videoId }) { i, e ->
-            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSongs(r.episodes, i) })
+            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSongs(r.episodes, i) }, modifier = Modifier.animateItem())
         }
     }
     if (s.cursor != null) item(key = "more") {
@@ -360,15 +399,15 @@ private fun LazyListScope.queueTab(state: MusicUiState, actions: MusicActions) {
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
     }
     itemsIndexed(list, key = { i, song -> "q-$i-" + song.videoId }) { i, song ->
-        SongRow(song, playing = i == state.player.position, onClick = { actions.jump(i) }, index = i + 1)
+        SongRow(song, playing = i == state.player.position, onClick = { actions.jump(i) }, index = i + 1, modifier = Modifier.animateItem())
     }
 }
 
 @Composable
-fun SongRow(song: Song, playing: Boolean, onClick: () -> Unit, index: Int? = null, onRadio: (() -> Unit)? = null) {
+fun SongRow(song: Song, playing: Boolean, onClick: () -> Unit, index: Int? = null, onRadio: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 20.dp, end = if (onRadio != null) 4.dp else 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 20.dp, end = if (onRadio != null) 4.dp else 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (index != null) Text("$index", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(28.dp))
         SongArt(song.thumb, 48.dp, live = song.live)
         Spacer(Modifier.width(12.dp))
@@ -395,7 +434,7 @@ private fun Lyrics(state: MusicUiState, actions: MusicActions) {
         when {
             song == null -> EmptyState(TaskifyModule.Music, "Belum ada lagu", "Lirik muncul di sini saat lagu diputar.")
             song.live -> Text("Siaran radio langsung tidak punya lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            l.loading -> LoadingBlock(Modifier.fillMaxWidth(), label = "Memuat lirik…", module = TaskifyModule.Music)
+            l.loading -> ListSkeleton(TaskifyModule.Music, rows = 5, lines = 1, label = "Memuat lirik…")
             l.error != null -> Text(l.error, color = MaterialTheme.colorScheme.error)
             l.lyrics?.instrumental == true -> Text("Lagu instrumental — tanpa lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             l.lyrics?.hasSynced == true -> SyncedLyrics(state, actions)

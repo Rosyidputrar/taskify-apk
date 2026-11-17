@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify.feature.media
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.domain.media.ArtistPage
 import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
@@ -102,8 +103,6 @@ data class MusicUiState(
     val explore: ExploreState = ExploreState(),
     val settings: MusicSettings = MusicSettings(),
     val sleep: SleepTimer? = null,
-    /** Pesan sesaat (SponsorBlock, pewaktu tidur, galat aksi). */
-    val notice: String? = null,
     /** Sedang memutar dari link/radio/saran (menunggu server). */
     val busy: String? = null,
 ) {
@@ -154,19 +153,22 @@ fun interface OnlineFlow {
     fun flow(): Flow<Boolean>
 }
 
-class MusicViewModel(private val player: MusicPlayer, private val client: MusicClient, online: OnlineFlow) : ViewModel(), MusicActions {
+class MusicViewModel(
+    private val player: MusicPlayer,
+    private val client: MusicClient,
+    online: OnlineFlow,
+    /** Snackbar aplikasi (sama dengan modul lain); null di tes. */
+    private val messenger: Messenger? = null,
+) : ViewModel(), MusicActions {
     private val local = MutableStateFlow(MusicUiState(configured = player.configured))
     private var searchJob: Job? = null
     private var suggestJob: Job? = null
     private var pageJob: Job? = null
     private var lyricsJob: Job? = null
-    private val notice = MutableStateFlow<String?>(null)
-    private var noticeJob: Job? = null
-
-    private val extras = combine(player.settings, player.sleep, player.notice, notice) { set, sleep, pn, n -> Triple(set, sleep, n ?: pn) }
+    private val extras = combine(player.settings, player.sleep) { set, sleep -> set to sleep }
 
     val state: StateFlow<MusicUiState> = combine(local, player.state, player.position, online.flow(), extras) { l, p, pos, on, ex ->
-        l.copy(player = p, position = pos, online = on, settings = ex.first, sleep = ex.second, notice = ex.third)
+        l.copy(player = p, position = pos, online = on, settings = ex.first, sleep = ex.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
     init {
@@ -202,11 +204,7 @@ class MusicViewModel(private val player: MusicPlayer, private val client: MusicC
         }
     }
 
-    private fun say(text: String?) {
-        notice.value = text
-        noticeJob?.cancel()
-        if (text != null) noticeJob = launchSafe { delay(4_000); notice.value = null }
-    }
+    private fun say(text: String?) { if (!text.isNullOrBlank()) messenger?.show(text) }
 
     // ------------------------------------------------------------------ pencarian
 

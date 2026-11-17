@@ -37,7 +37,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
-import com.rosyidputrar.taskify.core.designsystem.component.LoadingBlock
+import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
+import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
+import com.rosyidputrar.taskify.core.designsystem.component.SkeletonLine
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
@@ -51,9 +60,11 @@ import com.rosyidputrar.taskify.core.domain.media.TopResult
 /** Satu kartu di baris geser (album, artis, playlist, podcast, lagu, stasiun). */
 data class CardItem(val key: String, val title: String, val subtitle: String, val image: String, val circle: Boolean = false, val live: Boolean = false, val onClick: () -> Unit)
 
+/** Judul seksi gaya "Kertas & Tinta" yang sama dengan modul lain (label indeks huruf besar, aksen modul). */
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.titleMedium.copy(fontFamily = SerifFamily), modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp))
+    Text(text.uppercase(), style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Music),
+        modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp).semantics { heading() })
 }
 
 @Composable
@@ -67,8 +78,8 @@ private fun MediaCard(item: CardItem) {
 }
 
 @Composable
-private fun CardListRow(item: CardItem) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = item.onClick).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun CardListRow(item: CardItem, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().clickable(onClick = item.onClick).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         SongArt(item.image, 56.dp, shape = if (item.circle) CircleShape else RoundedCornerShape(10.dp), live = item.live)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -82,7 +93,7 @@ private fun CardListRow(item: CardItem) {
 fun LazyListScope.cardRow(key: String, title: String?, items: List<CardItem>, grid: Boolean = false) {
     if (items.isEmpty()) return
     if (title != null) item(key = "h-$key") { SectionTitle(title) }
-    if (grid) items(items, key = { "$key-${it.key}" }) { CardListRow(it) }
+    if (grid) items(items, key = { "$key-${it.key}" }) { CardListRow(it, Modifier.animateItem()) }
     else item(key = "row-$key") {
         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(items, key = { it.key }) { MediaCard(it) }
@@ -93,12 +104,13 @@ fun LazyListScope.cardRow(key: String, title: String?, items: List<CardItem>, gr
 @Composable
 fun TopResultCard(top: TopResult, actions: MusicActions) {
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
-        Row(Modifier.clickable(onClickLabel = if (top.playable) "Putar" else "Buka") { actions.playTop(top) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    IndexCard(TaskifyModule.Music, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), onClick = { actions.playTop(top) },
+        onClickLabel = if (top.playable) "Putar" else "Buka", tinted = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             SongArt(top.cover, 88.dp, shape = if (top.kind?.lowercase() == "artis") CircleShape else RoundedCornerShape(14.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("HASIL TERATAS", style = MaterialTheme.typography.labelSmall, color = accent)
+                Text("HASIL TERATAS", style = TaskifyTextStyles.indexLabel, color = accent)
                 Text(top.title, style = MaterialTheme.typography.titleMedium.copy(fontFamily = SerifFamily), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(listOfNotNull(top.kind, top.byline.ifBlank { null }).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -134,7 +146,7 @@ fun LazyListScope.exploreTab(state: MusicUiState, actions: MusicActions) {
         item(key = "x-off") { EmptyState(TaskifyModule.Music, "Tidak ada koneksi", "Jelajah butuh internet. Stasiun radio tetap bisa dicoba saat koneksi kembali.") }
         return
     }
-    if (e.loading && !e.loaded) { item(key = "x-load") { LoadingBlock(Modifier.fillMaxWidth(), label = "Memuat Jelajah…", module = TaskifyModule.Music) }; return }
+    if (e.loading && !e.loaded) { item(key = "x-load") { ExploreSkeleton() }; return }
     e.error?.let { err ->
         item(key = "x-err") {
             EmptyState(TaskifyModule.Music, "Jelajah belum bisa dimuat", err, action = { OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") } })
@@ -175,7 +187,7 @@ fun LazyListScope.stationRow(key: String, title: String, stations: List<RadioSta
 /** Isi halaman koleksi/artis/mood yang sedang dibuka. */
 fun LazyListScope.pageContent(page: BrowsePage, state: MusicUiState, actions: MusicActions) {
     when {
-        page.loading -> { item(key = "p-load") { LoadingBlock(Modifier.fillMaxWidth(), label = "Memuat…", module = TaskifyModule.Music) }; return }
+        page.loading -> { item(key = "p-load") { ListSkeleton(TaskifyModule.Music, rows = 6, label = "Memuat…") }; return }
         page.error != null -> {
             item(key = "p-err") { EmptyState(TaskifyModule.Music, "Gagal memuat", page.error, action = { OutlinedButton(onClick = actions::retryPage) { Text("Coba lagi") } }) }
             return
@@ -188,7 +200,7 @@ fun LazyListScope.pageContent(page: BrowsePage, state: MusicUiState, actions: Mu
         }
         itemsIndexed(c.tracks, key = { _, s -> "p-t-" + s.videoId }) { i, s ->
             SongRow(s, playing = state.player.current?.videoId == s.videoId, onClick = { actions.playSongs(c.tracks, i) }, index = if (c.kind == CollectionKind.Album) i + 1 else null,
-                onRadio = if (c.kind == CollectionKind.Podcast) null else ({ actions.startRadio(s) }))
+                onRadio = if (c.kind == CollectionKind.Podcast) null else ({ actions.startRadio(s) }), modifier = Modifier.animateItem())
         }
         if (c.tracks.isEmpty()) item(key = "p-empty") { EmptyState(TaskifyModule.Music, "Kosong", "Belum ada lagu di sini.") }
         if (c.cursor != null) item(key = "p-more") {
@@ -206,7 +218,7 @@ fun LazyListScope.pageContent(page: BrowsePage, state: MusicUiState, actions: Mu
         if (a.topSongs.isNotEmpty()) {
             item(key = "p-h-top") { SectionTitle("Lagu teratas") }
             itemsIndexed(a.topSongs, key = { _, s -> "p-top-" + s.videoId }) { i, s ->
-                SongRow(s, playing = state.player.current?.videoId == s.videoId, onClick = { actions.playSongs(a.topSongs, i) }, onRadio = { actions.startRadio(s) })
+                SongRow(s, playing = state.player.current?.videoId == s.videoId, onClick = { actions.playSongs(a.topSongs, i) }, onRadio = { actions.startRadio(s) }, modifier = Modifier.animateItem())
             }
         }
         cardRow("p-albums", "Album", a.albums.map { al -> CardItem(al.browseId, al.title, al.year, al.cover) { actions.open(BrowseTarget.Album(al.browseId, al.title)) } })
@@ -233,6 +245,25 @@ private fun PageHead(cover: String, title: String, subtitle: String, description
             }
             OutlinedButton(onClick = { actions.playPage(true) }) { Icon(Icons.Rounded.Shuffle, contentDescription = "Acak") }
             if (radio != null) OutlinedButton(onClick = radio) { Icon(Icons.Rounded.Radio, contentDescription = "Radio artis") }
+        }
+    }
+}
+
+/** Kerangka Jelajah saat memuat: baris chip + dua rak kartu (bentuknya sama dengan isi aslinya). */
+@Composable
+private fun ExploreSkeleton() {
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "Memuat Jelajah…" }) {
+        repeat(2) {
+            SkeletonLine(Modifier.padding(start = 20.dp, top = 18.dp, bottom = 10.dp), widthFraction = 0.35f)
+            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(3) {
+                    Column(Modifier.width(140.dp)) {
+                        Box(Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+                        SkeletonLine(Modifier.padding(top = 8.dp), widthFraction = 0.8f)
+                        SkeletonLine(Modifier.padding(top = 6.dp), widthFraction = 0.5f, height = 10.dp)
+                    }
+                }
+            }
         }
     }
 }

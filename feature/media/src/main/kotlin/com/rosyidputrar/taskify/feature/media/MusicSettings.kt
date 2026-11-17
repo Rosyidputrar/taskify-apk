@@ -37,6 +37,10 @@ import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.RadioStation
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
@@ -63,7 +67,7 @@ fun MusicSettingsContent(state: MusicUiState, actions: MusicActions) {
     val s = state.settings
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Pengaturan musik", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
-        Text("KUALITAS AUDIO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+        Text("KUALITAS AUDIO", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
         MusicQuality.entries.forEach { q ->
             Row(Modifier.fillMaxWidth().selectable(s.quality == q, role = Role.RadioButton) { actions.setQuality(q) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(s.quality == q, onClick = null)
@@ -74,7 +78,7 @@ fun MusicSettingsContent(state: MusicUiState, actions: MusicActions) {
             }
         }
         Text("Berlaku untuk lagu berikutnya. Jalur konverter MP3 selalu memakai bitrate bawaannya.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("PEMUTARAN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+        Text("PEMUTARAN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
         SettingSwitch("Ratakan volume", "Lagu yang keras dilirihkan supaya volume antar lagu seragam.", s.normalize, actions::toggleNormalize)
         SettingSwitch("Lewati sponsor & intro (SponsorBlock)", "Melompati bagian non-musik dari data komunitas. Hanya saat audio bisa digeser.", s.sponsorBlock, actions::toggleSponsorBlock)
         SettingSwitch("Selalu pakai MP3 (konverter)", "Untuk perangkat yang gagal memutar opus/webm. Lebih lambat disiapkan dan tidak bisa digeser.", s.forceMp3, actions::toggleForceMp3)
@@ -132,25 +136,20 @@ fun FocusMusicCard(modifier: Modifier = Modifier) {
     FocusMusicContent(state, vm, modifier)
 }
 
+/** Seksi "MUSIK FOKUS" bergaya sama dengan seksi lain di Mode Fokus (label indeks + isi polos, tanpa kartu). */
 @Composable
 fun FocusMusicContent(state: FocusMusicState, actions: FocusMusicActions, modifier: Modifier = Modifier) {
-    val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(20.dp), modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Radio, null, tint = accent)
-                Column(Modifier.padding(start = 10.dp)) {
-                    Text("Musik fokus", style = MaterialTheme.typography.titleSmall)
-                    val now = state.stations.firstOrNull { it.id == state.playingId }
-                    Text(now?.let { (if (state.playing) "Memutar " else "Dijeda · ") + it.name + " · " + it.provider } ?: "Radio langsung tanpa iklan — ketuk untuk memutar",
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.stations.forEach { st ->
-                    val selected = st.id == state.playingId && state.playing
-                    FilterChip(selected, onClick = { actions.toggle(st) }, label = { Text(st.name + if (st.vocals) " · vokal" else "") })
-                }
+    val now = state.stations.firstOrNull { it.id == state.playingId }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("MUSIK FOKUS", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { heading() })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Radio, null, tint = TaskifyTheme.modules.accent(TaskifyModule.Music), modifier = Modifier.size(18.dp))
+            Text(now?.let { (if (state.playing) "Memutar " else "Dijeda · ") + it.name + " · " + it.provider } ?: "Radio langsung tanpa iklan — ketuk untuk memutar",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.stations.forEach { st ->
+                FilterChip(st.id == state.playingId && state.playing, onClick = { actions.toggle(st) }, label = { Text(st.name + if (st.vocals) " · vokal" else "") })
             }
         }
     }

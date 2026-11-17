@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -146,7 +148,7 @@ class MusicScreenshotTest {
     @Config(qualifiers = "w393dp-h1100dp-xxhdpi")
     @Test fun converterCannotSeek() = shot("music_converter_light", false) {
         val p = base.player.copy(streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_CONVERTER, "audio/mpeg", null)))
-        MusicContent(base.copy(tab = MusicTab.Queue, player = p, sleep = SleepTimer(endOfSong = true), notice = "Melewati intro"), object : MusicActions {}, padding)
+        MusicContent(base.copy(tab = MusicTab.Queue, player = p, sleep = SleepTimer(endOfSong = true)), object : MusicActions {}, padding)
     }
 
     @Test fun settings() = shot("music_settings_light", false) {
@@ -158,5 +160,27 @@ class MusicScreenshotTest {
 
     @Test fun focusMusic() = shot("focus_music_dark", true) {
         FocusMusicContent(FocusMusicState(stations = RadioStations.FALLBACK, playingId = "soma-groovesalad", playing = true), object : FocusMusicActions {}, Modifier.padding(16.dp))
+    }
+
+    @Test fun pageSlidesInAndBackPops() {
+        val col = MusicCollection(CollectionKind.Album, "MPREb_1", "Senja Kota", "Kopi Senja · 2024", emptyList(), songs, trackCount = 5)
+        var st by androidx.compose.runtime.mutableStateOf(base.copy(tab = MusicTab.Queue))
+        var backs = 0
+        compose.setContent {
+            TaskifyTheme {
+                MusicContent(st, object : MusicActions {
+                    override fun back() { backs++; st = st.copy(pages = st.pages.dropLast(1)) }
+                }, padding, backButton = { onClick -> androidx.compose.material3.TextButton(onClick = onClick) { androidx.compose.material3.Text("Kembali") } })
+            }
+        }
+        compose.waitForIdle()
+        st = st.copy(pages = listOf(BrowsePage(BrowseTarget.Album("MPREb_1", "Senja Kota"), false, collection = col)))
+        compose.waitForIdle()
+        compose.onNodeWithText("Senja Kota").assertExists()
+        compose.onNodeWithText("Kembali").performClick()
+        compose.waitForIdle()
+        assertEquals(1, backs)
+        compose.onNodeWithText("Senja Kota").assertDoesNotExist()
+        compose.onNodeWithText("Lampu Kota", substring = false).assertExists()
     }
 }

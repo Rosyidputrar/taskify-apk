@@ -99,7 +99,7 @@ fun FocusScreen(
         onPauseOrDispose { }
     }
     FocusContent(state, viewModel, contentPadding, backButton = { backButton(onBack) },
-        musicSlot = { com.rosyidputrar.taskify.feature.media.FocusMusicCard(Modifier.padding(top = 20.dp, bottom = 12.dp)) })
+        musicSlot = { com.rosyidputrar.taskify.feature.media.FocusMusicCard(Modifier.padding(top = 24.dp, bottom = 12.dp)) })
 }
 
 /** Layar Mode Fokus (tanpa ViewModel — bisa diuji). [now] untuk pratinjau/tes; null = jam berjalan. */
