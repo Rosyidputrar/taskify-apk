@@ -5,7 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.UnrecognizedAccountResponseException
 import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.pages.SelectedAccount
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -65,6 +67,16 @@ class MusicLoginRepositoryTest {
 
         override suspend fun accountDataSyncId(authState: PlaybackAuthState): Result<String> =
             accountDataSyncIdResult
+
+        /** Hasil `selectedAccount()` (fallback `accounts_list`); gagal default. */
+        var selectedAccountResult: Result<SelectedAccount> =
+            Result.failure(IllegalStateException("tidak ada akun terpilih"))
+        var selectedAccountCalls = 0
+
+        override suspend fun selectedAccount(authState: PlaybackAuthState): Result<SelectedAccount> {
+            selectedAccountCalls++
+            return selectedAccountResult
+        }
     }
 
     /** `ResponseException` asli (4xx/5xx) dari MockEngine, seperti `expectSuccess = true` produksi. */
@@ -105,6 +117,9 @@ class MusicLoginRepositoryTest {
 
     private fun loginError(result: Result<AccountInfo>): MusicLoginError? =
         (result.exceptionOrNull() as? MusicLoginException)?.error
+
+    private fun loginException(result: Result<AccountInfo>): MusicLoginException? =
+        result.exceptionOrNull() as? MusicLoginException
 
     @Test fun `completeLogin sukses menyimpan state akhir dan akun`() = runTest {
         val fake = FakeYouTube()
@@ -229,6 +244,172 @@ class MusicLoginRepositoryTest {
             "YouTube menolak verifikasi akun (HTTP 500). Coba lagi.",
             loginError(result)?.message,
         )
+    }
+
+    @Test fun `accountInfo ditolak HTTP 403 menghasilkan rawDetail HTTP 403`() = runTest {
+        val rejected = httpRejected(403)
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(rejected)
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.HttpRejected(403), loginError(result))
+        assertEquals("HTTP 403", loginException(result)?.rawDetail)
+        assertNull(repo.account.value)
+    }
+
+    @Test fun `accountInfo ditolak HTTP 500 menghasilkan rawDetail HTTP 500`() = runTest {
+        val rejected = httpRejected(500)
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(rejected)
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.HttpRejected(500), loginError(result))
+        assertEquals("HTTP 500", loginException(result)?.rawDetail)
+    }
+
+    @Test fun `accountInfo gagal IOException menghasilkan Network tanpa rawDetail`() = runTest {
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(IOException("putus"))
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.Network, loginError(result))
+        assertNull(loginException(result)?.rawDetail)
+    }
+
+    @Test fun `accountInfo gagal VerificationFailed tanpa rawDetail`() = runTest {
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(RuntimeException("respons rusak"))
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.VerificationFailed, loginError(result))
+        assertNull(loginException(result)?.rawDetail)
+    }
+
+    @Test fun `scrubRawDetail menghapus nilai cookie SAPISID`() {
+        val scrubbed = scrubRawDetail("badan aneh SAPISID=RAHASIA123 lanjut")
+
+        assertFalse(scrubbed.contains("RAHASIA123"))
+        assertTrue(scrubbed.contains("SAPISID=<redacted>"))
+    }
+
+    @Test fun `scrubRawDetail menghapus Authorization dan SAPISIDHASH`() {
+        val scrubbed = scrubRawDetail(
+            "Authorization: Bearer TOKENRAHASIA\nSAPISIDHASH 1700000000_ABCDEF1234567890",
+        )
+
+        assertFalse(scrubbed.contains("TOKENRAHASIA"))
+        assertFalse(scrubbed.contains("ABCDEF1234567890"))
+        assertTrue(scrubbed.contains("Authorization: <redacted>"))
+        assertTrue(scrubbed.contains("SAPISIDHASH <redacted>"))
+    }
+
+    @Test fun `scrubRawDetail menghapus nilai header cookie`() {
+        val scrubbed = scrubRawDetail("cookie=SAPISID=RAHASIA123; SID=abc; lanjutan teks")
+
+        assertFalse(scrubbed.contains("RAHASIA123"))
+        assertTrue(scrubbed.contains("cookie=<redacted>"))
+    }
+
+    @Test fun `scrubRawDetail memotong ke 500 karakter dan kosong tetap kosong`() {
+        val panjang = "x".repeat(600)
+        assertEquals(500, scrubRawDetail(panjang).length)
+        assertEquals("", scrubRawDetail(""))
+        assertEquals("", scrubRawDetail(null))
+    }
+
+    @Test fun `fallback sukses accountInfo gagal lalu selectedAccount sukses`() = runTest {
+        val fallbackAccount = AccountInfo(
+            "Nama Fallback", "fallback@example.com", "@fallback", "https://example.com/fb.jpg",
+        )
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan"),
+            )
+            selectedAccountResult = Result.success(
+                SelectedAccount(fallbackAccount, "delegated||fallback"),
+            )
+            // Langkah 3 resolve HARUS dilewati bila fallback membawa dataSyncId:
+            // buktikan dengan kegagalan jaringan yang tidak boleh muncul.
+            accountDataSyncIdResult = Result.failure(RuntimeException("jangan dipanggil"))
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(Result.success(fallbackAccount), result)
+        assertEquals(fallbackAccount, repo.account.value)
+        assertEquals(2, fake.accountInfoCalls) // retry account_menu dulu, baru fallback
+        assertEquals(1, fake.selectedAccountCalls)
+        assertEquals("delegated||fallback", store.loadAuthState().dataSyncId)
+    }
+
+    @Test fun `fallback tanpa dataSyncId lanjut resolve jaringan seperti biasa`() = runTest {
+        val fallbackAccount = AccountInfo(
+            "Nama Fallback", "fallback@example.com", "@fallback", "https://example.com/fb.jpg",
+        )
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan"),
+            )
+            selectedAccountResult = Result.success(SelectedAccount(fallbackAccount, null))
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(Result.success(fallbackAccount), result)
+        assertEquals("delegated||user", store.loadAuthState().dataSyncId)
+    }
+
+    @Test fun `fallback gagal mengembalikan UnrecognizedResponse dengan rawDetail account_menu`() = runTest {
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan menu"),
+            )
+            selectedAccountResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan fallback JANGAN MUNCUL"),
+            )
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
+        assertEquals("potongan menu", loginException(result)?.rawDetail)
+        assertNull(repo.account.value)
+    }
+
+    @Test fun `rawDetail tidak pernah mengandung nilai cookie`() = runTest {
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException(
+                    "respons aneh berisi SAPISID=RAHASIA123 di tengah",
+                ),
+            )
+            selectedAccountResult = Result.failure(
+                IllegalStateException("tidak ada akun terpilih"),
+            )
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
+        val rawDetail = loginException(result)?.rawDetail
+        assertTrue(rawDetail != null)
+        assertFalse(rawDetail.contains("RAHASIA123"))
     }
 
     @Test fun `accountInfo parse null menghasilkan UnrecognizedResponse`() = runTest {

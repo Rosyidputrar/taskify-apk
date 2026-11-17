@@ -41,6 +41,7 @@ import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import com.rosyidputrar.taskify.core.media.LocalRadioStations
+import com.rosyidputrar.taskify.core.media.youtube.MusicLoginError
 import com.rosyidputrar.taskify.feature.media.BrowsePage
 import com.rosyidputrar.taskify.feature.media.ExploreState
 import com.rosyidputrar.taskify.feature.media.FocusMusicContent
@@ -201,6 +202,18 @@ class MusicScreenshotTest {
 
     @Test fun loginError() = shot("music_login_error_light", false) {
         MusicLoginStateContent(MusicLoginScreenState.Error("Tidak bisa menghubungi YouTube. Periksa koneksi."), onRetry = {})
+    }
+
+    // Teks mentah error tampil langsung di bawah pesan ramah (perintah sir):
+    // golden baru, fixture error lama tidak diubah.
+    @Test fun loginErrorRaw() = shot("music_login_error_raw_light", false) {
+        MusicLoginStateContent(
+            MusicLoginScreenState.Error(
+                MusicLoginError.UnrecognizedResponse.message,
+                rawDetail = "HTTP 200\n{\"accountMenu\":{\"items\":[]},\"responseContext\":{\"serviceTrackingParams\":[]}}",
+            ),
+            onRetry = {},
+        )
     }
 
     @Composable
