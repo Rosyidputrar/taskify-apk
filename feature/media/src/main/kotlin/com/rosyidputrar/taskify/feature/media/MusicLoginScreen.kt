@@ -74,7 +74,21 @@ import org.koin.compose.viewmodel.koinViewModel
 
 private const val DEFAULT_LOGIN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com"
 private const val LOGIN_CONTEXT_RETRY_DELAY_MS = 1_000L
-private const val LOGIN_CONTEXT_EXTRACTION_ATTEMPTS = 10
+/**
+ * Batas atas percobaan ekstraksi login per pemanggilan
+ * [YouTubeLoginWebViewClient.scheduleLoginContextExtraction] (PLAN §C.4
+ * butir 2): 60 percobaan @1 detik = jendela tunggu maksimal 60 detik
+ * sampai cookie gabungan menjadi SESI PENUH. Counter di-reset tiap
+ * `onPageFinished` / `doUpdateVisitedHistory` baru (pemanggilan baru
+ * membatalkan runnable lama dan memulai hitungan dari 60 lagi); loop
+ * berhenti lebih awal bila sesi penuh tertangkap, bila URL keluar dari
+ * YouTube, atau bila `release()` dipanggil. 60 detik dipilih karena
+ * cookie sesi (`SID`/`HSID`/`SSID`) kadang baru muncul beberapa detik
+ * sesudah `LOGIN_INFO` + PAPISID, dan gate sesi penuh (§C.2) menolak
+ * tangkapan parsial — tanpa jendela sepanjang ini, login yang sah bisa
+ * tidak pernah tertangkap.
+ */
+private const val LOGIN_CONTEXT_EXTRACTION_ATTEMPTS = 60
 
 /** SALIN verbatim dari ArchiveTune `LoginScreen.kt` — jangan tulis dari ingatan. */
 private const val LOGIN_CONTEXT_SCRIPT =
@@ -311,6 +325,21 @@ private class YouTubeLoginWebViewClient(
         captureCookies(view.url)
     }
 
+    /**
+     * Ekstraksi konteks login berulang (PLAN §C.4 butir 2): cookie
+     * gabungan yang BELUM sesi penuh (gate di [LoginCookieCaptureGate]
+     * menolaknya) TIDAK menghentikan loop — runnable dijadwalkan ulang
+     * @1 detik selama WebView masih di URL YouTube, sampai batas atas
+     * [LOGIN_CONTEXT_EXTRACTION_ATTEMPTS] percobaan per pemanggilan ini.
+     * Begitu sesi penuh tertangkap (`captureCookies` true), loop
+     * berhenti: tidak ada gunanya mengevaluasi script + membaca cookie
+     * tiap detik sesudah verifikasi sudah jalan. Tangkapan parsial
+     * TIDAK PERNAH diteruskan ke `onCookiesCaptured` (gate sesi penuh),
+     * jadi "berhenti di tangkapan parsial" tidak bisa terjadi.
+     * Counter di-reset tiap pemanggilan baru: `onPageFinished` /
+     * `doUpdateVisitedHistory` membatalkan runnable lama sebelum membuat
+     * yang baru.
+     */
     private fun scheduleLoginContextExtraction(view: WebView, url: String?) {
         extractionRunnable?.let(view::removeCallbacks)
         extractionRunnable = null
@@ -322,7 +351,7 @@ private class YouTubeLoginWebViewClient(
             override fun run() {
                 if (!view.url.isYouTubeUrl()) return
                 view.evaluateJavascript(LOGIN_CONTEXT_SCRIPT, null)
-                captureCookies(view.url)
+                if (captureCookies(view.url)) return
                 remainingAttempts -= 1
                 if (remainingAttempts > 0) {
                     view.postDelayed(this, LOGIN_CONTEXT_RETRY_DELAY_MS)
@@ -333,10 +362,17 @@ private class YouTubeLoginWebViewClient(
         view.post(runnable)
     }
 
-    private fun captureCookies(currentUrl: String?) {
-        val mergedCookie = mergeYouTubeCookies(cookieManager, currentUrl) ?: return
-        if (!captureGate.shouldCapture(mergedCookie)) return
+    /**
+     * Baca + gabung cookie lalu teruskan ke `onCookiesCaptured` bila
+     * gate sesi penuh menerimanya. true = sesi penuh tertangkap
+     * (pemanggil boleh menghentikan loop ekstraksi); false = belum sesi
+     * penuh, duplikat tangkapan terakhir, atau tidak ada cookie.
+     */
+    private fun captureCookies(currentUrl: String?): Boolean {
+        val mergedCookie = mergeYouTubeCookies(cookieManager, currentUrl) ?: return false
+        if (!captureGate.shouldCapture(mergedCookie)) return false
         onCookiesCaptured(mergedCookie)
+        return true
     }
 
     private fun handleUrlLoading(view: WebView, url: String?): Boolean {
