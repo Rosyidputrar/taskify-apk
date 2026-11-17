@@ -19,4 +19,9 @@ dependencies {
     api(libs.androidx.media3.session)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
+
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.ktor.client.mock)
 }
