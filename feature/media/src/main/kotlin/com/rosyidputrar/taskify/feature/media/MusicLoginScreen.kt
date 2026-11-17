@@ -64,7 +64,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
 import org.koin.compose.viewmodel.koinViewModel
 
 private const val DEFAULT_LOGIN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com"
@@ -91,6 +90,7 @@ fun MusicLoginScreen(
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var loginClient by remember { mutableStateOf<YouTubeLoginWebViewClient?>(null) }
 
     LaunchedEffect(screenState) {
         if (screenState is MusicLoginScreenState.Success) onLoginComplete()
@@ -109,10 +109,12 @@ fun MusicLoginScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     WebView(context).apply {
-                        webViewClient = YouTubeLoginWebViewClient(
+                        val client = YouTubeLoginWebViewClient(
                             cookieManager = CookieManager.getInstance(),
                             onCookiesCaptured = viewModel::onCookiesCaptured,
                         )
+                        webViewClient = client
+                        loginClient = client
                         settings.apply {
                             javaScriptEnabled = true
                             setSupportZoom(true)
@@ -141,16 +143,37 @@ fun MusicLoginScreen(
                     }
                 },
                 onRelease = { releasedWebView ->
-                    (releasedWebView.webViewClient as? YouTubeLoginWebViewClient)?.release(releasedWebView)
+                    val releasedClient = releasedWebView.webViewClient as? YouTubeLoginWebViewClient
+                    releasedClient?.release(releasedWebView)
                     releasedWebView.removeJavascriptInterface("Android")
                     releasedWebView.stopLoading()
                     releasedWebView.destroy()
                     if (webView === releasedWebView) webView = null
+                    if (loginClient === releasedClient) loginClient = null
                 },
             )
             MusicLoginStateContent(
                 screenState,
-                onRetry = { viewModel.reset(); webView?.loadUrl(DEFAULT_LOGIN_URL) },
+                // PLAN §D.5 — "Coba lagi":
+                // * WebView SUDAH di music.youtube.com (login Google berhasil,
+                //   tapi verifikasi pertama gagal): jangan navigasi ulang,
+                //   langsung coba tangkap ulang cookie yang ada. Tanpa reset
+                //   gate, cookie yang sama akan didiamkan dedup (jebakan §B.2).
+                // * WebView BELUM di YTM (masih di halaman Google / kosong):
+                //   perilaku lama — reset gate lalu muat ulang halaman login.
+                // Factory AndroidView membuat client baru tiap komposisi baru,
+                // jadi gate juga segar saat layar login dibuka ulang.
+                onRetry = {
+                    viewModel.reset()
+                    val view = webView
+                    val client = loginClient
+                    if (view != null && client != null && view.url.isYouTubeUrl()) {
+                        client.retryCaptureNow(view)
+                    } else {
+                        client?.resetCapturedCookie()
+                        view?.loadUrl(DEFAULT_LOGIN_URL)
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -200,7 +223,7 @@ private class YouTubeLoginWebViewClient(
     private val onCookiesCaptured: (String) -> Unit,
 ) : WebViewClient() {
     private var extractionRunnable: Runnable? = null
-    private var lastCapturedCookie: String? = null
+    private val captureGate = LoginCookieCaptureGate()
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val targetUrl = request.url.toString()
@@ -224,6 +247,30 @@ private class YouTubeLoginWebViewClient(
     fun release(view: WebView) {
         extractionRunnable?.let(view::removeCallbacks)
         extractionRunnable = null
+    }
+
+    /**
+     * PLAN §D.1 — lupakan tangkapan cookie terakhir supaya "Coba lagi"
+     * bisa menangkap ulang cookie yang sama. WAJIB dipanggil dari handler
+     * retry (bukan hanya dari `release()`): tanpa ini, cookie gabungan
+     * yang sama persis dengan tangkapan pertama didiamkan dedup dan
+     * `onCookiesCaptured` tidak pernah dipanggil lagi (§B.2).
+     */
+    fun resetCapturedCookie() {
+        captureGate.reset()
+    }
+
+    /**
+     * PLAN §D.5 — retry aktif: WebView sudah di music.youtube.com dalam
+     * keadaan login, jadi langsung coba tangkap ulang cookie yang ada
+     * (reset gate dulu + baca cookie dari URL saat ini), TANPA menunggu
+     * `onPageFinished` berikutnya dan TANPA navigasi ulang. Tidak ada
+     * `startLogin` ganda: guard di `MusicLoginViewModel` tetap berlaku
+     * (cookie yang sama + job aktif / sudah sukses tidak diproses ulang).
+     */
+    fun retryCaptureNow(view: WebView) {
+        captureGate.reset()
+        captureCookies(view.url)
     }
 
     private fun scheduleLoginContextExtraction(view: WebView, url: String?) {
@@ -250,8 +297,7 @@ private class YouTubeLoginWebViewClient(
 
     private fun captureCookies(currentUrl: String?) {
         val mergedCookie = mergeYouTubeCookies(cookieManager, currentUrl) ?: return
-        if (!hasCompleteYouTubeLoginCookies(mergedCookie) || mergedCookie == lastCapturedCookie) return
-        lastCapturedCookie = mergedCookie
+        if (!captureGate.shouldCapture(mergedCookie)) return
         onCookiesCaptured(mergedCookie)
     }
 

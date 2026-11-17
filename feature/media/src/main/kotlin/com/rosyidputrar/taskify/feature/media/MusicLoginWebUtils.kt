@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
 import java.net.URI
 
 /**
@@ -19,6 +20,33 @@ val YOUTUBE_COOKIE_URLS: List<String> = listOf(
 
 /** Nama paket YouTube Music di Play Store (listing-nya diblokir di WebView). */
 const val YOUTUBE_MUSIC_PACKAGE_NAME = "com.google.android.apps.youtube.music"
+
+/**
+ * Gerbang tangkapan cookie login (JVM-murni, bisa di-unit-test tanpa WebView).
+ *
+ * Keputusan dedup yang dulu tersembunyi di `YouTubeLoginWebViewClient`:
+ * cookie gabungan yang lengkap tapi SAMA dengan tangkapan terakhir tidak
+ * diteruskan lagi ke `onCookiesCaptured`. [reset] melupakan tangkapan
+ * terakhir supaya cookie yang sama bisa ditangkap lagi — ini yang
+ * dipanggil handler "Coba lagi" (PLAN §B.2/§D.1): tanpa reset, retry
+ * sesudah login Google berhasil di WebView akan didiamkan selamanya.
+ */
+class LoginCookieCaptureGate {
+    private var lastCapturedCookie: String? = null
+
+    /** true bila cookie lengkap dan belum pernah ditangkap sejak reset terakhir; mencatatnya. */
+    fun shouldCapture(cookie: String?): Boolean {
+        if (!hasCompleteYouTubeLoginCookies(cookie)) return false
+        if (cookie == lastCapturedCookie) return false
+        lastCapturedCookie = cookie
+        return true
+    }
+
+    /** Lupakan tangkapan terakhir supaya cookie yang sama bisa ditangkap lagi. */
+    fun reset() {
+        lastCapturedCookie = null
+    }
+}
 
 /**
  * Gabung string cookie (`"k=v; k2=v2"`) dari tiap URL kandidat menjadi satu
