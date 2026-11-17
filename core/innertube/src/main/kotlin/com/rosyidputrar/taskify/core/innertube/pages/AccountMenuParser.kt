@@ -26,16 +26,27 @@ import kotlinx.serialization.json.booleanOrNull
 /**
  * Info akun aktif dari respons `account/account_menu` (PLAN C.3):
  * `actions[0].openPopupAction.popup.multiPageMenuRenderer.header.activeAccountHeaderRenderer`.
+ * Bila jalur tetap itu tidak ketemu, pindai SELURUH pohon JSON untuk
+ * `activeAccountHeaderRenderer` dan pakai yang pertama (PLAN
+ * music-login-raw-error — bentuk respons live bisa bergeser nestingnya).
  * Nama = `accountName.runs[0].text` — null (nama kosong/hilang) berarti
  * tidak ada akun yang bisa dipakai → kembalikan null, jangan karang nama.
  * Email/handle = `runs[0].text` masing-masing; foto = thumbnail terakhir
  * di `accountPhoto.thumbnails`.
  */
 fun parseAccountInfo(root: JsonElement): AccountInfo? {
-    val header = pick(
+    val fixedHeader = pick(
         root,
         "actions.0.openPopupAction.popup.multiPageMenuRenderer.header.activeAccountHeaderRenderer",
-    ) as? JsonObject ?: return null
+    ) as? JsonObject
+    val header = fixedHeader
+        ?: findObjectsNamed(root, "activeAccountHeaderRenderer").firstOrNull()
+        ?: return null
+    return accountInfoFromHeader(header)
+}
+
+/** Nama/email/handle/foto dari satu `activeAccountHeaderRenderer`. */
+private fun accountInfoFromHeader(header: JsonObject): AccountInfo? {
     val name = pickStr(header, "accountName.runs.0.text").takeIf { it.isNotBlank() } ?: return null
     return AccountInfo(
         name = name,
@@ -48,6 +59,78 @@ fun parseAccountInfo(root: JsonElement): AccountInfo? {
             ?.takeIf { it.isNotBlank() },
     )
 }
+
+/**
+ * Akun terpilih dari respons `account/accounts_list` (PLAN
+ * music-login-raw-error, fallback verifikasi login): pindai
+ * `accountItemRenderer`, abaikan yang `isDisabled`, utamakan yang
+ * `isSelected`. Nama = `accountName.runs[0].text` (jatuh ke `simpleText`
+ * bila tidak ada) — wajib non-blank, bila tidak ada → null. Email dari
+ * `email`/`accountByline` bila ada; foto = thumbnail terakhir.
+ * `dataSyncId` dari `serviceEndpoint` renderer itu (normalisasi sama
+ * seperti [parseAccountDataSyncId]), jatuh ke
+ * `responseContext.mainAppWebResponseContext.dataSyncId` bila renderer
+ * tidak membawanya. Null bila tidak ada akun terpilih sama sekali
+ * (tidak ada fallback ke akun pertama — "terpilih" harus eksplisit).
+ */
+fun parseSelectedAccount(root: JsonElement): SelectedAccount? {
+    val selected = findAccountItemRenderers(root)
+        .filter { renderer ->
+            val isDisabled = (renderer["isDisabled"] as? JsonPrimitive)?.booleanOrNull ?: false
+            !isDisabled
+        }
+        .filter { renderer ->
+            (renderer["isSelected"] as? JsonPrimitive)?.booleanOrNull ?: false
+        }
+        .mapNotNull { renderer -> selectedAccountFromRenderer(renderer, root) }
+        .firstOrNull()
+        ?: return null
+    return selected
+}
+
+private fun selectedAccountFromRenderer(renderer: JsonObject, root: JsonElement): SelectedAccount? {
+    val name = textValue(renderer["accountName"])?.takeIf { it.isNotBlank() } ?: return null
+    val dataSyncId = findStringValue(
+        renderer["serviceEndpoint"],
+        setOf("datasyncId", "dataSyncId"),
+    )?.normalizeAccountChannelDataSyncId()
+        ?: findMainAppWebDataSyncId(root)
+    return SelectedAccount(
+        info = AccountInfo(
+            name = name,
+            email = textValue(renderer["email"]) ?: textValue(renderer["accountByline"]),
+            channelHandle = textValue(renderer["channelHandle"]),
+            thumbnailUrl = lastThumbnailUrl(renderer["accountPhoto"]),
+        ),
+        dataSyncId = dataSyncId,
+    )
+}
+
+/** Akun terpilih + `dataSyncId`-nya, hasil `account/accounts_list`. */
+data class SelectedAccount(
+    val info: AccountInfo,
+    val dataSyncId: String?,
+)
+
+/**
+ * Teks dari objek teks InnerTube: `simpleText` dulu, bila tidak ada
+ * gabungkan `runs[].text` (pola ArchiveTune `textValue`).
+ */
+private fun textValue(node: JsonElement?): String? {
+    val obj = node as? JsonObject ?: return null
+    (obj["simpleText"] as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    val runs = obj["runs"] as? JsonArray ?: return null
+    return runs.joinToString(separator = "") { run ->
+        ((run as? JsonObject)?.get("text") as? JsonPrimitive)?.content.orEmpty()
+    }.trim().takeIf { it.isNotBlank() }
+}
+
+/** URL thumbnail terakhir, atau null bila tidak ada. */
+private fun lastThumbnailUrl(node: JsonElement?): String? =
+    ((node as? JsonObject)?.get("thumbnails") as? JsonArray)
+        ?.mapNotNull { ((it as? JsonObject)?.get("url") as? JsonPrimitive)?.content }
+        ?.lastOrNull()
+        ?.takeIf { it.isNotBlank() }
 
 /**
  * `dataSyncId` akun dari respons `account/accounts_list` (PLAN C.3).

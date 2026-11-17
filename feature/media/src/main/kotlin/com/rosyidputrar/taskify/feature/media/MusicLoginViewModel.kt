@@ -22,7 +22,7 @@ sealed interface MusicLoginScreenState {
     data object Idle : MusicLoginScreenState
     data object Loading : MusicLoginScreenState
     data class Success(val account: AccountInfo) : MusicLoginScreenState
-    data class Error(val message: String) : MusicLoginScreenState
+    data class Error(val message: String, val rawDetail: String? = null) : MusicLoginScreenState
 }
 
 /**
@@ -91,9 +91,12 @@ class MusicLoginViewModel(
                 completedCookie = normalizedCookie
                 _screenState.value = MusicLoginScreenState.Success(account)
             }.onFailure { throwable ->
+                // rawDetail sudah di-scrub di repository — teruskan apa adanya.
+                val exception = throwable as? MusicLoginException
                 _screenState.value = MusicLoginScreenState.Error(
-                    (throwable as? MusicLoginException)?.error?.message
+                    exception?.error?.message
                         ?: MusicLoginError.VerificationFailed.message,
+                    exception?.rawDetail,
                 )
             }
         }

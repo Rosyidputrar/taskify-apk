@@ -16,8 +16,13 @@ import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
 import com.rosyidputrar.taskify.core.innertube.models.body.BrowseBody
 import com.rosyidputrar.taskify.core.innertube.pages.CollectionContinuation
 import com.rosyidputrar.taskify.core.innertube.pages.findMoodCategory
+import com.rosyidputrar.taskify.core.innertube.pages.SelectedAccount
 import com.rosyidputrar.taskify.core.innertube.pages.parseAccountDataSyncId
 import com.rosyidputrar.taskify.core.innertube.pages.parseAccountInfo
+import com.rosyidputrar.taskify.core.innertube.pages.parseSelectedAccount
+import com.rosyidputrar.taskify.core.innertube.utils.emptyRawDetail
+import com.rosyidputrar.taskify.core.innertube.utils.scrubRawDetail
+import kotlinx.serialization.SerializationException
 import com.rosyidputrar.taskify.core.innertube.pages.parseArtist
 import com.rosyidputrar.taskify.core.innertube.pages.parseCharts
 import com.rosyidputrar.taskify.core.innertube.pages.parseCollection
@@ -118,14 +123,44 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
      * Identitas akun aktif (`account/account_menu`, WEB_REMIX, PLAN C.3) —
      * dipakai repository login untuk verifikasi: cookie boleh lengkap tapi
      * akun tidak terbaca (mis. sesi kedaluwarsa) → gagal, bukan akun kosong.
+     *
+     * Bila badan bukan JSON atau `parseAccountInfo` null, dilempar
+     * [UnrecognizedAccountResponseException] yang membawa cuplikan badan
+     * mentah (sudah di-scrub, maks 500 karakter) — badan tidak pernah
+     * dibuang diam-diam (PLAN music-login-raw-error). Pesan exception
+     * mengandung "info akun tidak ditemukan" supaya classifier repository
+     * tetap memetakannya ke `UnrecognizedResponse`.
      */
     open suspend fun accountInfo(
         authState: PlaybackAuthState = innerTube.currentAuthState(),
     ): Result<AccountInfo> =
         resultOf {
             val raw = innerTube.accountMenu(YouTubeClient.WEB_REMIX, authState)
-            parseAccountInfo(parse(raw))
-                ?: throw IllegalStateException("info akun tidak ditemukan, pengguna mungkin belum login")
+            if (raw.isBlank()) {
+                throw UnrecognizedAccountResponseException(emptyRawDetail(HTTP_OK))
+            }
+            val root = try {
+                parse(raw)
+            } catch (e: SerializationException) {
+                throw UnrecognizedAccountResponseException(scrubRawDetail(raw))
+            }
+            parseAccountInfo(root)
+                ?: throw UnrecognizedAccountResponseException(scrubRawDetail(raw))
+        }
+
+    /**
+     * Akun terpilih dari `account/accounts_list` (WEB_REMIX, PLAN
+     * music-login-raw-error) — fallback verifikasi login bila
+     * `accountInfo()` tidak memberi akun: akun `isSelected` +
+     * `dataSyncId`-nya. Gagal bila tidak ada akun terpilih.
+     */
+    open suspend fun selectedAccount(
+        authState: PlaybackAuthState = innerTube.currentAuthState(),
+    ): Result<SelectedAccount> =
+        resultOf {
+            val raw = innerTube.accountChannels(YouTubeClient.WEB_REMIX, authState)
+            parseSelectedAccount(parse(raw))
+                ?: throw IllegalStateException("akun terpilih tidak ditemukan")
         }
 
     /**
@@ -435,6 +470,9 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
         /** Panjang prefix XSSI `)]}'` di awal badan `sw.js_data`. */
         const val XSSI_PREFIX_LENGTH = 5
 
+        /** Status HTTP sukses — dipakai cuplikan "respons kosong" `accountInfo()`. */
+        const val HTTP_OK = 200
+
         /**
          * Pola `visitorData` di `sw.js_data` (ArchiveTune `YouTube.kt:2736`):
          * diawali `Cgt`/`Cgs`. ArchiveTune menulisnya `^Cg[t|s]` (kelas
@@ -444,3 +482,18 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
         private val VISITOR_DATA_REGEX = Regex("^Cg[ts]")
     }
 }
+
+/**
+ * `account/account_menu` membalas 200 tapi tidak berisi akun yang bisa
+ * dipakai (badan bukan JSON, atau `parseAccountInfo` null) — PLAN
+ * music-login-raw-error. [rawSnippet] adalah cuplikan badan mentah yang
+ * SUDAH di-scrub (maks 500 karakter, tanpa cookie/token), atau
+ * "respons kosong, status 200" bila badan kosong.
+ *
+ * Pesan HARUS mengandung "info akun tidak ditemukan": classifier
+ * `MusicLoginRepository` yang sudah ada memetakan persis frasa itu ke
+ * `MusicLoginError.UnrecognizedResponse`.
+ */
+class UnrecognizedAccountResponseException(
+    val rawSnippet: String,
+) : IllegalStateException("info akun tidak ditemukan")

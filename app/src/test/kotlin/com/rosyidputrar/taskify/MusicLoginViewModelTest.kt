@@ -120,6 +120,27 @@ class MusicLoginViewModelTest {
         }
     }
 
+    @Test fun errorMembawaRawDetailBilaAda() {
+        val repo = FakeRepo(result = Result.failure(MusicLoginException(MusicLoginError.HttpRejected(403), "HTTP 403")))
+        val vm = MusicLoginViewModel(repo)
+        vm.onCookiesCaptured(cookie)
+        idle()
+        val state = vm.screenState.value
+        assertTrue(state is MusicLoginScreenState.Error, "harusnya Error untuk HttpRejected")
+        assertEquals(MusicLoginError.HttpRejected(403).message, state.message)
+        assertEquals("HTTP 403", state.rawDetail)
+    }
+
+    @Test fun errorRawDetailNullBilaTidakAda() {
+        val repo = FakeRepo(result = Result.failure(MusicLoginException(MusicLoginError.VerificationFailed)))
+        val vm = MusicLoginViewModel(repo)
+        vm.onCookiesCaptured(cookie)
+        idle()
+        val state = vm.screenState.value
+        assertTrue(state is MusicLoginScreenState.Error, "harusnya Error untuk VerificationFailed")
+        assertEquals(null, state.rawDetail)
+    }
+
     @Test fun galatUmumDipetakanKeVerificationFailed() {
         val repo = FakeRepo(result = Result.failure(RuntimeException("boom")))
         val vm = MusicLoginViewModel(repo)

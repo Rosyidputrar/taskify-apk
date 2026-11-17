@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify.core.media.youtube
 import android.util.Log
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.UnrecognizedAccountResponseException
 import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
 import com.rosyidputrar.taskify.core.innertube.utils.hasYouTubeLoginCookie
@@ -41,8 +42,16 @@ sealed class MusicLoginError(val message: String) {
         MusicLoginError("YouTube membalas respons yang tidak dikenali. Coba lagi.")
 }
 
-/** Pembungkus [MusicLoginError] supaya [Result.failure] membawa tipenya. */
-class MusicLoginException(val error: MusicLoginError) : Exception(error.message)
+/**
+ * Pembungkus [MusicLoginError] supaya [Result.failure] membawa tipenya.
+ * [rawDetail] adalah teks mentah penyebab error yang SUDAH di-scrub
+ * (status HTTP atau cuplikan badan respons tanpa nilai cookie/token),
+ * ditampilkan apa adanya oleh UI di bawah pesan ramah. Default null
+ * supaya call-site lama tetap kompilasi. JANGAN PERNAH isi dari cookie,
+ * `normalizedCookie`, atau badan mentah tanpa scrub.
+ */
+class MusicLoginException(val error: MusicLoginError, val rawDetail: String? = null) :
+    Exception(error.message)
 
 /**
  * Hook kedaluwarsa sesi (kontrak PLAN C.6). Pemutar memanggil ini bila
@@ -100,7 +109,10 @@ open class MusicLoginRepository(
      *    [MusicLoginError.HttpRejected] atau [MusicLoginError.UnrecognizedResponse],
      *    verifikasi dicoba SEKALI LAGI sesudah [VERIFY_RETRY_DELAY_MS]
      *    (kontrak PLAN D.4); bila percobaan kedua gagal, error yang
-     *    dikembalikan adalah dari percobaan kedua.
+     *    dikembalikan adalah dari percobaan kedua. Bila percobaan kedua
+     *    gagal [MusicLoginError.UnrecognizedResponse], verifikasi dicoba
+     *    lewat fallback `youTube.selectedAccount()` (`accounts_list`);
+     *    sukses → lanjut dengan akun + `dataSyncId` itu.
      * 3. Resolve `dataSyncId`: jaringan dulu, fallback kandidat WebView;
      *    dua-duanya kosong → [MusicLoginError.MissingDataSyncId].
      * 4. Terapkan + simpan state akhir dan akun, naikkan [account],
@@ -124,11 +136,32 @@ open class MusicLoginRepository(
         ).normalized()
 
         youTube.applyAuthState(initial.copy(dataSyncId = null))
+        // Fallback verifikasi (PLAN music-login-raw-error): bila
+        // `verifyAccount()` gagal dengan `MusicLoginError.UnrecognizedResponse`,
+        // JANGAN langsung gagal — coba `youTube.selectedAccount()` (fallback
+        // `accounts_list`). Sukses → pakai `info` itu sebagai `accountInfo`
+        // dan `dataSyncId` dari `SelectedAccount` bila ada (langkah 3 resolve
+        // dataSyncId dilewati bila dataSyncId sudah didapat dari fallback;
+        // bila fallback tidak membawa dataSyncId, langkah 3 jalan seperti
+        // biasa dengan kandidat WebView). Gagal → kembalikan
+        // `UnrecognizedResponse` dengan `rawDetail` dari kegagalan
+        // `account_menu` (bukan dari fallback). Urutan ini sengaja:
+        // account_menu dulu, accounts_list cadangan.
+        var fallbackDataSyncId: String? = null
         val accountInfo = try {
             verifyAccount().getOrElse { cause ->
                 val error = classifyVerificationFailure(cause)
-                logFailure("verifikasi", error, cause)
-                return Result.failure(MusicLoginException(error))
+                if (error is MusicLoginError.UnrecognizedResponse) {
+                    val fallback = youTube.selectedAccount()
+                    if (fallback.isSuccess) {
+                        val selected = fallback.getOrThrow()
+                        fallbackDataSyncId = selected.dataSyncId
+                        return@getOrElse selected.info
+                    }
+                }
+                val rawDetail = rawDetailForVerification(error, cause)
+                logFailure("verifikasi", error, cause, rawDetail = rawDetail)
+                return Result.failure(MusicLoginException(error, rawDetail))
             }
         } catch (e: CancellationException) {
             throw e
@@ -138,21 +171,23 @@ open class MusicLoginRepository(
             return Result.failure(MusicLoginException(error))
         } catch (e: Exception) {
             val error = classifyVerificationFailure(e)
-            logFailure("verifikasi", error, e)
-            return Result.failure(MusicLoginException(error))
+            val rawDetail = rawDetailForVerification(error, e)
+            logFailure("verifikasi", error, e, rawDetail = rawDetail)
+            return Result.failure(MusicLoginException(error, rawDetail))
         }
 
         var dataSyncIdFailure: Throwable? = null
-        val resolvedDataSyncId = try {
-            val result = youTube.accountDataSyncId()
-            if (result.isFailure) dataSyncIdFailure = result.exceptionOrNull()
-            result.getOrNull()?.normalizeDataSyncId()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            dataSyncIdFailure = e
-            null
-        } ?: initial.dataSyncId
+        val resolvedDataSyncId = fallbackDataSyncId?.normalizeDataSyncId()
+            ?: try {
+                val result = youTube.accountDataSyncId()
+                if (result.isFailure) dataSyncIdFailure = result.exceptionOrNull()
+                result.getOrNull()?.normalizeDataSyncId()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                dataSyncIdFailure = e
+                null
+            } ?: initial.dataSyncId
             ?: run {
                 // Gagal total: jaringan mengembalikan failure, atau respons
                 // sukses tapi tidak berisi dataSyncId (parse null).
@@ -258,21 +293,83 @@ private fun isParseNull(cause: Throwable?): Boolean =
         cause.message?.contains("info akun tidak ditemukan") == true
 
 /**
+ * Teks mentah (sudah scrub) untuk kegagalan verifikasi, atau null bila
+ * tidak ada yang aman ditampilkan:
+ * - [MusicLoginError.HttpRejected] → `"HTTP $status"`.
+ * - [MusicLoginError.UnrecognizedResponse] → cuplikan dari
+ *   `UnrecognizedAccountResponseException.rawSnippet` (Agen A), di-scrub
+ *   sekali lagi secara defensif di sini.
+ * - Lainnya → null (jangan karang).
+ */
+private fun rawDetailForVerification(error: MusicLoginError, cause: Throwable?): String? =
+    when (error) {
+        is MusicLoginError.HttpRejected -> "HTTP ${error.status}"
+        is MusicLoginError.UnrecognizedResponse ->
+            rawSnippetFrom(cause)?.let(::scrubRawDetail)?.takeIf { it.isNotEmpty() }
+        else -> null
+    }
+
+/**
+ * Cuplikan mentah dari penyebab `UnrecognizedResponse`, atau null bila
+ * penyebabnya bukan [UnrecognizedAccountResponseException] (mis. parse
+ * null dari `IllegalStateException` biasa). Snippet itu sudah di-scrub
+ * Agen A di innertube; [rawDetailForVerification] tetap menjalankan
+ * scrub defensif kedua di atasnya.
+ */
+private fun rawSnippetFrom(cause: Throwable?): String? =
+    (cause as? UnrecognizedAccountResponseException)?.rawSnippet
+
+/** Batas panjang cuplikan mentah (kontrak PLAN: maks ~500 karakter). */
+internal const val MAX_RAW_DETAIL_CHARS = 500
+
+private val SENSITIVE_COOKIE_VALUE_REGEX = Regex(
+    """(?i)(SAPISID\w*|__Secure-\w*SID|SID|HSID|SSID|APISID)\s*=\s*[^;\s,\n"']*""",
+)
+private val COOKIE_HEADER_REGEX = Regex("""(?i)cookie\s*=\s*[^;\n]*""")
+private val AUTHORIZATION_HEADER_REGEX = Regex("""(?i)authorization\s*:\s*[^"\r\n,;]+""")
+private val SAPISIDHASH_REGEX = Regex("""(?i)SAPISIDHASH\s+[^\s\n"',;]+""")
+
+/**
+ * Scrub defensif KEDUA untuk teks mentah (kontrak PLAN: satu-satunya
+ * tempat scrub adalah `scrubRawDetail` Agen A di innertube/utils; fungsi
+ * ini di sini HANYA karena Agen A belum selesai, dan dipakai semata di
+ * titik pembuatan `rawDetail` — bukan untuk cookie atau badan mentah
+ * tanpa scrub). Hapus nilai cookie (`k=v` untuk kunci SAPISID, SID,
+ * HSID, SSID, dan kunci berakhiran SID, `cookie=...`,
+ * `Authorization: ...`, `SAPISIDHASH ...`), lalu potong ke
+ * [MAX_RAW_DETAIL_CHARS].
+ * `internal` supaya tes modul ini bisa mengujinya langsung.
+ */
+internal fun scrubRawDetail(raw: String?): String {
+    if (raw.isNullOrBlank()) return ""
+    val scrubbed = raw
+        .replace(SAPISIDHASH_REGEX, "SAPISIDHASH <redacted>")
+        .replace(AUTHORIZATION_HEADER_REGEX, "Authorization: <redacted>")
+        .replace(COOKIE_HEADER_REGEX, "cookie=<redacted>")
+        .replace(SENSITIVE_COOKIE_VALUE_REGEX, "$1=<redacted>")
+    return scrubbed.take(MAX_RAW_DETAIL_CHARS)
+}
+
+/**
  * Satu baris log diagnostik per kegagalan `completeLogin` (kontrak PLAN
- * D.3). Hanya jenis + status HTTP + flag parse-null; TIDAK PERNAH nilai
- * cookie, SAPISID, token, visitorData, dataSyncId, nama/email akun, atau
- * badan respons.
+ * D.3). Hanya jenis + status HTTP + flag parse-null + [rawDetail] bila
+ * ada; TIDAK PERNAH nilai cookie, SAPISID, token, visitorData,
+ * dataSyncId, nama/email akun, atau badan respons. [rawDetail] yang
+ * di-log adalah persis yang ditampilkan ke user (sudah scrub), bukan
+ * lebih dari itu.
  */
 private fun logFailure(
     step: String,
     error: MusicLoginError,
     cause: Throwable?,
     parseNull: Boolean = isParseNull(cause),
+    rawDetail: String? = null,
 ) {
     val status = (error as? MusicLoginError.HttpRejected)?.status
     val statusPart = if (status != null) " status=$status" else ""
+    val rawPart = if (rawDetail != null) " rawDetail=$rawDetail" else ""
     Log.w(
         TAG,
-        "completeLogin: $step gagal kind=${error::class.simpleName}$statusPart parseNull=$parseNull",
+        "completeLogin: $step gagal kind=${error::class.simpleName}$statusPart parseNull=$parseNull$rawPart",
     )
 }
