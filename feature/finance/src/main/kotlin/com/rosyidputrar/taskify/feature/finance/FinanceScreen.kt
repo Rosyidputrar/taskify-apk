@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import androidx.compose.foundation.background
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
 import com.rosyidputrar.taskify.core.domain.finance.Debt
 import com.rosyidputrar.taskify.core.domain.finance.Recurring
@@ -126,7 +127,7 @@ fun FinanceContent(
     val actions = remember(actions, haptics) { HapticFinanceActions(actions, haptics) }
     var dialog by remember { mutableStateOf<FinanceDialog?>(null) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Finance)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
+    LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentPadding = contentPadding) {
         item(key = "header") {
             val t = state.monthData.totals
             ModuleHeader(

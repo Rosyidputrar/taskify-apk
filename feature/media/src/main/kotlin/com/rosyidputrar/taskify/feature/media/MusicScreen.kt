@@ -163,19 +163,21 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
         targetState = MusicFrame(state.page, state.pages.size),
         contentKey = { it.page?.target?.key ?: ROOT_KEY },
         transitionSpec = {
+            // Halaman teratas selalu buram penuh (tanpa fade); hanya halaman di bawahnya yang meredup.
             if (targetState.depth >= initialState.depth) {
-                (slideInHorizontally(MusicMotion.offset) { it } + fadeIn(MusicMotion.float, 0.6f)) togetherWith
+                slideInHorizontally(MusicMotion.offset) { it } togetherWith
                     (slideOutHorizontally(MusicMotion.offset) { -it / 3 } + fadeOut(MusicMotion.float, 0.4f))
             } else {
-                (slideInHorizontally(MusicMotion.offset) { -it / 3 } + fadeIn(MusicMotion.float, 0.4f)) togetherWith
-                    (slideOutHorizontally(MusicMotion.offset) { it } + fadeOut(MusicMotion.float, 0.6f))
+                // Kembali: halaman yang ditutup tetap di atas lalu geser keluar.
+                ((slideInHorizontally(MusicMotion.offset) { -it / 3 } + fadeIn(MusicMotion.float, 0.4f)) togetherWith
+                    slideOutHorizontally(MusicMotion.offset) { it }).apply { targetContentZIndex = -1f }
             }
         },
         label = "music-page",
     ) { frame ->
         val page = frame.page
         val listState = listStates.getOrPut(page?.target?.key ?: ROOT_KEY) { LazyListState() }
-        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
+        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), state = listState, contentPadding = contentPadding) {
             item(key = "header") {
                 ModuleHeader(
                     // Judul koleksi tampil besar di kepala halaman; header cukup menyebut jenisnya.
