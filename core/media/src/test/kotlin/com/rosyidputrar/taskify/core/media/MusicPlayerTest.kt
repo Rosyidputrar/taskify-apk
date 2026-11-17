@@ -48,10 +48,13 @@ class MusicPlayerTest {
         val gates = mutableMapOf<String, CompletableDeferred<StreamInfo>>()
         fun gate(id: String) = gates.getOrPut(id) { CompletableDeferred() }
 
-        override suspend fun resolveStreamInfo(videoId: String, forceConverter: Boolean, onProgress: (Int, String) -> Unit): StreamInfo {
+        val options = mutableMapOf<String, StreamOptions>()
+
+        override suspend fun playback(videoId: String, options: StreamOptions, withTrack: Boolean, onProgress: (Int, String) -> Unit): Playback {
             calls[videoId] = (calls[videoId] ?: 0) + 1
+            this.options[videoId] = options
             try {
-                return gate(videoId).await()
+                return Playback(null, gate(videoId).await())
             } catch (e: CancellationException) {
                 cancelled += videoId
                 throw e
@@ -114,6 +117,97 @@ class MusicPlayerTest {
             assertEquals(1, fake.calls[b.videoId], "prefetch lama tidak diulang")
             assertEquals(1, fake.calls[c.videoId], "lagu baru di-resolve sekali")
             assertTrue(b.videoId !in player.state.value.prefetching)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    private fun direct(id: String) = StreamInfo("https://rr.test/$id", "direct", "audio/webm; codecs=opus", 251)
+
+    @Test fun directFailureRetriesThroughConverterWithForce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fake = FakeMusicClient()
+            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            fake.gate(a.videoId).complete(direct(a.videoId))
+            advanceUntilIdle()
+            assertEquals(StreamOptions(), fake.options[a.videoId], "percobaan pertama: jalur direct biasa")
+            assertTrue(player.state.value.seekable, "direct bisa digeser")
+
+            fake.gates.remove(a.videoId)
+            player.dispatch(YtEvent.PlaybackFailed(a.videoId, "Audio gagal diputar."))
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId])
+            val retry = fake.options[a.videoId]!!
+            assertTrue(retry.forceConverter, "fallback otomatis ke konverter MP3")
+            assertTrue(retry.force)
+            assertEquals(YtStatus.Preparing, player.state.value.status)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun forceMp3SettingAndQualityReachTheClient() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fake = FakeMusicClient()
+            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            player.updateSettings { it.copy(forceMp3 = true, quality = com.rosyidputrar.taskify.core.domain.media.MusicQuality.Low) }
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(StreamOptions(com.rosyidputrar.taskify.core.domain.media.MusicQuality.Low, forceConverter = true), fake.options[a.videoId])
+            // Pengaturan tersimpan untuk pemutar berikutnya (proses baru).
+            val reborn = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            assertTrue(reborn.settings.value.forceMp3)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun queueSurvivesProcessDeathPausedAndWipeForgetsIt() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fake = FakeMusicClient()
+            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            player.playQueue(listOf(a, b, c), 1)
+            advanceUntilIdle()
+            val reborn = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            assertEquals(YtStatus.Paused, reborn.state.value.status, "dipulihkan dalam keadaan jeda, tidak langsung berbunyi")
+            assertEquals(b, reborn.state.value.current)
+            assertEquals(listOf(a, b, c), reborn.state.value.ordered)
+            assertTrue(reborn.state.value.urls.isEmpty())
+
+            reborn.wipe()
+            advanceUntilIdle()
+            val afterLogout = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            assertEquals(YtStatus.Idle, afterLogout.state.value.status, "logout menghapus antrean tersimpan")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun radioQueueFetchesNextPageNearTheEnd() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val d = song("d")
+            var cursors = mutableListOf<String>()
+            val fake = object : MusicClient("https://music.test", { "t" }, HttpClient(MockEngine { respond("{}", HttpStatusCode.NotFound, headersOf()) }) { expectSuccess = false }) {
+                override suspend fun playback(videoId: String, options: StreamOptions, withTrack: Boolean, onProgress: (Int, String) -> Unit) =
+                    Playback(null, CompletableDeferred<StreamInfo>().await())
+                override suspend fun radioMore(cursor: String): com.rosyidputrar.taskify.core.domain.media.RadioPageResult {
+                    cursors += cursor
+                    return com.rosyidputrar.taskify.core.domain.media.RadioPageResult(listOf(c, d), "RDAMVMa", a.videoId, null)
+                }
+            }
+            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            player.playQueue(listOf(a, b), 0, com.rosyidputrar.taskify.core.domain.media.RadioSource("RDAMVMa", "cur-1"))
+            player.dispatch(YtEvent.Playing)
+            advanceUntilIdle()
+            assertEquals(listOf("cur-1"), cursors, "dua lagu tersisa → ambil halaman radio berikutnya")
+            assertEquals(listOf(a, b, c, d), player.state.value.ordered)
+            assertEquals(null, player.state.value.radio!!.cursor)
         } finally {
             Dispatchers.resetMain()
         }

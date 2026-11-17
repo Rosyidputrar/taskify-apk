@@ -75,7 +75,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class FocusRoute(val taskId: String? = null)
 
-@Serializable data object MusicRoute
+/** Pemutar musik; [link] = link YouTube dari Bagikan yang langsung dibuka. */
+@Serializable data class MusicRoute(val link: String? = null)
 
 /** Pengunduh TikTok; [input] = link yang langsung diambil (dari Bagikan). */
 @Serializable data class TikTokRoute(val input: String? = null)
@@ -99,7 +100,7 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Review -> ReviewRoute
     TaskifyModule.Tags -> TagsRoute
     TaskifyModule.Trash -> TrashRoute
-    TaskifyModule.Music -> MusicRoute
+    TaskifyModule.Music -> MusicRoute()
     TaskifyModule.TikTok -> TikTokRoute()
     TaskifyModule.Notifications -> NotificationsRoute()
     TaskifyModule.Wellbeing -> WellbeingRoute

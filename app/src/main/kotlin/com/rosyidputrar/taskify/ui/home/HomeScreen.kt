@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.ui.home
 
+import com.rosyidputrar.taskify.ui.shell.sharedBounds
 import com.rosyidputrar.taskify.core.domain.device.formatDuration
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.FilledTonalButton
@@ -304,7 +305,7 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.clickable { onOpenTask(top.id) }) {
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.sharedBounds("task-${top.id}").clickable { onOpenTask(top.id) }) {
                 TaskCheck(top, { onToggle(top) }, Modifier.padding(top = 4.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -329,7 +330,7 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
                 Text("LALU", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rest.forEach { task ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { onOpenTask(task.id) }.padding(vertical = 6.dp),
+                        Modifier.fillMaxWidth().sharedBounds("task-${task.id}").clickable { onOpenTask(task.id) }.padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TaskCheck(task, { onToggle(task) })
