@@ -162,7 +162,9 @@ private val deviceModule = module {
     }
     single { DeviceLeftovers(androidContext(), get(), get(), get(), get(), get()) }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
-    single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
+    // Argumen bernama: parameter terakhir MusicClient kini `http` (khusus tes), jadi lambda di
+    // akhir (`MusicClient(url) { … }`) akan salah terikat ke `http`, bukan ke `token`.
+    single { MusicClient(AppConfig.musicApiUrl, token = { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() }) }
     single { MusicPlayer(androidContext(), get()) }
     // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
     single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }

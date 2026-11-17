@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
  * Klien dipalsukan: tiap resolve menahan di gate sampai tes melepasnya, jadi jumlah
  * panggilan `resolveStreamInfo` bisa dihitung persis.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class MusicPlayerTest {
     private fun song(id: String) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList())
