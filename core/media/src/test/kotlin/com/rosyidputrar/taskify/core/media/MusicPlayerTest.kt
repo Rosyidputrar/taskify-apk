@@ -2,9 +2,21 @@ package com.rosyidputrar.taskify.core.media
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.rosyidputrar.taskify.core.domain.media.MusicQuality
+import com.rosyidputrar.taskify.core.domain.media.RadioPageResult
+import com.rosyidputrar.taskify.core.domain.media.RadioSource
 import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.Track
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
+import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
+import com.rosyidputrar.taskify.core.media.youtube.DirectStream
+import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
+import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
+import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -21,14 +33,19 @@ import kotlinx.coroutines.test.setMain
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Regresi item 5 (lompat ke lagu yang sedang di-prefetch tidak boleh resolve ganda)
- * dan item 9 (poll prefetch dibatalkan saat lagu berubah).
+ * dan item 9 (poll prefetch dibatalkan saat lagu berubah), kini atas API direct.
  *
- * Klien dipalsukan: tiap resolve menahan di gate sampai tes melepasnya, jadi jumlah
- * panggilan `resolveStreamInfo` bisa dihitung persis.
+ * `YouTube` + `DirectStreamResolver` dipalsukan (subclass, pola lama `FakeMusicClient`):
+ * tiap resolve menahan di gate sampai tes melepasnya, jadi jumlah panggilan bisa
+ * dihitung persis. `track()`/`resolve()` memakai `withTimeoutOrNull` yang tidak
+ * jalan di bawah `runTest` (pelajaran Tahap 2/3) — fake bergate adalah cara
+ * deterministik menguji orkestrasi efek pemutar. Integrasi HTTP-nya sendiri
+ * sudah diuji di `YouTubeFacadeTest` + `DirectStreamResolverTest` (MockEngine).
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -36,25 +53,63 @@ class MusicPlayerTest {
     private fun song(id: String) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList())
     private val a = song("a"); private val b = song("b"); private val c = song("c")
 
-    private class FakeMusicClient : MusicClient(
-        "https://music.test", { "t" },
-        HttpClient(MockEngine { request ->
-            if (request.url.encodedPath == "/v1/track") respond("""{"videoId":"x","lyricsId":"","upNext":[]}""", HttpStatusCode.OK, headersOf())
-            else respond("{}", HttpStatusCode.NotFound, headersOf())
-        }) { expectSuccess = false },
-    ) {
+    private class FakeYouTube : YouTube() {
+        val trackCalls = mutableListOf<String>()
+        var trackResult: (String) -> Result<Track> = { Result.success(Track(it, "", emptyList())) }
+        /** Gate per lagu: bila ada, `track()` menahan di sini (untuk mengamati state sebelum keterangan datang). */
+        val trackGates = mutableMapOf<String, CompletableDeferred<Result<Track>>>()
+        fun gateTrack(id: String) = trackGates.getOrPut(id) { CompletableDeferred() }
+        var lastAuthState: PlaybackAuthState? = null
+
+        override suspend fun track(videoId: String, authState: PlaybackAuthState): Result<Track> {
+            trackCalls += videoId
+            lastAuthState = authState
+            return trackGates[videoId]?.await() ?: trackResult(videoId)
+        }
+
+        val radioCalls = mutableListOf<String>()
+        var radioResult: (String) -> Result<RadioPageResult> = { Result.success(RadioPageResult(emptyList(), "", "", null)) }
+        override suspend fun radioMore(cursor: String, authState: PlaybackAuthState): Result<RadioPageResult> {
+            radioCalls += cursor
+            lastAuthState = authState
+            return radioResult(cursor)
+        }
+
+        override suspend fun lyrics(lyricsId: String, authState: PlaybackAuthState): Result<String> = Result.success("")
+    }
+
+    private class FakeResolver : DirectStreamResolver() {
         val calls = mutableMapOf<String, Int>()
+        val qualities = mutableMapOf<String, MusicQuality>()
+        val preferMp4aFlags = mutableMapOf<String, Boolean>()
         val cancelled = mutableSetOf<String>()
-        val gates = mutableMapOf<String, CompletableDeferred<StreamInfo>>()
+        val gates = mutableMapOf<String, CompletableDeferred<DirectStream>>()
         fun gate(id: String) = gates.getOrPut(id) { CompletableDeferred() }
+        /** Bila diisi, `resolve()` gagal langsung dengan kegagalan ini (tanpa menunggu gate). */
+        var resolveFailure: ((String) -> StreamFailure?)? = null
+        var lastAuthState: PlaybackAuthState? = null
 
-        val options = mutableMapOf<String, StreamOptions>()
-
-        override suspend fun playback(videoId: String, options: StreamOptions, withTrack: Boolean, onProgress: (Int, String) -> Unit): Playback {
+        override suspend fun resolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): Result<DirectStream> {
             calls[videoId] = (calls[videoId] ?: 0) + 1
-            this.options[videoId] = options
-            try {
-                return Playback(null, gate(videoId).await())
+            qualities[videoId] = quality
+            preferMp4aFlags[videoId] = preferMp4a
+            lastAuthState = authState
+            resolveFailure?.invoke(videoId)?.let { return Result.failure(StreamFailureException(it)) }
+            return try {
+                Result.success(gate(videoId).await())
+            } catch (e: CancellationException) {
+                cancelled += videoId
+                throw e
+            }
+        }
+
+        override suspend fun tryResolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): DirectStream? {
+            calls[videoId] = (calls[videoId] ?: 0) + 1
+            qualities[videoId] = quality
+            preferMp4aFlags[videoId] = preferMp4a
+            lastAuthState = authState
+            return try {
+                gate(videoId).await()
             } catch (e: CancellationException) {
                 cancelled += videoId
                 throw e
@@ -62,17 +117,32 @@ class MusicPlayerTest {
         }
     }
 
-    private fun info(id: String) = StreamInfo("https://audio.test/$id.mp3", "converter", "audio/mpeg", null)
+    /** SponsorBlock tanpa jaringan: 404 → tanpa segmen (perilaku repository). */
+    private fun sponsorEmpty() = SponsorBlockRepository(
+        HttpClient(MockEngine { respond("[]", HttpStatusCode.NotFound, headersOf()) }) { expectSuccess = false },
+    )
+
+    private fun player(tube: FakeYouTube, fake: FakeResolver, authStore: YouTubeAuthStore? = null): MusicPlayer {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        return MusicPlayer(context, tube, fake, sponsorEmpty(), authStore ?: YouTubeAuthStore(context))
+    }
+
+    private fun stream(id: String) = DirectStream(
+        url = "https://rr.test/$id", mimeType = "audio/webm; codecs=opus", itag = 251,
+        bitrate = 169643, expiresInSeconds = 21540, loudnessDb = 3.77, perceptualLoudnessDb = null,
+    )
 
     @Test fun jumpToPrefetchingSongDoesNotResolveTwice() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val fake = FakeMusicClient()
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
             player.playQueue(listOf(a, b), 0)
             advanceUntilIdle()
             assertEquals(1, fake.calls[a.videoId], "resolve lagu pertama jalan sekali")
             assertEquals(null, fake.calls[b.videoId])
+            assertEquals(listOf(a.videoId), tube.trackCalls, "keterangan lagu pertama diambil lewat track()")
 
             // Lagu pertama dianggap sedang diputar (tanpa lewat ExoPlayer): prefetch lagu berikut jalan.
             player.dispatch(YtEvent.Playing)
@@ -88,11 +158,12 @@ class MusicPlayerTest {
             assertEquals(YtStatus.Preparing, player.state.value.status)
 
             // Prefetch selesai → URL-nya dipakai, tanpa resolve tambahan.
-            fake.gate(b.videoId).complete(info(b.videoId))
+            fake.gate(b.videoId).complete(stream(b.videoId))
             advanceUntilIdle()
-            assertEquals("https://audio.test/${b.videoId}.mp3", player.state.value.urls[b.videoId])
+            assertEquals("https://rr.test/${b.videoId}", player.state.value.urls[b.videoId])
             assertEquals(1, fake.calls[b.videoId])
             assertTrue(player.state.value.prefetching.isEmpty())
+            assertTrue(player.state.value.seekable, "direct bisa digeser")
         } finally {
             Dispatchers.resetMain()
         }
@@ -101,8 +172,9 @@ class MusicPlayerTest {
     @Test fun prefetchIsCancelledWhenSongChanges() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val fake = FakeMusicClient()
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
             player.playQueue(listOf(a, b, c), 0)
             advanceUntilIdle()
             player.dispatch(YtEvent.Playing)
@@ -122,45 +194,107 @@ class MusicPlayerTest {
         }
     }
 
-    private fun direct(id: String) = StreamInfo("https://rr.test/$id", "direct", "audio/webm; codecs=opus", 251)
-
-    @Test fun directFailureRetriesThroughConverterWithForce() = runTest {
+    @Test fun nextFailureStillPlaysFromPlayerMetadata() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val fake = FakeMusicClient()
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
-            player.playQueue(listOf(a), 0)
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
+            // `next` gagal (403) → track() jatuh ke metadata player: upNext kosong,
+            // lagu itu sendiri tetap diketahui (pola Worker `loadTrack` + perbaikan next-403).
+            tube.gateTrack(a.videoId)
+            player.playSimilar(a)
             advanceUntilIdle()
-            fake.gate(a.videoId).complete(direct(a.videoId))
-            advanceUntilIdle()
-            assertEquals(StreamOptions(), fake.options[a.videoId], "percobaan pertama: jalur direct biasa")
-            assertTrue(player.state.value.seekable, "direct bisa digeser")
+            assertEquals(a.videoId, player.state.value.similarSeed, "benih serupa menunggu keterangan")
+            assertEquals(1, fake.calls[a.videoId], "stream sudah diminta walau keterangan belum datang")
 
-            fake.gates.remove(a.videoId)
-            player.dispatch(YtEvent.PlaybackFailed(a.videoId, "Audio gagal diputar."))
+            tube.gateTrack(a.videoId).complete(Result.success(Track(a.videoId, "", emptyList(), song = a)))
             advanceUntilIdle()
-            assertEquals(2, fake.calls[a.videoId])
-            val retry = fake.options[a.videoId]!!
-            assertTrue(retry.forceConverter, "fallback otomatis ke konverter MP3")
-            assertTrue(retry.force)
-            assertEquals(YtStatus.Preparing, player.state.value.status)
+            assertNull(player.state.value.similarSeed, "keterangan datang tanpa upNext → benih dilepas, antrean tetap satu lagu")
+            assertEquals(listOf(a), player.state.value.ordered)
+            assertTrue(player.state.value.details[a.videoId]?.upNext.isNullOrEmpty())
+
+            // Stream selesai → lagu tetap diputar walau `next` gagal.
+            fake.gate(a.videoId).complete(stream(a.videoId))
+            advanceUntilIdle()
+            assertEquals("https://rr.test/${a.videoId}", player.state.value.urls[a.videoId])
         } finally {
             Dispatchers.resetMain()
         }
     }
 
-    @Test fun forceMp3SettingAndQualityReachTheClient() = runTest {
+    @Test fun allClientsFailShowsAClearError() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val fake = FakeMusicClient()
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
-            player.updateSettings { it.copy(forceMp3 = true, quality = com.rosyidputrar.taskify.core.domain.media.MusicQuality.Low) }
+            val tube = FakeYouTube()
+            tube.trackResult = { Result.failure(NoSuchElementException("track tidak ditemukan")) }
+            val fake = FakeResolver()
+            // Semua klien InnerTube menolak: tidak ada metadata, tidak ada stream.
+            fake.resolveFailure = { StreamFailure.NoFormat }
+            val player = player(tube, fake)
             player.playQueue(listOf(a), 0)
             advanceUntilIdle()
-            assertEquals(StreamOptions(com.rosyidputrar.taskify.core.domain.media.MusicQuality.Low, forceConverter = true), fake.options[a.videoId])
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Audio tidak bisa dimuat dari YouTube (format tidak tersedia).", player.state.value.error)
+            assertNull(player.state.value.urls[a.videoId])
+            assertTrue(player.state.value.details[a.videoId]?.upNext.isNullOrEmpty(), "keterangan gagal tetap dicatat supaya tidak diulang terus")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun qualitySettingReachesTheResolverAndPersists() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
+            player.updateSettings { it.copy(quality = MusicQuality.Low) }
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(MusicQuality.Low, fake.qualities[a.videoId])
             // Pengaturan tersimpan untuk pemutar berikutnya (proses baru).
-            val reborn = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
-            assertTrue(reborn.settings.value.forceMp3)
+            val reborn = player(tube, fake)
+            assertEquals(MusicQuality.Low, reborn.settings.value.quality)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun preferMp4aSettingReachesTheResolverAndPersists() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
+            player.updateSettings { it.copy(preferMp4a = true) }
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(true, fake.preferMp4aFlags[a.videoId], "toggle MP4A diteruskan ke resolver")
+            // Pengaturan tersimpan untuk pemutar berikutnya (proses baru).
+            val reborn = player(tube, fake)
+            assertEquals(true, reborn.settings.value.preferMp4a)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun resolvePassesStoredAuthStateToBothClients() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val authStore = YouTubeAuthStore(context)
+            authStore.clear()
+            authStore.saveVisitorData("CgthYXV0aC10ZXN0")
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = MusicPlayer(context, tube, fake, sponsorEmpty(), authStore)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            // Gap Tahap 5: resolver punya InnerTube sendiri — state auth harus
+            // diteruskan eksplisit, bukan mengandalkan state internal transport.
+            assertEquals("CgthYXV0aC10ZXN0", tube.lastAuthState?.visitorData, "track() menerima visitorData tersimpan")
+            assertEquals("CgthYXV0aC10ZXN0", fake.lastAuthState?.visitorData, "resolve() menerima visitorData tersimpan")
         } finally {
             Dispatchers.resetMain()
         }
@@ -169,11 +303,12 @@ class MusicPlayerTest {
     @Test fun queueSurvivesProcessDeathPausedAndWipeForgetsIt() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val fake = FakeMusicClient()
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
             player.playQueue(listOf(a, b, c), 1)
             advanceUntilIdle()
-            val reborn = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            val reborn = player(tube, fake)
             assertEquals(YtStatus.Paused, reborn.state.value.status, "dipulihkan dalam keadaan jeda, tidak langsung berbunyi")
             assertEquals(b, reborn.state.value.current)
             assertEquals(listOf(a, b, c), reborn.state.value.ordered)
@@ -181,7 +316,7 @@ class MusicPlayerTest {
 
             reborn.wipe()
             advanceUntilIdle()
-            val afterLogout = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
+            val afterLogout = player(tube, fake)
             assertEquals(YtStatus.Idle, afterLogout.state.value.status, "logout menghapus antrean tersimpan")
         } finally {
             Dispatchers.resetMain()
@@ -192,17 +327,15 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val d = song("d")
-            var cursors = mutableListOf<String>()
-            val fake = object : MusicClient("https://music.test", { "t" }, HttpClient(MockEngine { respond("{}", HttpStatusCode.NotFound, headersOf()) }) { expectSuccess = false }) {
-                override suspend fun playback(videoId: String, options: StreamOptions, withTrack: Boolean, onProgress: (Int, String) -> Unit) =
-                    Playback(null, CompletableDeferred<StreamInfo>().await())
-                override suspend fun radioMore(cursor: String): com.rosyidputrar.taskify.core.domain.media.RadioPageResult {
-                    cursors += cursor
-                    return com.rosyidputrar.taskify.core.domain.media.RadioPageResult(listOf(c, d), "RDAMVMa", a.videoId, null)
-                }
+            val cursors = mutableListOf<String>()
+            val tube = FakeYouTube()
+            tube.radioResult = { cursor ->
+                cursors += cursor
+                Result.success(RadioPageResult(listOf(c, d), "RDAMVMa", a.videoId, null))
             }
-            val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
-            player.playQueue(listOf(a, b), 0, com.rosyidputrar.taskify.core.domain.media.RadioSource("RDAMVMa", "cur-1"))
+            val fake = FakeResolver() // gate lagu pertama tidak pernah selesai → audio tidak pernah siap
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b), 0, RadioSource("RDAMVMa", "cur-1"))
             player.dispatch(YtEvent.Playing)
             advanceUntilIdle()
             assertEquals(listOf("cur-1"), cursors, "dua lagu tersisa → ambil halaman radio berikutnya")

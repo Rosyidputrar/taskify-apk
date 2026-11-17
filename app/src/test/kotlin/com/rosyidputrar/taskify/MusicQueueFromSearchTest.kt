@@ -6,12 +6,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.media.SearchFilter
 import com.rosyidputrar.taskify.core.domain.media.SearchResults
 import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.Track
-import com.rosyidputrar.taskify.core.media.MusicClient
+import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.Playback
-import com.rosyidputrar.taskify.core.media.StreamOptions
+import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.youtube.DirectStream
+import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
 import com.rosyidputrar.taskify.feature.media.MusicViewModel
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import kotlinx.coroutines.CompletableDeferred
@@ -27,23 +30,39 @@ class MusicQueueFromSearchTest {
     private fun song(id: String) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList(), durationSeconds = 185)
     private val results = listOf(song("a"), song("b"), song("c"), song("d"))
     private val episode = song("ep")
-    private val similar = listOf(song("s1"), song("s2"))
 
-    private inner class Fake : MusicClient("https://music.test", { "t" }) {
+    /** Cari + keterangan lewat fasad direct palsu (Tahap 7); pemutar sudah direct. */
+    private inner class FakeTube : YouTube() {
         val pending = CompletableDeferred<Unit>()
-        override suspend fun search(query: String, filter: SearchFilter) =
-            SearchResults(top = TopResult("Lagu c", results[2].videoId, listOf("Lagu", "Artis", "3.05"), emptyList()), songs = results, episodes = listOf(episode))
-        override suspend fun playback(videoId: String, options: StreamOptions, withTrack: Boolean, onProgress: (Int, String) -> Unit): Playback {
-            pending.await() // audio tidak pernah siap di tes ini; yang diuji hanya isi antrean
+
+        override suspend fun search(query: String, filter: SearchFilter, authState: PlaybackAuthState): Result<SearchResults> =
+            Result.success(SearchResults(top = TopResult("Lagu c", results[2].videoId, listOf("Lagu", "Artis", "3.05"), emptyList()), songs = results, episodes = listOf(episode)))
+
+        override suspend fun suggest(input: String, authState: PlaybackAuthState): Result<List<Suggestion>> =
+            Result.success(emptyList()) // saran tidak diuji di sini; jangan sentuh jaringan
+
+        override suspend fun track(videoId: String, authState: PlaybackAuthState): Result<Track> {
+            pending.await() // keterangan tidak pernah datang di tes ini; yang diuji hanya isi antrean
             error("tidak terjangkau")
         }
-        override suspend fun track(videoId: String, includeLyrics: Boolean) = Track(videoId, "", similar)
+    }
+
+    private inner class FakeResolver : DirectStreamResolver() {
+        override suspend fun resolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): Result<DirectStream> {
+            CompletableDeferred<DirectStream>().await() // audio tidak pernah siap di tes ini
+            error("tidak terjangkau")
+        }
+
+        override suspend fun tryResolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): DirectStream? {
+            CompletableDeferred<DirectStream>().await()
+            error("tidak terjangkau")
+        }
     }
 
     private fun setUp(): Pair<MusicViewModel, MusicPlayer> {
-        val fake = Fake()
-        val player = MusicPlayer(ApplicationProvider.getApplicationContext(), fake)
-        val vm = MusicViewModel(player, fake, OnlineFlow { flowOf(true) })
+        val tube = FakeTube()
+        val player = MusicPlayer(ApplicationProvider.getApplicationContext(), tube, FakeResolver())
+        val vm = MusicViewModel(player, YouTubeMusicClient(tube), OnlineFlow { flowOf(true) })
         vm.setQuery("lagu")
         vm.search()
         shadowOf(Looper.getMainLooper()).idle()

@@ -6,6 +6,7 @@ import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.domain.media.ArtistPage
 import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
+import com.rosyidputrar.taskify.core.domain.media.CollectionKind
 import com.rosyidputrar.taskify.core.domain.media.DiscoverySection
 import com.rosyidputrar.taskify.core.domain.media.Lyrics
 import com.rosyidputrar.taskify.core.domain.media.MoodGroup
@@ -24,8 +25,10 @@ import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
-import com.rosyidputrar.taskify.core.media.MusicClient
+import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
+import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.YouTubeMusicException
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -92,7 +95,6 @@ data class ExploreState(
 )
 
 data class MusicUiState(
-    val configured: Boolean = true,
     val online: Boolean = true,
     val tab: MusicTab = MusicTab.Explore,
     val search: MusicSearch = MusicSearch(),
@@ -144,8 +146,7 @@ interface MusicActions {
     fun setQuality(q: MusicQuality) {}
     fun toggleNormalize() {}
     fun toggleSponsorBlock() {}
-    fun toggleForceMp3() {}
-    fun toggleArchive() {}
+    fun togglePreferMp4a() {}
     fun setSleep(minutes: Int?) {}
     fun sleepEndOfSong() {}
 }
@@ -157,12 +158,12 @@ fun interface OnlineFlow {
 
 class MusicViewModel(
     private val player: MusicPlayer,
-    private val client: MusicClient,
+    private val client: YouTubeMusicClient,
     online: OnlineFlow,
     /** Snackbar aplikasi (sama dengan modul lain); null di tes. */
     private val messenger: Messenger? = null,
 ) : ViewModel(), MusicActions {
-    private val local = MutableStateFlow(MusicUiState(configured = player.configured))
+    private val local = MutableStateFlow(MusicUiState())
     private var searchJob: Job? = null
     private var suggestJob: Job? = null
     private var pageJob: Job? = null
@@ -183,7 +184,7 @@ class MusicViewModel(
                 loadLyrics(song, details)
             }
         }
-        if (local.value.tab == MusicTab.Explore && player.configured) loadExplore()
+        if (local.value.tab == MusicTab.Explore) loadExplore()
     }
 
     private fun loadLyrics(song: Song, details: com.rosyidputrar.taskify.core.domain.media.TrackDetails?) {
@@ -196,11 +197,10 @@ class MusicViewModel(
         }
         local.update { it.copy(lyrics = LyricsState(id, loading = true)) }
         lyricsJob = launchSafe {
-            val r = runCatching { client.syncedLyrics(id) }.recoverCatching { e ->
-                val lid = details?.lyricsId.orEmpty()
-                if (lid.isEmpty()) throw e
-                Lyrics(null, client.lyrics(lid), "youtube")
-            }
+            // Repository lirik (LRCLib -> teks YouTube -> transkrip); null =
+            // tidak ada lirik, bukan galat. lyricsId dari Track dipakai untuk
+            // langkah teks YouTube supaya tidak memanggil `next` lagi.
+            val r = runCatching { client.syncedLyrics(song, details?.lyricsId) }
             if (local.value.lyrics.videoId != id) return@launchSafe
             local.update { it.copy(lyrics = LyricsState(id, r.getOrNull()?.takeIf { l -> !l.empty || l.instrumental }, false, r.exceptionOrNull()?.message)) }
         }
@@ -226,9 +226,11 @@ class MusicViewModel(
             if (local.value.search.query.trim() != text) return@launchSafe
             val e = r.exceptionOrNull()
             // Galat jaringan/server sesaat: dropdown disembunyikan diam-diam (bukan fitur utama).
-            // Tapi sesi habis (401) / akun belum diizinkan (403) ditampilkan, kalau tidak saran
-            // "tidak pernah muncul" tanpa petunjuk apa pun.
-            val blocked = (e as? com.rosyidputrar.taskify.core.media.MusicException)?.takeIf { it.status == 401 || it.status == 403 }?.message
+            // Tapi galat auth InnerTube (401/403 — padanan 401/403 PR #8) ditampilkan,
+            // kalau tidak saran "tidak pernah muncul" tanpa petunjuk apa pun.
+            // Pesan fasad untuk auth anonim adalah "YouTube menolak permintaan",
+            // bukan "Sesi berakhir" (tidak ada sesi yang bisa habis).
+            val blocked = (e as? YouTubeMusicException)?.takeIf { it.isAuth }?.message
             local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error)) }
         }
     }
@@ -320,7 +322,7 @@ class MusicViewModel(
     override fun togglePlay() = player.togglePlay()
     override fun next() = player.next()
     override fun prev() = player.prev()
-    override fun seek(ms: Long) { if (!player.seekTo(ms)) say("Audio dari konverter tidak bisa digeser. Tunggu arsip siap atau ganti ke jalur langsung.") }
+    override fun seek(ms: Long) { if (!player.seekTo(ms)) say("Audio ini tidak bisa digeser.") }
     override fun seekLyric(seconds: Double) { if (local.value.player.seekable) player.seekTo((seconds * 1000).toLong()) }
     override fun jump(position: Int) = player.jump(position)
     override fun toggleRepeat() = player.toggleRepeat()
@@ -419,7 +421,10 @@ class MusicViewModel(
         updatePage(p.target) { it.copy(loadingMore = true) }
         launchSafe {
             try {
-                val next = client.collectionMore(c.kind, cursor, c.id)
+                // Podcast: judul acara halaman pertama diteruskan — respons
+                // lanjutan tidak mengulang judul itu (gap Tahap 6).
+                val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                val next = client.collectionMore(c.kind, cursor, c.id, showTitle)
                 updatePage(p.target) { it.copy(loadingMore = false, collection = it.collection?.merge(next)) }
             } catch (e: CancellationException) {
                 throw e
@@ -450,7 +455,9 @@ class MusicViewModel(
             try {
                 var pages = 0
                 while (all.cursor != null && pages < MAX_COLLECTION_PAGES) {
-                    all = all.merge(client.collectionMore(c.kind, all.cursor!!, c.id))
+                    // Podcast: judul acara halaman pertama diteruskan (gap Tahap 6, sama seperti loadMorePage).
+                    val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                    all = all.merge(client.collectionMore(c.kind, all.cursor!!, c.id, showTitle))
                     pages++
                 }
                 updatePage(p.target) { it.copy(collection = all) }
@@ -494,7 +501,7 @@ class MusicViewModel(
                         charts = charts.await().getOrDefault(emptyList()),
                         releases = releases.await().getOrDefault(emptyList()),
                         moods = moods.await().getOrDefault(emptyList()),
-                        stations = stations.await().getOrDefault(com.rosyidputrar.taskify.core.media.RadioStations.FALLBACK),
+                        stations = stations.await().getOrDefault(LocalRadioStations.FALLBACK),
                     ))
                 }
             }
@@ -506,8 +513,7 @@ class MusicViewModel(
     override fun setQuality(q: MusicQuality) = player.updateSettings { it.copy(quality = q) }
     override fun toggleNormalize() = player.updateSettings { it.copy(normalize = !it.normalize) }
     override fun toggleSponsorBlock() = player.updateSettings { it.copy(sponsorBlock = !it.sponsorBlock) }
-    override fun toggleForceMp3() = player.updateSettings { it.copy(forceMp3 = !it.forceMp3) }
-    override fun toggleArchive() = player.updateSettings { it.copy(archive = !it.archive) }
+    override fun togglePreferMp4a() = player.updateSettings { it.copy(preferMp4a = !it.preferMp4a) }
     override fun setSleep(minutes: Int?) = player.setSleep(minutes)
     override fun sleepEndOfSong() = player.setSleep(null, endOfSong = true)
 

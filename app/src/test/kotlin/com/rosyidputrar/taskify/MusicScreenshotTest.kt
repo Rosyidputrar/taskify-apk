@@ -39,7 +39,7 @@ import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
-import com.rosyidputrar.taskify.core.media.RadioStations
+import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.feature.media.BrowsePage
 import com.rosyidputrar.taskify.feature.media.ExploreState
 import com.rosyidputrar.taskify.feature.media.FocusMusicContent
@@ -78,7 +78,7 @@ class MusicScreenshotTest {
     private val explore = ExploreState(
         loaded = true,
         moods = listOf(MoodGroup("Mood & momen", listOf("Fokus", "Santai", "Semangat!", "Tidur", "Sedih").map { MoodCategory(it, "p-$it") })),
-        stations = RadioStations.FALLBACK,
+        stations = LocalRadioStations.FALLBACK,
         home = listOf(
             DiscoverySection.Songs("Pilihan cepat", songs),
             DiscoverySection.Playlists("Throwbacks", listOf(PlaylistRef("VLRDCLAK1", "RDCLAK1", "Pop 2000-an", "YouTube Music", emptyList()), PlaylistRef("VLPL2", "PL2", "Akustik sore", "Kopi Senja", emptyList()))),
@@ -145,21 +145,33 @@ class MusicScreenshotTest {
             lyrics = LyricsState(songs[1].videoId, Lyrics(lines, "", "lrclib"))), object : MusicActions {}, padding)
     }
 
+    @Config(qualifiers = "w393dp-h1400dp-xxhdpi")
+    @Test fun queuePlayingDirect() = shot("music_queue_playing_light", false) {
+        // Antrean sedang memutar via direct-to-YouTube (opus 251, tanpa
+        // konverter/arsip): daftar antrean + bilah mini player dalam konteks.
+        val p = base.player.copy(status = YtStatus.Playing,
+            streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm", 251)))
+        MusicContent(base.copy(tab = MusicTab.Queue, player = p, position = PlaybackPosition(45_000, 228_000)), object : MusicActions {}, padding)
+    }
+
     @Config(qualifiers = "w393dp-h1100dp-xxhdpi")
-    @Test fun converterCannotSeek() = shot("music_converter_light", false) {
-        val p = base.player.copy(streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_CONVERTER, "audio/mpeg", null)))
+    @Test fun liveCannotSeek() = shot("music_live_light", false) {
+        // Pengganti shot konverter (dihapus Tahap 7): siaran langsung tetap
+        // tidak bisa digeser, tapi tanpa jalur konverter/arsip.
+        val live = Song("live:soma-dronezone", "Drone Zone", "SomaFM", "", emptyList(), "https://ice1.somafm.com/dronezone-128-mp3", null, live = true)
+        val p = base.player.copy(queue = listOf(live), status = YtStatus.Playing)
         MusicContent(base.copy(tab = MusicTab.Queue, player = p, sleep = SleepTimer(endOfSong = true)), object : MusicActions {}, padding)
     }
 
     @Test fun settings() = shot("music_settings_light", false) {
-        MusicContentSettings(MusicSettings(sponsorBlock = true, forceMp3 = false))
+        MusicContentSettings(MusicSettings(sponsorBlock = true, preferMp4a = true))
     }
 
     @Composable
     private fun MusicContentSettings(s: MusicSettings) = MusicSettingsContent(base.copy(settings = s), object : MusicActions {})
 
     @Test fun focusMusic() = shot("focus_music_dark", true) {
-        FocusMusicContent(FocusMusicState(stations = RadioStations.FALLBACK, playingId = "soma-groovesalad", playing = true), object : FocusMusicActions {}, Modifier.padding(16.dp))
+        FocusMusicContent(FocusMusicState(stations = LocalRadioStations.FALLBACK, playingId = "soma-groovesalad", playing = true), object : FocusMusicActions {}, Modifier.padding(16.dp))
     }
 
     @Test fun pageSlidesInAndBackPops() {

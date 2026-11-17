@@ -7,9 +7,10 @@ android {
     namespace = "com.rosyidputrar.taskify.core.media"
 }
 
-/** Musik (Worker music-taskify + Media3) dan TikTok (Worker ttdl-taskify). Tanpa database. */
+/** Dependensi `:core:innertube` untuk resolve stream direct (Tahap 3). */
 dependencies {
     api(projects.core.data)
+    api(projects.core.innertube)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.serialization.json)

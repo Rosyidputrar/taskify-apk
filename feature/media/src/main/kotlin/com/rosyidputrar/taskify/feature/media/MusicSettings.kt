@@ -44,9 +44,9 @@ import androidx.compose.ui.semantics.semantics
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.RadioStation
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
-import com.rosyidputrar.taskify.core.media.MusicClient
+import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.RadioStations
+import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -77,12 +77,11 @@ fun MusicSettingsContent(state: MusicUiState, actions: MusicActions) {
                 }
             }
         }
-        Text("Berlaku untuk lagu berikutnya. Jalur konverter MP3 selalu memakai bitrate bawaannya.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Berlaku untuk lagu berikutnya.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("PEMUTARAN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
         SettingSwitch("Ratakan volume", "Lagu yang keras dilirihkan supaya volume antar lagu seragam.", s.normalize, actions::toggleNormalize)
         SettingSwitch("Lewati sponsor & intro (SponsorBlock)", "Melompati bagian non-musik dari data komunitas. Hanya saat audio bisa digeser.", s.sponsorBlock, actions::toggleSponsorBlock)
-        SettingSwitch("Selalu pakai MP3 (konverter)", "Untuk perangkat yang gagal memutar opus/webm. Lebih lambat disiapkan dan tidak bisa digeser.", s.forceMp3, actions::toggleForceMp3)
-        SettingSwitch("Arsipkan hasil konversi", "Menyimpan MP3 hasil konversi di server supaya bisa digeser dan cepat diputar ulang.", s.archive, actions::toggleArchive)
+        SettingSwitch("Utamakan MP4A (kompatibilitas)", "Pilih format MP4A (itag 140) bila tersedia, untuk perangkat yang gagal memutar opus/webm.", s.preferMp4a, actions::togglePreferMp4a)
     }
 }
 
@@ -99,23 +98,23 @@ private fun SettingSwitch(title: String, hint: String, checked: Boolean, onToggl
 
 // ------------------------------------------------------------------ Mode Fokus
 
-data class FocusMusicState(val configured: Boolean = true, val stations: List<RadioStation> = RadioStations.FALLBACK, val playingId: String? = null, val playing: Boolean = false)
+data class FocusMusicState(val stations: List<RadioStation> = LocalRadioStations.FALLBACK, val playingId: String? = null, val playing: Boolean = false)
 
 interface FocusMusicActions {
     fun toggle(station: RadioStation) {}
 }
 
 /** Pilihan "Musik fokus" di Mode Fokus: stasiun radio langsung tanpa vokal didahulukan. */
-class FocusMusicViewModel(private val player: MusicPlayer, private val client: MusicClient) : ViewModel(), FocusMusicActions {
-    private val stations = MutableStateFlow(RadioStations.FALLBACK)
+class FocusMusicViewModel(private val player: MusicPlayer, private val client: YouTubeMusicClient) : ViewModel(), FocusMusicActions {
+    private val stations = MutableStateFlow(LocalRadioStations.FALLBACK)
 
     val state: StateFlow<FocusMusicState> = combine(stations, player.state) { st, p ->
         val cur = p.current?.takeIf { it.live }
-        FocusMusicState(player.configured, st.sortedBy { it.vocals }, cur?.videoId?.removePrefix("live:"), cur != null && p.status == YtStatus.Playing)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusMusicState(player.configured))
+        FocusMusicState(st.sortedBy { it.vocals }, cur?.videoId?.removePrefix("live:"), cur != null && p.status == YtStatus.Playing)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusMusicState())
 
     init {
-        if (player.configured) launchSafe { runCatching { client.stations() }.getOrNull()?.let { stations.value = it } }
+        launchSafe { runCatching { client.stations() }.getOrNull()?.let { stations.value = it } }
     }
 
     override fun toggle(station: RadioStation) {
@@ -132,7 +131,6 @@ class FocusMusicViewModel(private val player: MusicPlayer, private val client: M
 fun FocusMusicCard(modifier: Modifier = Modifier) {
     val vm: FocusMusicViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
-    if (!state.configured) return
     FocusMusicContent(state, vm, modifier)
 }
 

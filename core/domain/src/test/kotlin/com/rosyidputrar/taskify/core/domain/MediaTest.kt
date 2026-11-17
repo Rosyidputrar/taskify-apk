@@ -103,8 +103,8 @@ class MediaTest {
         assertEquals("audio/webm; codecs=opus", s.streams[a.videoId]?.mimeType)
         assertEquals(251, s.streams[a.videoId]?.itag)
         assertEquals(true, s.streams[a.videoId]?.isOpus)
-        val s2 = reduce(s, YtEvent.StreamInfo(b.videoId, StreamSource("converter", "audio/mpeg", null)))
-        assertEquals("audio/mpeg", s2.streams[b.videoId]?.mimeType)
+        val s2 = reduce(s, YtEvent.StreamInfo(b.videoId, StreamSource("direct", "audio/mp4; codecs=\"mp4a.40.2\"", 140)))
+        assertEquals("audio/mp4; codecs=\"mp4a.40.2\"", s2.streams[b.videoId]?.mimeType)
         assertEquals(false, s2.streams[b.videoId]?.isOpus)
         assertEquals("direct", s2.streams[a.videoId]?.source)
     }

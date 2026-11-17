@@ -52,7 +52,7 @@ data class TrackDetails(
     val lyricsChecked: Boolean = false,
 )
 
-/** Asal audio hasil `/v1/stream/init` (atau poll): direct/R2/konverter + jenis audionya. */
+/** Asal audio hasil resolve direct: hanya `direct` (URL `*.googlevideo.com`, mendukung `Range`) atau `live` (siaran radio, URL apa adanya). */
 data class StreamSource(
     val source: String,
     val mimeType: String?,
@@ -60,19 +60,14 @@ data class StreamSource(
     /** Waktu (epoch ms) URL direct kedaluwarsa (`expiresInSeconds`); `null` = tidak berbatas. */
     val expiresAt: Long? = null,
     val loudnessDb: Double? = null,
-    /** Token job konverter — dipakai `/v1/stream/archive` supaya hasilnya bisa di-seek. */
-    val job: String? = null,
 ) {
     /** Jalur direct yang memilih opus (itag 251) — perlu dilacak, bisa gagal di perangkat tertentu. */
     val isOpus: Boolean get() = mimeType?.contains("opus", ignoreCase = true) == true
-    /** Direct & R2 mendukung `Range`; URL konverter dan siaran langsung TIDAK bisa di-seek. */
-    val seekable: Boolean get() = source == SOURCE_DIRECT || source == SOURCE_R2
-    val converter: Boolean get() = source == SOURCE_CONVERTER
+    /** Hanya direct yang mendukung `Range`; siaran langsung TIDAK bisa di-seek. */
+    val seekable: Boolean get() = source == SOURCE_DIRECT
 
     companion object {
         const val SOURCE_DIRECT = "direct"
-        const val SOURCE_CONVERTER = "converter"
-        const val SOURCE_R2 = "r2"
         const val SOURCE_LIVE = "live"
     }
 }
@@ -103,8 +98,6 @@ data class YtState(
     val continued: List<String> = emptyList(),
     val autoContinue: Boolean = true,
     val awaitingMore: Boolean = false,
-    /** Lagu yang jalur direct-nya gagal diputar → diminta ulang lewat konverter (sekali per lagu). */
-    val fallbacks: List<String> = emptyList(),
     val radio: RadioSource? = null,
     /**
      * Lagu yang antreannya diisi lagu serupa begitu keterangannya datang (upNext dari
@@ -126,7 +119,7 @@ sealed interface YtEvent {
     data class SetQueue(val songs: List<Song>, val startAt: Int = 0, val rng: Random = Random.Default, val radio: RadioSource? = null, val similar: Boolean = false) : YtEvent
     /** Antrean tersimpan dipulihkan (setelah proses mati) — dalam keadaan jeda, URL diminta ulang saat diputar. */
     data class Restore(val snapshot: QueueSnapshot) : YtEvent
-    /** Pemutaran gagal: coba jalur konverter sekali bila sebelumnya direct, kalau tidak jadi galat. */
+    /** Pemutaran gagal: langsung jadi galat (tidak ada lagi jalur konverter). */
     data class PlaybackFailed(val videoId: String, val message: String) : YtEvent
     /** Lupakan URL yang kedaluwarsa (direct ±6 jam) supaya diminta ulang. */
     data class Expire(val now: Long) : YtEvent
@@ -157,8 +150,6 @@ sealed interface YtEvent {
     data class DetailsFailed(val videoId: String) : YtEvent
     /** Pengambilan keterangan batal (lagu berganti) — boleh diambil lagi nanti. */
     data class DetailsCancelled(val videoId: String) : YtEvent
-    /** Hasil konverter tersimpan di R2: URL baru yang bisa di-seek. */
-    data class Archived(val videoId: String, val url: String, val info: StreamSource) : YtEvent
     data class ContinueQueue(val from: String, val songs: List<Song>, val rng: Random = Random.Default) : YtEvent
     data object ToggleAutoContinue : YtEvent
     data object Clear : YtEvent
@@ -185,7 +176,7 @@ object MusicQueue {
         return if (s.repeat == RepeatMode.All) 0 else null
     }
 
-    /** Lagu berikut yang perlu disiapkan lebih dulu (supaya pergantian lagu tidak menunggu konversi). */
+    /** Lagu berikut yang perlu disiapkan lebih dulu (supaya pergantian lagu tidak menunggu resolve). */
     fun prefetchTarget(s: YtState): String? {
         if (s.status != YtStatus.Playing && s.status != YtStatus.Paused) return null
         val pos = if (s.repeat == RepeatMode.One) null else nextIgnoringRepeatOne(s)
@@ -255,7 +246,7 @@ object MusicQueue {
                 val live = songs.filter { it.live && it.url.isNotEmpty() }
                 state.copy(queue = songs, order = order, position = if (state.shuffle) 0 else startAt, status = YtStatus.Preparing,
                     percent = 0, label = "", error = "", prefetching = emptyList(), continued = emptyList(), awaitingMore = false,
-                    radio = event.radio, fallbacks = emptyList(),
+                    radio = event.radio,
                     similarSeed = if (event.similar) songs[startAt].videoId.takeIf { !songs[startAt].live } else null,
                     urls = state.urls + live.associate { it.videoId to it.url },
                     streams = state.streams + live.associate { it.videoId to StreamSource(StreamSource.SOURCE_LIVE, null, null) })
@@ -275,15 +266,16 @@ object MusicQueue {
             }
         }
         is YtEvent.PlaybackFailed -> {
-            val src = state.streams[event.videoId]
-            val canFallback = src != null && src.source == StreamSource.SOURCE_DIRECT && event.videoId !in state.fallbacks
-            val cleared = state.copy(urls = state.urls - event.videoId, streams = state.streams - event.videoId)
-            when {
-                state.current?.videoId != event.videoId -> cleared
-                canFallback -> cleared.copy(fallbacks = state.fallbacks + event.videoId, status = YtStatus.Preparing, percent = 0,
-                    label = "Mencoba format lain…", error = "")
-                state.current?.live == true -> state.copy(status = YtStatus.Error, error = event.message, percent = 0, label = "")
-                else -> cleared.copy(status = YtStatus.Error, error = event.message, percent = 0, label = "")
+            // Langsung galat: tidak ada lagi fallback konverter (rewrite direct).
+            // Siaran langsung menyimpan URL-nya (bisa dicoba lagi apa adanya);
+            // lagu biasa membuang URL/stream yang gagal supaya diminta ulang.
+            if (state.current?.videoId != event.videoId) {
+                state.copy(urls = state.urls - event.videoId, streams = state.streams - event.videoId)
+            } else if (state.current?.live == true) {
+                state.copy(status = YtStatus.Error, error = event.message, percent = 0, label = "")
+            } else {
+                state.copy(urls = state.urls - event.videoId, streams = state.streams - event.videoId,
+                    status = YtStatus.Error, error = event.message, percent = 0, label = "")
             }
         }
         is YtEvent.Expire -> {
@@ -335,7 +327,6 @@ object MusicQueue {
             detailsPending = state.detailsPending - event.videoId, awaitingMore = false,
         )
         is YtEvent.DetailsCancelled -> state.copy(detailsPending = state.detailsPending - event.videoId)
-        is YtEvent.Archived -> state.copy(urls = state.urls + (event.videoId to event.url), streams = state.streams + (event.videoId to event.info))
         is YtEvent.ContinueQueue -> {
             val known = state.queue.map { it.videoId }.toSet()
             val fresh = event.songs.filter { it.videoId.isNotEmpty() && it.videoId !in known }
