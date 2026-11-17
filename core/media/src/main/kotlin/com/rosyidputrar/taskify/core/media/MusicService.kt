@@ -25,10 +25,15 @@ class MusicService : MediaSessionService(), KoinComponent {
         val forwarding = object : ForwardingPlayer(music.player) {
             override fun getAvailableCommands(): Player.Commands = super.getAvailableCommands().buildUpon()
                 .add(Player.COMMAND_SEEK_TO_NEXT).add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                .add(Player.COMMAND_SEEK_TO_PREVIOUS).add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM).build()
-            override fun isCommandAvailable(command: Int) = command in setOf(
-                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-            ) || super.isCommandAvailable(command)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS).add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                // URL konverter / siaran langsung tidak mendukung Range: sembunyikan bilah geser notifikasi.
+                .apply { if (!music.state.value.seekable) remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) }.build()
+            override fun isCommandAvailable(command: Int) = when (command) {
+                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> true
+                Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM -> music.state.value.seekable && super.isCommandAvailable(command)
+                else -> super.isCommandAvailable(command)
+            }
+            override fun seekTo(positionMs: Long) { music.seekTo(positionMs) }
             override fun seekToNext() = music.next()
             override fun seekToNextMediaItem() = music.next()
             override fun seekToPrevious() = music.prev()

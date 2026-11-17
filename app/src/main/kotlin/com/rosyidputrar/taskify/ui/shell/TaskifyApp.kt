@@ -375,7 +375,7 @@ fun TaskifyApp(
 
         if (showMini) {
             MiniPlayer(
-                onOpen = { navController.navigate(MusicRoute) { launchSingleTop = true } },
+                onOpen = { navController.navigate(MusicRoute()) { launchSingleTop = true } },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -525,6 +525,7 @@ private fun TaskifyNavHost(
             ShareScreen(
                 contentPadding, onCapture = { AppEvents.send(AppEvent.OpenCapture(it)) }, onDone = { navController.popBackStack() }, backButton = { BackButton(it) },
                 onTikTok = { link -> navController.navigate(TikTokRoute(link)) },
+                onMusic = { link -> navController.navigate(MusicRoute(link)) },
             )
         }
         composable<NotificationsRoute> { entry ->
@@ -553,8 +554,8 @@ private fun TaskifyNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
-        composable<MusicRoute> {
-            MusicScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) })
+        composable<MusicRoute> { entry ->
+            MusicScreen(contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }, link = entry.toRoute<MusicRoute>().link)
         }
         composable<TikTokRoute> { entry ->
             TikTokScreen(contentPadding, initial = entry.toRoute<TikTokRoute>().input, onBack = navController.backIfPossible(), backButton = { BackButton(it) })

@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify.core.media
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -10,15 +11,24 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.rosyidputrar.taskify.core.domain.media.Loudness
 import com.rosyidputrar.taskify.core.domain.media.MusicQueue
+import com.rosyidputrar.taskify.core.domain.media.MusicSettings
+import com.rosyidputrar.taskify.core.domain.media.RadioSource
+import com.rosyidputrar.taskify.core.domain.media.RadioStation
+import com.rosyidputrar.taskify.core.domain.media.SleepTimer
 import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.SponsorBlock
+import com.rosyidputrar.taskify.core.domain.media.SponsorSegment
 import com.rosyidputrar.taskify.core.domain.media.StreamSource
+import com.rosyidputrar.taskify.core.domain.media.Track
 import com.rosyidputrar.taskify.core.domain.media.TrackDetails
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -31,31 +41,58 @@ import kotlinx.coroutines.launch
 /** Posisi putar (ms) untuk bilah progres. */
 data class PlaybackPosition(val positionMs: Long = 0, val durationMs: Long = 0)
 
+fun Track.toDetails() = TrackDetails(lyricsId, upNext, loudnessDb, lyrics, lyricsChecked)
+
 /**
  * Pemutar musik tunggal untuk seluruh aplikasi (padanan `useMusicPlayer` + `music-store`).
- * Keadaan antrean = [MusicQueue.reduce]; efek samping (konversi audio, prefetch lagu berikut,
- * lirik & antrean lanjutan) dijalankan di sini. ExoPlayer hidup di thread utama dan dibungkus
- * [MusicService] (MediaSession) supaya musik tetap berbunyi di latar & punya kontrol notifikasi.
+ * Keadaan antrean = [MusicQueue.reduce]; efek samping (resolve audio lewat now-playing, prefetch
+ * lagu berikut, lanjutan radio, SponsorBlock, arsip R2) dijalankan di sini. ExoPlayer hidup di
+ * thread utama dan dibungkus [MusicService] (MediaSession) supaya musik tetap berbunyi di latar.
+ *
+ * Antrean disimpan ke [MusicPrefs] tiap kali berubah dan dipulihkan (dalam keadaan jeda) saat
+ * proses dibuat ulang; URL tidak ikut disimpan.
  */
-class MusicPlayer(private val context: Context, private val client: MusicClient) {
+class MusicPlayer(
+    private val context: Context,
+    private val client: MusicClient,
+    private val prefs: MusicPrefs = MusicPrefs(context),
+    private val now: () -> Long = System::currentTimeMillis,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(YtState())
     val state: StateFlow<YtState> = _state.asStateFlow()
     private val _position = MutableStateFlow(PlaybackPosition())
     val position: StateFlow<PlaybackPosition> = _position.asStateFlow()
+    private val _settings = MutableStateFlow(prefs.settings)
+    val settings: StateFlow<MusicSettings> = _settings.asStateFlow()
+    private val _sleep = MutableStateFlow<SleepTimer?>(null)
+    val sleep: StateFlow<SleepTimer?> = _sleep.asStateFlow()
+    /** Pesan singkat sesaat (mis. "Melewati sponsor"), dikosongkan otomatis. */
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
 
     val configured: Boolean get() = client.configured
 
     private var resolveJob: Job? = null
+    private var resolving: String? = null
     private var tickJob: Job? = null
+    private var noticeJob: Job? = null
     private var loadedId: String? = null
+    private var loadedUrl: String? = null
     /** Poll prefetch per videoId — supaya bisa dibatalkan saat lagu berubah (item 9). */
     private val prefetchJobs = mutableMapOf<String, Job>()
-
-    /** Paksa jalur konverter (diteruskan ke `MusicClient.resolveStreamInfo`, default mati). */
-    var forceConverter: Boolean = false
+    private val sponsor = mutableMapOf<String, List<SponsorSegment>>()
+    private val sponsorPending = mutableSetOf<String>()
+    private val archiving = mutableSetOf<String>()
+    /** Posisi lanjut untuk antrean yang dipulihkan (hanya bila audionya bisa di-seek). */
+    private var resumeId: String? = null
+    private var resumeMs: Long = 0
+    private var savedKey: Any? = null
+    private var lastPositionSave = 0L
+    private var exoCreated = false
 
     val player: ExoPlayer by lazy {
+        exoCreated = true
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
@@ -65,19 +102,33 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val s = _state.value
-            if (isPlaying) dispatch(YtEvent.Playing) else if (s.status == YtStatus.Playing && player.playbackState != Player.STATE_ENDED) dispatch(YtEvent.Paused)
+            if (isPlaying) dispatch(YtEvent.Playing)
+            else if (s.status == YtStatus.Playing && player.playbackState != Player.STATE_ENDED) { dispatch(YtEvent.Paused); savePosition(force = true) }
             if (isPlaying) startTicker()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED) dispatch(YtEvent.Ended)
+            if (playbackState != Player.STATE_ENDED) return
+            if (_sleep.value?.endOfSong == true) stopAtEndOfSong() else dispatch(YtEvent.Ended)
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            // URL konversi bisa kedaluwarsa: lupakan supaya percobaan berikut meminta yang baru.
-            _state.value.current?.let { song -> _state.value = _state.value.copy(urls = _state.value.urls - song.videoId) }
+            val song = _state.value.current ?: return
             loadedId = null
-            dispatch(YtEvent.Error("Audio gagal diputar. Coba lagi."))
+            loadedUrl = null
+            Log.w(MusicClient.TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName}")
+            // Direct (opus/webm) gagal → otomatis coba konverter MP3 sekali; selain itu galat.
+            dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi."))
+        }
+    }
+
+    init {
+        prefs.loadQueue()?.let { snap ->
+            _state.value = MusicQueue.reduce(_state.value, YtEvent.Restore(snap))
+            resumeId = _state.value.current?.videoId
+            resumeMs = snap.positionMs
+            _position.value = PlaybackPosition(snap.positionMs, (_state.value.current?.seconds ?: 0) * 1000L)
+            savedKey = persistKey(_state.value)
         }
     }
 
@@ -88,23 +139,56 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
 
     // ------------------------------------------------------------------ perintah UI
 
-    fun playQueue(songs: List<Song>, startAt: Int) { loadedId = null; dispatch(YtEvent.SetQueue(songs, startAt)) }
+    fun playQueue(songs: List<Song>, startAt: Int, radio: RadioSource? = null) {
+        loadedId = null
+        resumeId = null
+        dispatch(YtEvent.SetQueue(songs, startAt, radio = radio))
+    }
+
+    fun playStation(station: RadioStation) = playQueue(listOf(station.toSong()), 0)
+
     fun next() = dispatch(YtEvent.Next)
     fun prev() {
         // Lebih dari 3 detik berjalan → ulang dari awal (perilaku umum pemutar).
-        if (player.currentPosition > 3_000) player.seekTo(0) else dispatch(YtEvent.Prev)
+        if (loadedId != null && player.currentPosition > 3_000 && _state.value.current?.live != true) player.seekTo(0) else dispatch(YtEvent.Prev)
     }
     fun jump(position: Int) = dispatch(YtEvent.Jump(position))
     fun toggleRepeat() = dispatch(YtEvent.ToggleRepeat)
     fun toggleShuffle() = dispatch(YtEvent.ToggleShuffle())
     fun toggleAutoContinue() = dispatch(YtEvent.ToggleAutoContinue)
-    fun seekTo(ms: Long) { player.seekTo(ms); _position.value = _position.value.copy(positionMs = ms) }
+
+    /**
+     * Seek hanya bila audionya mendukung `Range` (direct/R2). URL konverter tidak bisa di-seek;
+     * bila sementara itu arsip R2 sudah siap, media dimuat ulang dari R2 di posisi tujuan.
+     */
+    fun seekTo(ms: Long): Boolean {
+        val s = _state.value
+        if (!s.seekable || loadedId == null) return false
+        val song = s.current ?: return false
+        val url = s.urls[song.videoId]
+        if (url != null && url != loadedUrl) {
+            val playing = player.isPlaying
+            setMedia(song, url, ms)
+            if (playing) player.play()
+        } else player.seekTo(ms)
+        _position.value = _position.value.copy(positionMs = ms)
+        return true
+    }
 
     fun togglePlay() {
         val s = _state.value
         when (s.status) {
             YtStatus.Playing -> player.pause()
-            YtStatus.Paused -> if (loadedId == s.current?.videoId && player.playbackState != Player.STATE_ENDED) player.play() else dispatch(YtEvent.Preparing)
+            YtStatus.Paused -> {
+                val expiresAt = s.currentStream?.expiresAt
+                if (expiresAt != null && expiresAt <= now() + MusicQueue.EXPIRY_MARGIN_MS) {
+                    // URL direct ±6 jam sudah habis selama dijeda → minta baru.
+                    loadedId = null
+                    _state.value = MusicQueue.reduce(s, YtEvent.Expire(now()))
+                    dispatch(YtEvent.Preparing)
+                } else if (loadedId == s.current?.videoId && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE) player.play()
+                else { loadedId = null; dispatch(YtEvent.Preparing) }
+            }
             YtStatus.Error -> dispatch(YtEvent.Preparing)
             else -> Unit
         }
@@ -112,12 +196,32 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
 
     fun stop() {
         resolveJob?.cancel()
+        resolving = null
         cancelPrefetchExcept(null)
-        player.stop()
-        player.clearMediaItems()
+        if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
+        loadedUrl = null
+        resumeId = null
+        _sleep.value = null
         dispatch(YtEvent.Clear)
         context.stopService(Intent(context, MusicService::class.java))
+    }
+
+    fun updateSettings(transform: (MusicSettings) -> MusicSettings) {
+        val next = transform(_settings.value)
+        _settings.value = next
+        prefs.settings = next
+        if (loadedId != null) applyVolume()
+    }
+
+    /** `null` = matikan; menit; atau akhir lagu ini. */
+    fun setSleep(minutes: Int?, endOfSong: Boolean = false) {
+        _sleep.value = when {
+            endOfSong -> SleepTimer(endOfSong = true)
+            minutes != null && minutes > 0 -> SleepTimer(endsAt = now() + minutes * 60_000L)
+            else -> null
+        }
+        if (_state.value.status == YtStatus.Playing) startTicker()
     }
 
     suspend fun lyrics(lyricsId: String): String = client.lyrics(lyricsId)
@@ -125,6 +229,7 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
     // ------------------------------------------------------------------ efek
 
     private fun effects() {
+        dropExpired()
         val s = _state.value
         val song = s.current
         if (s.status == YtStatus.Preparing && song != null && !s.awaitingMore) {
@@ -140,7 +245,26 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
         val nextId = MusicQueue.prefetchTarget(s.copy(prefetching = emptyList()))
         cancelPrefetchExcept(setOfNotNull(song?.videoId, nextId))
         target?.let(::prefetch)
-        MusicQueue.detailsTarget(s)?.let(::details)
+        // Dispatch di atas (PrefetchStart, dst.) memanggil effects() bersarang: baca state TERBARU
+        // supaya keterangan/radio yang sudah dimulai di panggilan bersarang tidak diambil dua kali.
+        MusicQueue.detailsTarget(_state.value)?.takeIf { resolving != it }?.let(::details)
+        MusicQueue.radioTarget(_state.value)?.let(::moreRadio)
+        if (song != null && s.status == YtStatus.Playing) sponsorFor(song)
+        if (loadedId != null) applyVolume()
+        persist(_state.value)
+    }
+
+    /**
+     * URL direct kedaluwarsa (±6 jam) dibuang supaya diminta ulang. Lagu yang sedang termuat dan
+     * berbunyi dibiarkan (ExoPlayer sudah memegang koneksinya); URL-nya dibuang saat dijeda lama.
+     */
+    private fun dropExpired() {
+        val s = _state.value
+        val limit = now() + MusicQueue.EXPIRY_MARGIN_MS
+        val cur = s.current?.videoId
+        val keepCurrent = cur != null && loadedId == cur && s.status == YtStatus.Playing
+        val expired = s.streams.filter { (k, v) -> (v.expiresAt ?: Long.MAX_VALUE) <= limit && !(keepCurrent && k == cur) }.keys
+        if (expired.isNotEmpty()) _state.value = s.copy(urls = s.urls - expired, streams = s.streams - expired)
     }
 
     /** Batalkan semua poll prefetch kecuali yang videonya ada di [keep] (null = batalkan semua). */
@@ -152,43 +276,61 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
         }
     }
 
+    private fun options(videoId: String): StreamOptions {
+        val fallback = videoId in _state.value.fallbacks
+        return StreamOptions(_settings.value.quality, forceConverter = _settings.value.forceMp3 || fallback, force = fallback)
+    }
+
     private fun resolveCurrent(song: Song) {
-        if (resolveJob?.isActive == true) {
-            if (resolvingId == song.videoId) return
-            resolveJob?.cancel()
-        }
+        if (resolving == song.videoId) return
+        resolveJob?.cancel()
+        resolving = null
         // Item 5: lagu ini sedang di-prefetch (jalur konverter) — jangan mulai resolve kedua
         // (2x resolveStream + 2x loop poll > batas 60/menit, satu loop kena 429). Tunggu
         // PrefetchDone: dispatch-nya memanggil effects() lagi, lalu URL yang sudah ada di-load.
         if (song.videoId in _state.value.prefetching) return
         cancelPrefetchExcept(setOf(song.videoId))
-        resolvingId = song.videoId
-        resolveJob = scope.launch {
+        val id = song.videoId
+        resolving = id
+        val s = _state.value
+        // Lagu yang belum punya keterangan: satu panggilan now-playing (lagu + lirik + audio).
+        val withTrack = !song.live && !s.details.containsKey(id) && id !in s.detailsPending
+        if (withTrack) dispatch(YtEvent.DetailsStart(id))
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var detailsDone = !withTrack
             try {
-                val info = client.resolveStreamInfo(song.videoId, forceConverter) { p, label -> dispatch(YtEvent.Progress(p, label)) }
+                val pb = client.playback(id, options(id), withTrack) { p, label -> dispatch(YtEvent.Progress(p, label)) }
+                if (withTrack) { detailsDone = true; pb.track?.let { dispatch(YtEvent.DetailsDone(id, it.toDetails())) } ?: dispatch(YtEvent.DetailsFailed(id)) }
+                val info = pb.info
                 val url = info.url ?: throw MusicException("Server musik tidak memberi URL audio.")
-                dispatch(YtEvent.StreamInfo(song.videoId, StreamSource(info.source.orEmpty(), info.mimeType, info.itag)))
-                if (_state.value.current?.videoId != song.videoId) return@launch
-                dispatch(YtEvent.Ready(song.videoId, url))
-                load(song, url)
+                dispatch(YtEvent.StreamInfo(id, info.toSource()))
+                maybeArchive(id, info)
+                if (_state.value.current?.videoId != id) return@launch
+                dispatch(YtEvent.Ready(id, url))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (_state.value.current?.videoId == song.videoId) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio."))
+                if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio."))
+            } finally {
+                // Keterangan yang belum datang (galat/batal) dilepas supaya bisa diambil lagi nanti.
+                if (!detailsDone && id in _state.value.detailsPending) dispatch(YtEvent.DetailsCancelled(id))
+                if (resolveJob == coroutineContext[Job]) resolving = null
             }
         }
+        resolveJob = job
+        job.start()
     }
-    private var resolvingId: String? = null
 
     private fun prefetch(videoId: String) {
         if (prefetchJobs[videoId]?.isActive == true) return
         dispatch(YtEvent.PrefetchStart(videoId))
-        val job = scope.launch {
-            runCatching { client.resolveStreamInfo(videoId, forceConverter) }
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            runCatching { client.playback(videoId, options(videoId), withTrack = false).info }
                 .onSuccess { info ->
                     info.url?.let {
-                        dispatch(YtEvent.StreamInfo(videoId, StreamSource(info.source.orEmpty(), info.mimeType, info.itag)))
+                        dispatch(YtEvent.StreamInfo(videoId, info.toSource()))
                         dispatch(YtEvent.PrefetchDone(videoId, it))
+                        maybeArchive(videoId, info)
                     } ?: dispatch(YtEvent.PrefetchFailed(videoId))
                 }
                 .onFailure { if (it !is CancellationException) dispatch(YtEvent.PrefetchFailed(videoId)) }
@@ -200,44 +342,159 @@ class MusicPlayer(private val context: Context, private val client: MusicClient)
             // mengira lagu itu masih disiapkan dan resolve-nya tidak pernah dimulai lagi.
             if (cause is CancellationException) dispatch(YtEvent.PrefetchCancelled(videoId))
         }
+        job.start()
     }
 
     private fun details(videoId: String) {
         dispatch(YtEvent.DetailsStart(videoId))
         scope.launch {
-            runCatching { client.track(videoId) }
-                .onSuccess { dispatch(YtEvent.DetailsDone(videoId, TrackDetails(it.lyricsId, it.upNext))) }
-                .onFailure { if (it !is CancellationException) dispatch(YtEvent.DetailsFailed(videoId)) }
+            runCatching { client.track(videoId, includeLyrics = true) }
+                .onSuccess { dispatch(YtEvent.DetailsDone(videoId, it.toDetails())) }
+                .onFailure { if (it !is CancellationException) dispatch(YtEvent.DetailsFailed(videoId)) else dispatch(YtEvent.DetailsCancelled(videoId)) }
+        }
+    }
+
+    private fun moreRadio(cursor: String) {
+        dispatch(YtEvent.RadioStart)
+        scope.launch {
+            runCatching { client.radioMore(cursor) }
+                .onSuccess { dispatch(YtEvent.RadioPage(it.songs, it.cursor)) }
+                .onFailure { if (it !is CancellationException) dispatch(YtEvent.RadioFailed) }
+        }
+    }
+
+    /** Hasil konverter diarsipkan ke R2 di latar → lain kali (dan saat seek) memakai URL R2. */
+    private fun maybeArchive(videoId: String, info: StreamInfo) {
+        val job = info.job ?: return
+        if (info.source != StreamSource.SOURCE_CONVERTER || !_settings.value.archive || !client.archiveAvailable || !archiving.add(videoId)) return
+        scope.launch {
+            try {
+                client.archive(videoId, job)?.let { r2 -> r2.url?.let { dispatch(YtEvent.Archived(videoId, it, r2.toSource())) } }
+            } finally {
+                archiving -= videoId
+            }
+        }
+    }
+
+    private fun sponsorFor(song: Song) {
+        if (!_settings.value.sponsorBlock || song.live) return
+        val id = song.videoId
+        if (sponsor.containsKey(id) || !sponsorPending.add(id)) return
+        scope.launch {
+            val segs = try { client.sponsorSegments(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+            sponsor[id] = segs
+            sponsorPending -= id
         }
     }
 
     private fun load(song: Song, url: String) {
-        if (loadedId == song.videoId && player.playbackState != Player.STATE_IDLE) {
+        if (loadedId == song.videoId && loadedUrl == url && player.playbackState != Player.STATE_IDLE) {
             if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
             player.play()
             return
         }
-        loadedId = song.videoId
-        val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist)
-            .apply { song.cover.takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build()
-        player.setMediaItem(MediaItem.Builder().setMediaId(song.videoId).setUri(url).setMediaMetadata(meta).build())
-        player.prepare()
+        val resume = if (resumeId == song.videoId && _state.value.seekable) resumeMs else 0L
+        resumeId = null
+        setMedia(song, url, resume)
         player.play()
         // Layanan MediaSession: musik tetap jalan di latar + kontrol di notifikasi & layar kunci.
         runCatching { context.startService(Intent(context, MusicService::class.java)) }
+    }
+
+    private fun setMedia(song: Song, url: String, startMs: Long) {
+        loadedId = song.videoId
+        loadedUrl = url
+        val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist)
+            .apply { song.cover.takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build()
+        player.setMediaItem(MediaItem.Builder().setMediaId(song.videoId).setUri(url).setMediaMetadata(meta).build(), startMs)
+        player.prepare()
+        applyVolume()
+    }
+
+    /** Volume rata (loudnessDb) dikalikan bisu SponsorBlock bila sedang di segmen "mute". */
+    private fun applyVolume() {
+        val s = _state.value
+        val id = s.current?.videoId ?: return
+        val db = s.streams[id]?.loudnessDb ?: s.details[id]?.loudnessDb
+        val gain = if (_settings.value.normalize) Loudness.gain(db) else 1f
+        val muted = _settings.value.sponsorBlock && SponsorBlock.muted(sponsor[id].orEmpty(), _position.value.positionMs / 1000.0)
+        val v = if (muted) 0f else gain
+        if (player.volume != v) player.volume = v
     }
 
     private fun startTicker() {
         if (tickJob?.isActive == true) return
         tickJob = scope.launch {
             while (true) {
-                _position.value = PlaybackPosition(player.currentPosition.coerceAtLeast(0), player.duration.takeIf { it > 0 } ?: 0)
+                val pos = player.currentPosition.coerceAtLeast(0)
+                val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0
+                _position.value = PlaybackPosition(pos, dur)
+                tick(pos, dur)
                 if (!player.isPlaying) break
                 delay(500)
             }
         }
     }
 
-    /** Logout: hentikan musik & lupakan antrean. */
-    fun wipe() { if (_state.value.status != YtStatus.Idle || loadedId != null) stop() }
+    private fun tick(posMs: Long, durMs: Long) {
+        val s = _state.value
+        val song = s.current ?: return
+        // SponsorBlock: hanya bila audio bisa di-seek (direct/R2); konverter diputar penuh.
+        if (_settings.value.sponsorBlock && s.seekable && s.status == YtStatus.Playing) {
+            val durSec = (durMs.takeIf { it > 0 }?.div(1000.0)) ?: song.seconds?.toDouble()
+            SponsorBlock.skipTarget(sponsor[song.videoId].orEmpty(), posMs / 1000.0, durSec)?.let { seg ->
+                val to = (seg.end * 1000).toLong()
+                if (durMs <= 0 || to < durMs - 500) player.seekTo(to) else player.seekTo(durMs)
+                showNotice("Melewati ${SponsorBlock.label(seg.category)}")
+            }
+            applyVolume()
+        }
+        _sleep.value?.endsAt?.let { if (now() >= it) { _sleep.value = null; player.pause(); showNotice("Pewaktu tidur: musik dijeda") } }
+        savePosition()
+    }
+
+    /** Pewaktu "akhir lagu": geser ke lagu berikut tapi jangan diputar. */
+    private fun stopAtEndOfSong() {
+        _sleep.value = null
+        val s = _state.value
+        val next = MusicQueue.nextPosition(s, manual = true)
+        _state.value = if (next != null && next != s.position) s.copy(position = next, status = YtStatus.Paused, percent = 0, label = "")
+        else s.copy(status = YtStatus.Paused)
+        showNotice("Pewaktu tidur: musik dijeda")
+        effects()
+    }
+
+    private fun showNotice(text: String) {
+        _notice.value = text
+        noticeJob?.cancel()
+        noticeJob = scope.launch { delay(3_000); _notice.value = null }
+    }
+
+    // ------------------------------------------------------------------ simpan antrean
+
+    private fun persistKey(s: YtState): Any = listOf(s.queue.map { it.videoId }, s.order, s.position, s.repeat, s.shuffle, s.autoContinue, s.radio?.playlistId, s.radio?.cursor, s.status == YtStatus.Idle)
+
+    private fun persist(s: YtState) {
+        val key = persistKey(s)
+        if (key == savedKey) return
+        savedKey = key
+        prefs.saveQueue(MusicQueue.snapshot(s, if (loadedId == s.current?.videoId) _position.value.positionMs else 0))
+    }
+
+    private fun savePosition(force: Boolean = false) {
+        val t = now()
+        if (!force && t - lastPositionSave < 10_000) return
+        lastPositionSave = t
+        val s = _state.value
+        prefs.saveQueue(MusicQueue.snapshot(s, _position.value.positionMs))
+    }
+
+    /** Logout: hentikan musik, lupakan antrean & pengaturan. */
+    fun wipe() {
+        if (_state.value.status != YtStatus.Idle || loadedId != null) stop()
+        sponsor.clear()
+        prefs.clear()
+        savedKey = null
+        _settings.value = MusicSettings()
+    }
 }

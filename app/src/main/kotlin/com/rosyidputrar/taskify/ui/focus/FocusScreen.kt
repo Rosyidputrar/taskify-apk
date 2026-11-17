@@ -98,7 +98,8 @@ fun FocusScreen(
         viewModel.recheckDnd()
         onPauseOrDispose { }
     }
-    FocusContent(state, viewModel, contentPadding, backButton = { backButton(onBack) })
+    FocusContent(state, viewModel, contentPadding, backButton = { backButton(onBack) },
+        musicSlot = { com.rosyidputrar.taskify.feature.media.FocusMusicCard(Modifier.padding(top = 20.dp, bottom = 12.dp)) })
 }
 
 /** Layar Mode Fokus (tanpa ViewModel — bisa diuji). [now] untuk pratinjau/tes; null = jam berjalan. */
@@ -109,6 +110,8 @@ fun FocusContent(
     contentPadding: PaddingValues,
     backButton: @Composable () -> Unit = {},
     now: Long? = null,
+    /** Pilihan "Musik fokus" (stasiun radio langsung) dari modul Musik. */
+    musicSlot: @Composable () -> Unit = {},
 ) {
     val run = state.run
     val running = run != null && !run.isPaused
@@ -137,6 +140,7 @@ fun FocusContent(
         }
         Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
             if (run == null) FocusSetup(state, actions) else FocusRunning(state, run, clock, actions)
+            musicSlot()
         }
     }
 }

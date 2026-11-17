@@ -60,6 +60,7 @@ import com.rosyidputrar.taskify.core.domain.files.ExpiryOption
 import com.rosyidputrar.taskify.core.domain.files.formatBytes
 import com.rosyidputrar.taskify.core.domain.files.nextVersionLabel
 import com.rosyidputrar.taskify.core.domain.share.Share
+import com.rosyidputrar.taskify.core.domain.media.MusicCatalog
 import com.rosyidputrar.taskify.core.domain.media.TikTok
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.domain.share.SharedKind
@@ -208,10 +209,29 @@ class ShareViewModel(
 }
 
 @Composable
-fun ShareScreen(contentPadding: PaddingValues, onCapture: (String) -> Unit, onDone: () -> Unit, backButton: @Composable (() -> Unit) -> Unit, onTikTok: (String) -> Unit = {}) {
+fun ShareScreen(
+    contentPadding: PaddingValues,
+    onCapture: (String) -> Unit,
+    onDone: () -> Unit,
+    backButton: @Composable (() -> Unit) -> Unit,
+    onTikTok: (String) -> Unit = {},
+    onMusic: (String) -> Unit = {},
+) {
     val vm: ShareViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
-    ShareContentView(state, vm, contentPadding, onCapture, onDone, backButton, extraTop = { text -> TikTokShareCard(text, onTikTok) })
+    ShareContentView(state, vm, contentPadding, onCapture, onDone, backButton, extraTop = { text -> TikTokShareCard(text, onTikTok); MusicShareCard(text, onMusic) })
+}
+
+/** Link YouTube / YouTube Music → putar atau buka di pemutar musik Taskify. */
+@Composable
+fun MusicShareCard(text: String, onOpen: (String) -> Unit) {
+    val link = remember(text) { MusicCatalog.findLink(text) } ?: return
+    IndexCard(TaskifyModule.Music, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+        Text("Link YouTube terdeteksi", style = MaterialTheme.typography.titleMedium)
+        Text(link, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.padding(4.dp))
+        Button(onClick = { onOpen(link) }, modifier = Modifier.fillMaxWidth()) { Text("Putar di Musik") }
+    }
 }
 
 /** Teks dari aplikasi TikTok → niatnya hampir pasti mengunduh: tawarkan pengunduh paling atas. */
