@@ -97,8 +97,11 @@ core/files           Lampiran: presign Edge Function `files`, unggah R2 via Work
 core/sandi           Sesi brankas (DEK hanya di memori, kunci otomatis), ingat perangkat 30 hari
                      (kunci Android Keystore yang hanya terbuka lewat sidik jari / kunci layar),
                      papan klip yang dibersihkan sendiri, rotasi kunci atomik
-core/media           Musik (Worker music-taskify + Media3: putar di latar, notifikasi, layar kunci) dan
-                     TikTok (Worker ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
+core/media           Musik (Worker music-taskify + Media3: putar di latar, notifikasi, layar kunci; now-playing
+                     satu panggilan, fallback otomatis opus → konverter MP3, seek hanya untuk direct/R2,
+                     URL kedaluwarsa diminta ulang, arsip R2, SponsorBlock, volume rata, pewaktu tidur,
+                     antrean tersimpan lintas proses, sesi 401 di-refresh sekali) dan TikTok (Worker
+                     ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
@@ -116,8 +119,11 @@ feature/review       Review mingguan/bulanan: ringkasan kalimat, statistik + del
 feature/links        Bagian "Tertaut" (tautan silang dua arah) di Tugas, Jurnal, Catatan, Transaksi
 feature/organize     Halaman Tag (ganti nama/warna, hapus, item per tag) dan Sampah lintas modul
                      (pulihkan, hapus permanen, kosongkan, bersih otomatis 30 hari setelah sinkron)
-feature/media        Musik (cari, antrean, acak/ulang, lanjut otomatis, lirik, bilah mini) dan TikTok
-                     (ambil link, carousel foto, unduh video/foto/audio)
+feature/media        Musik: Jelajah (beranda, tangga lagu Indonesia, rilis baru, mood & genre, radio
+                     langsung), pencarian lengkap (hasil teratas, lagu, album, artis, playlist, podcast,
+                     episode + saran ketik), halaman album/playlist/artis/podcast, link YouTube ditempel
+                     atau dibagikan, mix radio, lirik bergulir, pengaturan kualitas; "Musik fokus" di Mode
+                     Fokus. TikTok (ambil link, carousel foto, unduh video/foto/audio)
 feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, daftar sandi, kode 2FA dengan
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
@@ -199,7 +205,7 @@ layanan isi otomatis*).
 ### Notifikasi & Kesehatan Digital
 
 Dua modul yang membaca data perangkat. Datanya **hanya di HP ini** (tabel lokal, tidak pernah
-disinkronkan), ikut terkunci PIN, dan terhapus saat Keluar.
+disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi data), dan terhapus saat Keluar.
 
 **Notifikasi** (izin *Akses notifikasi*; APK dari GitHub di Android 13+ perlu *Izinkan setelan terbatas* dulu)
 - Lini waktu per jam, ringkasan + grafik 24 jam, pita hari sesuai masa simpan (1–30 hari), saringan

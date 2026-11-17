@@ -91,7 +91,12 @@ object MoneyNotifParser {
         RegexOption.IGNORE_CASE,
     )
     private val EXPENSE = Regex(
-        "pembayaran|bayar|dibayar|transfer ke|kirim (uang|dana)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|qris|belanja|transaksi (berhasil|sukses)|telah didebet|autodebet|potong saldo",
+        "pembayaran|bayar|dibayar|transfer ke|kirim (uang|dana)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|qris|belanja|telah didebet|autodebet|potong saldo",
+        RegexOption.IGNORE_CASE,
+    )
+    /** "Transaksi berhasil ... dari X": uang masuk dari X walau tanpa kata "diterima". */
+    private val INCOME_FROM = Regex(
+        "(?:berhasil|sukses)\\b.{0,80}?\\bdari\\s+(?!rekening\\b|akun\\b|saldo\\b|dompet\\b)[A-Za-z]",
         RegexOption.IGNORE_CASE,
     )
     private val SUCCESS = Regex("berhasil|sukses|telah|sudah|diterima|masuk|success|transaksi|terdebet|didebet|dikredit", RegexOption.IGNORE_CASE)
@@ -107,7 +112,11 @@ object MoneyNotifParser {
         if (all.isBlank() || PROMO.containsMatchIn(all) || FAILED.containsMatchIn(all)) return null
         val m = AMOUNT.find(all) ?: return null
         val amount = m.groupValues[1].replace(".", "").replace(",", "").toLongOrNull()?.takeIf { it > 0 } ?: return null
-        val income = INCOME.find(all)
+        // "dari X" hanya dihitung sebagai sinyal masuk bila sesudah frasa sukses (INCOME_FROM),
+        // supaya "Transfer ... dari BCA/rekening ke Y" tidak salah dibaca sebagai uang masuk.
+        // Frasa "transaksi berhasil" saja bukan arah: tanpa sinyal arah, lebih baik tidak ada
+        // draf daripada draf berarah salah.
+        val income = listOfNotNull(INCOME.find(all), INCOME_FROM.find(all)).minByOrNull { it.range.first }
         val expense = EXPENSE.find(all)
         val kind = when {
             income != null && expense != null -> if (income.range.first < expense.range.first) TxKind.Income else TxKind.Expense

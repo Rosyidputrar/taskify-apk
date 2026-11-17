@@ -1,0 +1,186 @@
+package com.rosyidputrar.taskify
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.github.takahirom.roborazzi.captureRoboImage
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
+import com.rosyidputrar.taskify.core.domain.media.AlbumRef
+import com.rosyidputrar.taskify.core.domain.media.ArtistPage
+import com.rosyidputrar.taskify.core.domain.media.ArtistRef
+import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
+import com.rosyidputrar.taskify.core.domain.media.CollectionKind
+import com.rosyidputrar.taskify.core.domain.media.DiscoverySection
+import com.rosyidputrar.taskify.core.domain.media.LyricLine
+import com.rosyidputrar.taskify.core.domain.media.Lyrics
+import com.rosyidputrar.taskify.core.domain.media.MoodCategory
+import com.rosyidputrar.taskify.core.domain.media.MoodGroup
+import com.rosyidputrar.taskify.core.domain.media.MusicCollection
+import com.rosyidputrar.taskify.core.domain.media.MusicSettings
+import com.rosyidputrar.taskify.core.domain.media.PlaylistRef
+import com.rosyidputrar.taskify.core.domain.media.PodcastRef
+import com.rosyidputrar.taskify.core.domain.media.SearchFilter
+import com.rosyidputrar.taskify.core.domain.media.SearchResults
+import com.rosyidputrar.taskify.core.domain.media.SleepTimer
+import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.StreamSource
+import com.rosyidputrar.taskify.core.domain.media.Suggestion
+import com.rosyidputrar.taskify.core.domain.media.TopResult
+import com.rosyidputrar.taskify.core.domain.media.YtStatus
+import com.rosyidputrar.taskify.core.media.PlaybackPosition
+import com.rosyidputrar.taskify.core.media.RadioStations
+import com.rosyidputrar.taskify.feature.media.BrowsePage
+import com.rosyidputrar.taskify.feature.media.ExploreState
+import com.rosyidputrar.taskify.feature.media.FocusMusicContent
+import com.rosyidputrar.taskify.feature.media.FocusMusicState
+import com.rosyidputrar.taskify.feature.media.FocusMusicActions
+import com.rosyidputrar.taskify.feature.media.LyricsState
+import com.rosyidputrar.taskify.feature.media.MusicActions
+import com.rosyidputrar.taskify.feature.media.MusicContent
+import com.rosyidputrar.taskify.feature.media.MusicSearch
+import com.rosyidputrar.taskify.feature.media.MusicSettingsContent
+import com.rosyidputrar.taskify.feature.media.MusicTab
+import com.rosyidputrar.taskify.feature.media.MusicUiState
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import kotlin.test.assertEquals
+
+/** Fase 2–4 Musik: Jelajah, pencarian lengkap, halaman koleksi/artis, lirik bergulir, pengaturan, Musik fokus. */
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w393dp-h852dp-xxhdpi")
+class MusicScreenshotTest {
+    @get:Rule val compose = createComposeRule()
+    private val padding = PaddingValues(top = 24.dp, bottom = 24.dp)
+    private val songs = SampleCross.songs.mapIndexed { i, s -> s.copy(durationSeconds = listOf(252, 228, 303, 201, 280)[i]) }
+    private val base = SampleCross.music().copy(search = MusicSearch(), player = SampleCross.music().player.copy(queue = songs))
+
+    private fun shot(name: String, dark: Boolean, content: @Composable () -> Unit) {
+        compose.setContent { TaskifyTheme(darkTheme = dark) { Surface(color = MaterialTheme.colorScheme.background) { content() } } }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("screenshots/$name.png")
+    }
+
+    private val explore = ExploreState(
+        loaded = true,
+        moods = listOf(MoodGroup("Mood & momen", listOf("Fokus", "Santai", "Semangat!", "Tidur", "Sedih").map { MoodCategory(it, "p-$it") })),
+        stations = RadioStations.FALLBACK,
+        home = listOf(
+            DiscoverySection.Songs("Pilihan cepat", songs),
+            DiscoverySection.Playlists("Throwbacks", listOf(PlaylistRef("VLRDCLAK1", "RDCLAK1", "Pop 2000-an", "YouTube Music", emptyList()), PlaylistRef("VLPL2", "PL2", "Akustik sore", "Kopi Senja", emptyList()))),
+        ),
+        charts = listOf(DiscoverySection.Artists("Artis teratas", listOf(ArtistRef("UC1", "Kopi Senja", "1,2 jt", emptyList()), ArtistRef("UC2", "Orkes Malam", "800 rb", emptyList())))),
+    )
+
+    @Config(qualifiers = "w393dp-h1700dp-xxhdpi")
+    @Test fun explore() = shot("music_explore_light", false) {
+        MusicContent(base.copy(tab = MusicTab.Explore, explore = explore, player = base.player.copy(status = YtStatus.Idle)), object : MusicActions {}, padding)
+    }
+
+    @Config(qualifiers = "w393dp-h1700dp-xxhdpi")
+    @Test fun searchAllDark() = shot("music_search_all_dark", true) {
+        val results = SearchResults(
+            top = TopResult("Hujan di Bulan Juni", songs[0].videoId, listOf("Lagu", "Kopi Senja", "4.12"), emptyList()),
+            songs = songs.take(3),
+            albums = listOf(AlbumRef("MPREb_1", "Senja Kota", "Kopi Senja", "2024", emptyList()), AlbumRef("MPREb_2", "Hujan", "Kopi Senja", "2021", emptyList())),
+            artists = listOf(ArtistRef("UC1", "Kopi Senja", "1,2 jt audiens bulanan", emptyList())),
+            podcasts = listOf(PodcastRef("MPSP1", "Obrolan Sore", "Rumah Kaca", emptyList())),
+            episodes = listOf(Song("ep000000001", "Musik & produktivitas", "Obrolan Sore · 2 h lalu", "", emptyList())),
+            cursor = "gabungan",
+        )
+        MusicContent(base.copy(tab = MusicTab.Search, player = base.player.copy(status = YtStatus.Idle),
+            search = MusicSearch("kopi senja", SearchFilter.All, results, searched = true)), object : MusicActions {}, padding)
+    }
+
+    @Test fun suggestionsPickPlaysVideo() {
+        val picked = mutableListOf<Suggestion>()
+        val sugg = listOf(Suggestion("kopi senja hujan", "query"), Suggestion("Kopi Senja", "artist", "Artis • 1,2 jt", browseId = "UC1"),
+            Suggestion("Hujan di Bulan Juni", "video", "Lagu • Kopi Senja", videoId = "s1000000000"))
+        compose.setContent {
+            TaskifyTheme {
+                MusicContent(base.copy(tab = MusicTab.Search, player = base.player.copy(status = YtStatus.Idle), search = MusicSearch("kopi se", suggestions = sugg)),
+                    object : MusicActions { override fun pickSuggestion(s: Suggestion) { picked += s } }, padding)
+            }
+        }
+        compose.onRoot().captureRoboImage("screenshots/music_suggest_light.png")
+        compose.onNodeWithText("Hujan di Bulan Juni").performClick()
+        assertEquals("video", picked.single().type)
+    }
+
+    @Config(qualifiers = "w393dp-h1200dp-xxhdpi")
+    @Test fun albumPage() = shot("music_album_light", false) {
+        val col = MusicCollection(CollectionKind.Album, "MPREb_1", "Senja Kota", "Kopi Senja · 2024", emptyList(), songs, trackCount = 5)
+        MusicContent(base.copy(pages = listOf(BrowsePage(BrowseTarget.Album("MPREb_1", "Senja Kota"), false, collection = col))), object : MusicActions {}, padding)
+    }
+
+    @Config(qualifiers = "w393dp-h1400dp-xxhdpi")
+    @Test fun artistPageDark() = shot("music_artist_dark", true) {
+        val artist = ArtistPage("UC1", "Kopi Senja", "250 rb", "1,2 jt audiens bulanan", "Duo folk dari Bandung yang menulis lagu tentang hujan dan kota.", emptyList(),
+            songs.take(4).map { it.copy(duration = "", durationSeconds = null) }, "VLOLAK1",
+            listOf(AlbumRef("MPREb_1", "Senja Kota", "", "2024", emptyList()), AlbumRef("MPREb_2", "Hujan", "", "2021", emptyList())), emptyList(),
+            listOf(ArtistRef("UC2", "Orkes Malam", "", emptyList())))
+        MusicContent(base.copy(player = base.player.copy(status = YtStatus.Idle), pages = listOf(BrowsePage(BrowseTarget.Artist("UC1"), false, artist = artist))), object : MusicActions {}, padding)
+    }
+
+    @Config(qualifiers = "w393dp-h1500dp-xxhdpi")
+    @Test fun syncedLyrics() = shot("music_lyrics_synced_light", false) {
+        val lines = listOf("Hujan turun pelan di bulan Juni", "Jalanan basah memantulkan lampu", "", "Kita berteduh di bawah atap toko", "Menunggu reda tanpa banyak kata",
+            "Dan kota pun bernyanyi untuk kita").mapIndexed { i, t -> LyricLine(10.0 + i * 4, t) }
+        val p = base.player.copy(streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm", 251)))
+        MusicContent(base.copy(tab = MusicTab.Lyrics, player = p, position = PlaybackPosition(23_000, 228_000),
+            lyrics = LyricsState(songs[1].videoId, Lyrics(lines, "", "lrclib"))), object : MusicActions {}, padding)
+    }
+
+    @Config(qualifiers = "w393dp-h1100dp-xxhdpi")
+    @Test fun converterCannotSeek() = shot("music_converter_light", false) {
+        val p = base.player.copy(streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_CONVERTER, "audio/mpeg", null)))
+        MusicContent(base.copy(tab = MusicTab.Queue, player = p, sleep = SleepTimer(endOfSong = true)), object : MusicActions {}, padding)
+    }
+
+    @Test fun settings() = shot("music_settings_light", false) {
+        MusicContentSettings(MusicSettings(sponsorBlock = true, forceMp3 = false))
+    }
+
+    @Composable
+    private fun MusicContentSettings(s: MusicSettings) = MusicSettingsContent(base.copy(settings = s), object : MusicActions {})
+
+    @Test fun focusMusic() = shot("focus_music_dark", true) {
+        FocusMusicContent(FocusMusicState(stations = RadioStations.FALLBACK, playingId = "soma-groovesalad", playing = true), object : FocusMusicActions {}, Modifier.padding(16.dp))
+    }
+
+    @Test fun pageSlidesInAndBackPops() {
+        val col = MusicCollection(CollectionKind.Album, "MPREb_1", "Senja Kota", "Kopi Senja · 2024", emptyList(), songs, trackCount = 5)
+        var st by androidx.compose.runtime.mutableStateOf(base.copy(tab = MusicTab.Queue))
+        var backs = 0
+        compose.setContent {
+            TaskifyTheme {
+                MusicContent(st, object : MusicActions {
+                    override fun back() { backs++; st = st.copy(pages = st.pages.dropLast(1)) }
+                }, padding, backButton = { onClick -> androidx.compose.material3.TextButton(onClick = onClick) { androidx.compose.material3.Text("Kembali") } })
+            }
+        }
+        compose.waitForIdle()
+        st = st.copy(pages = listOf(BrowsePage(BrowseTarget.Album("MPREb_1", "Senja Kota"), false, collection = col)))
+        compose.waitForIdle()
+        compose.onNodeWithText("Senja Kota").assertExists()
+        compose.onNodeWithText("Kembali").performClick()
+        compose.waitForIdle()
+        assertEquals(1, backs)
+        compose.onNodeWithText("Senja Kota").assertDoesNotExist()
+        compose.onNodeWithText("Lampu Kota", substring = false).assertExists()
+    }
+}

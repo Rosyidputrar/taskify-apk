@@ -10,6 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -17,6 +21,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -37,6 +44,7 @@ import com.rosyidputrar.taskify.core.store.device.Parcel
 import com.rosyidputrar.taskify.feature.notifications.DraftEdit
 import com.rosyidputrar.taskify.feature.notifications.NotifAccess
 import com.rosyidputrar.taskify.feature.notifications.NotifFilter
+import com.rosyidputrar.taskify.feature.notifications.NotifView
 import com.rosyidputrar.taskify.feature.notifications.NotificationsActions
 import com.rosyidputrar.taskify.feature.notifications.NotificationsContent
 import com.rosyidputrar.taskify.feature.notifications.NotificationsUiState
@@ -159,5 +167,86 @@ class NotificationsScreenTest {
         compose.onNodeWithText("Belum ada notifikasi").assertExists()
         // Grafik per jam tetap punya teks alternatif saat kosong.
         compose.onNodeWithContentDescription("Belum ada notifikasi").assertExists()
+    }
+
+    /** Satu notifikasi per jam (24 jam): rumus lama menghasilkan target negatif di tampilan Per Aplikasi. */
+    private fun manyHoursState(view: NotifView): NotificationsUiState {
+        val many = (0..23).map { h -> e("h$h", "com.whatsapp", "WhatsApp", "Pesan $h", "isi $h", h, 0, NotifCategory.Chat) }
+        return state().copy(
+            entries = many,
+            total = 24,
+            previousTotal = null,
+            drafts = emptyList(),
+            parcels = emptyList(),
+            view = view,
+            appCounts = listOf(AppCount("com.whatsapp", "WhatsApp", 24)),
+        )
+    }
+
+    /** Baris daftar Per Aplikasi, dibedakan dari baris "TERBANYAK" di kartu ringkasan lewat label aksinya. */
+    private fun perAppRow(label: String) = SemanticsMatcher("baris Per Aplikasi $label") { n ->
+        n.config.getOrNull(SemanticsActions.OnClick)?.label == "Lihat notifikasi $label"
+    }
+
+    @Test fun searchFiltersPerAppList() {
+        var s by mutableStateOf(state())
+        val actions = object : NotificationsActions {
+            override fun setView(view: NotifView) { s = s.copy(view = view) }
+            override fun setQuery(query: String) { s = s.copy(query = query) }
+        }
+        show { NotificationsContent(s, actions, padding) }
+        // Pindah ke tampilan Per Aplikasi: ketiganya tampil.
+        compose.onNode(verticalList).performScrollToNode(hasText("Per aplikasi"))
+        compose.onNodeWithText("Per aplikasi").performClick()
+        assertEquals(NotifView.PerApp, s.view)
+        compose.onNode(verticalList).performScrollToNode(perAppRow("Shopee"))
+        compose.onNode(perAppRow("WhatsApp")).assertExists()
+        compose.onNode(perAppRow("Instagram")).assertExists()
+        compose.onNode(perAppRow("Shopee")).assertExists()
+        // Buka pencarian, ketik "shopee": hanya Shopee yang tersisa.
+        compose.onNode(verticalList).performScrollToNode(hasContentDescription("Cari notifikasi"))
+        compose.onNodeWithContentDescription("Cari notifikasi").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("shopee")
+        assertEquals("shopee", s.query)
+        compose.onNode(verticalList).performScrollToNode(perAppRow("Shopee"))
+        compose.onNode(perAppRow("Shopee")).assertExists()
+        compose.onNode(perAppRow("WhatsApp")).assertDoesNotExist()
+        compose.onNode(perAppRow("Instagram")).assertDoesNotExist()
+        // Kata yang tidak cocok dengan aplikasi apa pun → empty state.
+        compose.onNode(verticalList).performScrollToNode(hasSetTextAction())
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("zzz")
+        assertEquals("zzz", s.query)
+        compose.onNode(verticalList).performScrollToNode(hasText("Tidak ada aplikasi yang cocok"))
+        compose.onNodeWithText("Tidak ada aplikasi yang cocok").assertExists()
+        compose.onNode(perAppRow("Shopee")).assertDoesNotExist()
+    }
+
+    @Test fun hourBarTapInPerAppViewSwitchesAndJumpsInsteadOfCrashing() {
+        var s by mutableStateOf(manyHoursState(NotifView.PerApp))
+        val actions = object : NotificationsActions {
+            override fun setView(view: NotifView) { s = s.copy(view = view) }
+        }
+        show { NotificationsContent(s, actions, padding) }
+        // Ketuk batang jam (tengah = jam 12). Rumus lama: target = 22 + 6 - 48 = -20 → crash.
+        compose.onNode(verticalList).performScrollToNode(hasContentDescription("Grafik per jam", substring = true))
+        compose.onNodeWithContentDescription("Grafik per jam", substring = true).performTouchInput { click(center) }
+        compose.waitForIdle()
+        // Tidak crash: tampilan pindah ke Lini Waktu dan daftar melompat ke jam 12.
+        assertEquals(NotifView.Timeline, s.view)
+        compose.onNodeWithText("12.00 · 1").assertIsDisplayed()
+    }
+
+    @Test fun hourBarTapInTimelineViewJumpsToHour() {
+        var s by mutableStateOf(manyHoursState(NotifView.Timeline))
+        val actions = object : NotificationsActions {
+            override fun setView(view: NotifView) { s = s.copy(view = view) }
+        }
+        show { NotificationsContent(s, actions, padding) }
+        compose.onNode(verticalList).performScrollToNode(hasContentDescription("Grafik per jam", substring = true))
+        compose.onNodeWithContentDescription("Grafik per jam", substring = true).performTouchInput { click(center) }
+        compose.waitForIdle()
+        assertEquals(NotifView.Timeline, s.view)
+        compose.onNodeWithText("12.00 · 1").assertIsDisplayed()
     }
 }

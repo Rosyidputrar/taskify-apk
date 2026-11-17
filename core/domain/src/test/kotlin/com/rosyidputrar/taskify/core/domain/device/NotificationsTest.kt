@@ -47,6 +47,18 @@ class NotificationsTest {
         assertEquals(75_000L, money("ovo.id", "OVO", "Transaksi berhasil. IDR 75,000.00 telah didebet")?.amount)
     }
 
+    @Test fun incomeFromPartyAfterSuccessPhrase() {
+        // "Transaksi berhasil ... dari X" = uang masuk, walau tanpa kata "diterima".
+        assertEquals(
+            MoneyNotif(1_000_000, TxKind.Income, "Budi", "BCA"),
+            money("com.bca", "Transaksi Berhasil", "Transaksi berhasil Rp1.000.000 dari BUDI"),
+        )
+        // Tanpa arah sama sekali: lebih baik tidak ada draf daripada draf berarah salah.
+        assertNull(money("com.bca", "Transaksi Berhasil", "Transaksi berhasil Rp50.000"))
+        // "dari rekening" = rekening sumber, bukan pengirim: bukan uang masuk.
+        assertNull(money("com.bca", "Transfer", "Transfer Rp100.000 dari rekening BCA ke Budi berhasil"))
+    }
+
     @Test fun ignoresPromosFailuresBillsAndOtherApps() {
         assertNull(money("com.gojek.app", "Promo!", "Cashback hingga Rp50.000 untuk pembayaran pakai GoPay"))
         assertNull(money("com.bca", "Transaksi gagal", "Transfer Rp50.000 ke BUDI gagal diproses"))

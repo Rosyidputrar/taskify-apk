@@ -149,6 +149,29 @@ class WellbeingScreenTest {
         assertEquals(WbRange.Day, s.range)
     }
 
+    @Test fun dayStartChangeAsksBeforeWipingHistory() {
+        val applied = mutableListOf<Int>()
+        val actions = object : WellbeingActions {
+            override fun setDayStart(hour: Int) { applied += hour }
+        }
+        show { WellbeingContent(state(), actions, padding) }
+        compose.onNodeWithContentDescription("Pengaturan Kesehatan Digital").performClick()
+        // Ketuk jam lain (saat ini 00.00) → setDayStart TIDAK langsung dipanggil.
+        compose.onNodeWithText("04.00").performClick()
+        assertEquals(emptyList<Int>(), applied)
+        // Dialog konfirmasi menjelaskan riwayat >7 hari akan hilang.
+        compose.onNodeWithText("Ubah jam pergantian hari?").assertExists()
+        compose.onNodeWithText("Riwayat lebih dari 7 hari terakhir akan hilang permanen", substring = true).assertExists()
+        // Batal → tidak ada yang diterapkan.
+        compose.onNodeWithText("Batal").performClick()
+        assertEquals(emptyList<Int>(), applied)
+        compose.onNodeWithText("Ubah jam pergantian hari?").assertDoesNotExist()
+        // Ketuk lagi lalu konfirmasi → baru diterapkan.
+        compose.onNodeWithText("04.00").performClick()
+        compose.onNodeWithText("Ubah jam").performClick()
+        assertEquals(listOf(4), applied)
+    }
+
     @Test fun appDetailSheet() {
         val s = state()
         val detail = AppDetail(

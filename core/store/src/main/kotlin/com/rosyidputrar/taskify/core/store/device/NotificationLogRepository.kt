@@ -181,7 +181,9 @@ class NotificationLogRepository(private val db: PowerSyncDatabase) {
     /** Buang isi notifikasi lebih lama dari [beforeDay]; hitungan harian disimpan [COUNT_KEEP_DAYS]. */
     suspend fun prune(beforeDay: String, countsBeforeDay: String) {
         db.writeTransaction { tx ->
-            tx.execute("DELETE FROM notif_log WHERE day < ? AND IFNULL(draft, '') <> 'pending'", listOf(beforeDay))
+            // Draf pending ikut terhapus bila melewati masa simpan: isi notifikasi bank yang
+            // tidak ditinjau tidak boleh tersimpan tanpa batas waktu.
+            tx.execute("DELETE FROM notif_log WHERE day < ?", listOf(beforeDay))
             tx.execute("DELETE FROM notif_daily WHERE day < ?", listOf(countsBeforeDay))
         }
     }

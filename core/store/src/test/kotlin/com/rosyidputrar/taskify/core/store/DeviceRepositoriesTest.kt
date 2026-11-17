@@ -80,11 +80,16 @@ class DeviceRepositoriesTest {
         assertEquals(listOf("SPX1" to ParcelStage.Shipped, "JX9" to ParcelStage.Delivered), parcels.map { it.ref to it.stage })
     }
 
-    @Test fun pruneKeepsPendingDraftsAndCounts() = runBlocking<Unit> {
+    @Test fun pruneDeletesOldRowsIncludingPendingDrafts() = runBlocking<Unit> {
         notifs.log(n("com.whatsapp", "Lama", "x", 1_000, d = "2026-11-01"))
         notifs.log(n("com.bca", "T", "Rp1", 2_000, d = "2026-11-01", category = NotifCategory.Money).copy(money = MoneyNotif(1, TxKind.Expense, null, "BCA")))
+        // Draf pending yang masih dalam masa simpan tetap ada.
+        notifs.log(n("com.bca", "Baru", "Rp2", 3_000, category = NotifCategory.Money).copy(money = MoneyNotif(2, TxKind.Expense, null, "BCA")))
         notifs.prune(beforeDay = "2026-11-09", countsBeforeDay = "2025-10-01")
-        assertTrue(notifs.watchDay("2026-11-01").first().map { it.title } == listOf("T"))
+        // Baris lama terhapus, termasuk draf pending yang melewati masa simpan.
+        assertTrue(notifs.watchDay("2026-11-01").first().isEmpty())
+        assertTrue(notifs.watchDrafts().first().map { it.title } == listOf("Baru"))
+        // Hitungan harian dipertahankan (batasnya terpisah, 400 hari).
         assertEquals(mapOf("2026-11-01" to 2), notifs.watchDailyTotals("2026-11-01", "2026-11-01").first())
         notifs.clearAll()
         assertTrue(notifs.watchDays().first().isEmpty())

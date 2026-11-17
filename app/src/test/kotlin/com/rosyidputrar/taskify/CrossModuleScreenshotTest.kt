@@ -88,7 +88,7 @@ object SampleCross {
 
     fun music(tab: MusicTab = MusicTab.Search) = MusicUiState(
         tab = tab,
-        search = MusicSearch("lagu santai", SearchFilter.Songs, songs, cursor = "c", searched = true),
+        search = MusicSearch("lagu santai", SearchFilter.Songs, com.rosyidputrar.taskify.core.domain.media.SearchResults(songs = songs, cursor = "c"), searched = true),
         player = YtState(queue = songs, order = listOf(0, 1, 2, 3, 4), position = 1, status = YtStatus.Playing, repeat = RepeatMode.All),
         position = PlaybackPosition(83_000, 228_000),
     )

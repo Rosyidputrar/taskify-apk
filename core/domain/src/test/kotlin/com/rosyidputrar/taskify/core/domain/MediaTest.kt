@@ -4,6 +4,7 @@ import com.rosyidputrar.taskify.core.domain.media.MusicQueue
 import com.rosyidputrar.taskify.core.domain.media.MusicQueue.reduce
 import com.rosyidputrar.taskify.core.domain.media.RepeatMode
 import com.rosyidputrar.taskify.core.domain.media.Song
+import com.rosyidputrar.taskify.core.domain.media.StreamSource
 import com.rosyidputrar.taskify.core.domain.media.TikTok
 import com.rosyidputrar.taskify.core.domain.media.TrackDetails
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
@@ -86,6 +87,26 @@ class MediaTest {
         assertEquals("https://www.tiktok.com/t/ZT8abc/", TikTok.findLink("https://www.tiktok.com/t/ZT8abc/."))
         assertNull(TikTok.findLink("https://www.tiktok.com/@budi"))
         assertNull(TikTok.findLink("tanpa link"))
+    }
+
+    @Test fun prefetchCancelledClearsPrefetchingWithoutFailing() {
+        val s = reduce(YtState(), YtEvent.PrefetchStart(b.videoId))
+        assertEquals(listOf(b.videoId), s.prefetching)
+        val s2 = reduce(s, YtEvent.PrefetchCancelled(b.videoId))
+        assertEquals(emptyList(), s2.prefetching)
+        assertEquals(emptyMap(), s2.urls)
+    }
+
+    @Test fun streamInfoStoredPerSong() {
+        val s = reduce(YtState(), YtEvent.StreamInfo(a.videoId, StreamSource("direct", "audio/webm; codecs=opus", 251)))
+        assertEquals("direct", s.streams[a.videoId]?.source)
+        assertEquals("audio/webm; codecs=opus", s.streams[a.videoId]?.mimeType)
+        assertEquals(251, s.streams[a.videoId]?.itag)
+        assertEquals(true, s.streams[a.videoId]?.isOpus)
+        val s2 = reduce(s, YtEvent.StreamInfo(b.videoId, StreamSource("converter", "audio/mpeg", null)))
+        assertEquals("audio/mpeg", s2.streams[b.videoId]?.mimeType)
+        assertEquals(false, s2.streams[b.videoId]?.isOpus)
+        assertEquals("direct", s2.streams[a.videoId]?.source)
     }
 
     @Test fun dispositionNames() {

@@ -96,6 +96,8 @@ import com.rosyidputrar.taskify.ui.gate.GateViewModel
 import com.rosyidputrar.taskify.ui.settings.SettingsViewModel
 import com.rosyidputrar.taskify.ui.shell.AppViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
 import com.rosyidputrar.taskify.core.data.RejectedChangeRetrier
 import com.rosyidputrar.taskify.session.DeviceLeftovers
@@ -174,8 +176,22 @@ private val deviceModule = module {
         )
     }
     // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
-    single { MusicClient(AppConfig.musicApiUrl) { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() } }
-    single { MusicPlayer(androidContext(), get()) }
+    // Argumen bernama: parameter terakhir MusicClient kini `http` (khusus tes), jadi lambda di
+    // akhir (`MusicClient(url) { … }`) akan salah terikat ke `http`, bukan ke `token`.
+    // 401 dari Worker → refresh sesi Supabase sekali lalu permintaan diulang.
+    single {
+        MusicClient(
+            AppConfig.musicApiUrl,
+            token = { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() },
+            refresh = { getOrNull<SupabaseClient>()?.auth?.refreshCurrentSession() },
+        )
+    }
+    single {
+        MusicPlayer(androidContext(), get()).also { player ->
+            // Pesan pemutar (lewati sponsor, pewaktu tidur) tampil sebagai snackbar aplikasi, sekali saja.
+            get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }
+        }
+    }
     // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
     single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }
     single { TikTokConfig(AppConfig.publicWebOrigin) }
