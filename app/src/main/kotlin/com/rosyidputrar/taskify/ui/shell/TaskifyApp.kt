@@ -479,6 +479,10 @@ private fun TaskifyNavHost(
         exitTransition = { exit(pinned) },
         popEnterTransition = { popEnter(pinned) },
         popExitTransition = { popExit(pinned) },
+        // Back yang ditahan (predictive back) memakai geser yang sama dengan back biasa, seperti
+        // Animeru. Tanpa ini navigation-compose 2.9+ memakai bawaannya: layar mengecil ke 70%.
+        predictivePopEnterTransition = { popEnter(pinned) },
+        predictivePopExitTransition = { popExit(pinned) },
     ) {
         composable<HomeRoute> {
             Screen { home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } } }
