@@ -137,6 +137,9 @@ class InnerTube(
         // Dari YT_HEADERS Worker (terverifikasi live): tanpa Accept-Language
         // lengkap InnerTube kadang membalas halaman consent.
         header(HttpHeaders.AcceptLanguage, "id-ID,id;q=0.9,en;q=0.8")
+        // X-Goog-AuthUser dikirim SEKALI di sini untuk semua request (anonim
+        // maupun login). Jangan tambah lagi di blok login di bawah: duplikat
+        // digabung Ktor/OkHttp menjadi "0,0" di wire (bukan AuthUser valid).
         header("X-Goog-AuthUser", "0")
         if (includeVisitorData) {
             authState.visitorData?.let { header("X-Goog-Visitor-Id", it) }
@@ -148,7 +151,6 @@ class InnerTube(
                 val currentTime = System.currentTimeMillis() / 1000
                 val sapisidHash = sha1("$currentTime $loginCookieValue $requestOrigin")
                 header("Authorization", "SAPISIDHASH ${currentTime}_$sapisidHash")
-                header("X-Goog-AuthUser", "0")
                 authState.dataSyncId.delegatedSessionIdOrNull()?.let { header("X-Goog-PageId", it) }
             }
         }
