@@ -60,6 +60,16 @@ data class StreamSource(
     /** Waktu (epoch ms) URL direct kedaluwarsa (`expiresInSeconds`); `null` = tidak berbatas. */
     val expiresAt: Long? = null,
     val loudnessDb: Double? = null,
+    /**
+     * Nama klien InnerTube yang menghasilkan URL ini (`ANDROID`/`WEB_REMIX`/`MWEB`);
+     * `null` = tidak diketahui (mis. siaran langsung atau stream lama). Dipakai
+     * diagnostik 403: tanpa ini tidak bisa dibedakan URL ANDROID dari WEB_REMIX.
+     */
+    val resolvedClient: String? = null,
+    /** Sisa umur URL dalam detik dari `streamingData.expiresInSeconds`; `null` = hulu tidak memberinya. */
+    val expiresInSeconds: Int? = null,
+    /** Waktu (epoch ms) URL ini di-resolve; `null` = tidak dicatat. Dipakai menghitung jeda resolve→putar. */
+    val resolvedAtMs: Long? = null,
 ) {
     /** Jalur direct yang memilih opus (itag 251) — perlu dilacak, bisa gagal di perangkat tertentu. */
     val isOpus: Boolean get() = mimeType?.contains("opus", ignoreCase = true) == true

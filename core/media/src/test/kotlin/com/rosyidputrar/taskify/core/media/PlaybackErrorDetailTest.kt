@@ -120,6 +120,60 @@ class PlaybackErrorDetailTest {
             "Gagal.",
         ).toRawDetail(videoId, opusStream, streamUrl)
         val labels = detail.lines().map { it.substringBefore(':') }
-        assertEquals(listOf("videoId", "format", "host", "errorCodeName", "errorCode", "message"), labels)
+        assertEquals(
+            listOf("videoId", "format", "host", "errorCodeName", "errorCode", "message", "klien", "paramUrl", "jedaResolveKePutarMs", "expiresInSeconds"),
+            labels,
+        )
+    }
+
+    @Test fun diagnosticsCarryClientParamPresenceDelayAndExpiry() {
+        val stream = StreamSource(
+            StreamSource.SOURCE_DIRECT, "audio/webm; codecs=\"opus\"", 251,
+            resolvedClient = "ANDROID", expiresInSeconds = 21540, resolvedAtMs = 1_000L,
+        )
+        val detail = exception(
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+            "Response code: 403",
+        ).toRawDetail(videoId, stream, streamUrl, resolveToPlayMs = 1234)
+        assertTrue(detail.contains("klien: ANDROID"), detail)
+        assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada"), detail)
+        assertTrue(detail.contains("jedaResolveKePutarMs: 1234"), detail)
+        assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
+        // Nilai rahasia tetap tidak ikut walau diagnostik ditambah.
+        assertFalse(detail.contains("RAHASIA"), detail)
+        assertFalse(detail.contains("203.0.113.7"), detail)
+    }
+
+    @Test fun unknownDiagnosticsShowTidakDiketahui() {
+        val detail = exception(PlaybackException.ERROR_CODE_UNSPECIFIED, "Tidak diketahui.")
+            .toRawDetail(videoId, null, null)
+        assertTrue(detail.contains("klien: tidak diketahui"), detail)
+        assertTrue(detail.contains("paramUrl: tidak diketahui"), detail)
+        assertTrue(detail.contains("jedaResolveKePutarMs: tidak diketahui"), detail)
+        assertTrue(detail.contains("expiresInSeconds: tidak diketahui"), detail)
+    }
+
+    @Test fun httpStatusCodeReads403FromCauseChain() {
+        val cause = androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            403, "Forbidden", null, emptyMap(),
+            androidx.media3.datasource.DataSpec(android.net.Uri.parse("https://rr.test/x")), ByteArray(0),
+        )
+        val error = exception(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "Response code: 403", cause)
+        assertEquals(403, error.httpStatusCode())
+        // Cause berantai: 403 tetap terbaca walau dibungkus IOException.
+        val wrapped = exception(
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "Response code: 403",
+            java.io.IOException("bungkus", cause),
+        )
+        assertEquals(403, wrapped.httpStatusCode())
+    }
+
+    @Test fun httpStatusCodeIsNullForNonHttpErrors() {
+        val error = exception(
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            "Gagal tersambung.",
+            java.io.IOException("putus"),
+        )
+        assertEquals(null, error.httpStatusCode())
     }
 }

@@ -221,7 +221,10 @@ class DirectStreamResolverTest {
         })
         val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
         assertEquals(251, direct.itag)
-        assertEquals(listOf("ANDROID", "WEB_REMIX", "MWEB"), seen)
+        // ANDROID LOGIN_REQUIRED di-retry 2x dulu (flaky per permintaan)
+        // sebelum jatuh ke klien berikut; WEB_REMIX UNPLAYABLE tidak di-retry.
+        assertEquals(listOf("ANDROID", "ANDROID", "ANDROID", "WEB_REMIX", "MWEB"), seen)
+        assertEquals("MWEB", direct.resolvedClient)
     }
 
     @Test fun `gagal semua klien mengembalikan kegagalan klien utama`() = runBlocking {
@@ -323,6 +326,60 @@ class DirectStreamResolverTest {
         )
         val failure = failureOf(resolver.resolve("1RrF6Ee_io0"))
         assertTrue(failure is StreamFailure.Network)
+    }
+
+    @Test fun `LOGIN_REQUIRED sekali lalu sukses pada retry`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                if (calls == 1) {
+                    okJson("""{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Login"}}""")
+                } else {
+                    okJson(playerOk(sixFormatsJson))
+                }
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        assertEquals(251, direct.itag)
+        assertEquals(2, calls, "percobaan awal + satu retry LOGIN_REQUIRED")
+        assertEquals("ANDROID", direct.resolvedClient)
+    }
+
+    @Test fun `LOGIN_REQUIRED dua kali lalu sukses pada retry kedua`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                if (calls <= 2) {
+                    okJson("""{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Login"}}""")
+                } else {
+                    okJson(playerOk(sixFormatsJson))
+                }
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertEquals(251, resolver.resolve("1RrF6Ee_io0").getOrThrow().itag)
+        assertEquals(3, calls, "percobaan awal + dua retry LOGIN_REQUIRED")
+    }
+
+    @Test fun `LOGIN_REQUIRED tiga kali berturut-turut jadi kegagalan tanpa percobaan keempat`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                okJson("""{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Login"}}""")
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertEquals(StreamFailure.LoginRequired("Login"), failureOf(resolver.resolve("1RrF6Ee_io0")))
+        assertEquals(3, calls, "batas retry LOGIN_REQUIRED: 1 awal + 2 ulang")
+    }
+
+    @Test fun `klien yang menghasilkan URL dicatat di resolvedClient`() = runBlocking {
+        val resolver = resolverFor({ _ -> okJson(playerOk(sixFormatsJson)) })
+        assertEquals("ANDROID", resolver.resolve("1RrF6Ee_io0").getOrThrow().resolvedClient)
     }
 
     @Test fun `preferMp4a memilih itag 140 dari respons player yang sama`() = runBlocking {

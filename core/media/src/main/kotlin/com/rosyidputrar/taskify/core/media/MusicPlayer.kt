@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.rosyidputrar.taskify.core.domain.media.Loudness
 import com.rosyidputrar.taskify.core.domain.media.MusicQueue
 import com.rosyidputrar.taskify.core.domain.media.MusicSettings
@@ -35,6 +36,7 @@ import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.youtube.streamUrlParamPresence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -103,6 +105,11 @@ class MusicPlayer(
     private var noticeJob: Job? = null
     private var loadedId: String? = null
     private var loadedUrl: String? = null
+    /** Waktu (epoch ms) URL yang sedang dimuat mulai diputar — untuk jeda resolve→putar di diagnostik 403. */
+    private var loadedAtMs: Long = 0
+    /** Lagu yang sudah sekali di-re-resolve karena 403 (sekali per lagu per percobaan putar, lihat [handlePlayerError]). */
+    private var retried403For: String? = null
+    private var retry403Job: Job? = null
     /** Poll prefetch per videoId — supaya bisa dibatalkan saat lagu berubah (item 9). */
     private val prefetchJobs = mutableMapOf<String, Job>()
     private val sponsor = mutableMapOf<String, List<SponsorSegment>>()
@@ -117,6 +124,12 @@ class MusicPlayer(
     val player: ExoPlayer by lazy {
         exoCreated = true
         ExoPlayer.Builder(context)
+            // Header media ala ArchiveTune (lihat MediaRequestHeaders):
+            // Origin/Referer/User-Agent web — tanpa cookie.
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context)
+                    .setDataSourceFactory(MediaRequestHeaders.createDataSourceFactory()),
+            )
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .build().also { it.addListener(listener) }
@@ -136,16 +149,74 @@ class MusicPlayer(
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val song = _state.value.current ?: return
-            // Detail mentah disusun SEBELUM dispatch: reducer PlaybackFailed
-            // membuang URL/stream lagu yang gagal, jadi format/host harus
-            // dibaca dari state sekarang (bukan sesudahnya).
-            val rawDetail = error.toRawDetail(song.videoId, _state.value.currentStream, _state.value.currentUrl)
-            loadedId = null
-            loadedUrl = null
-            Log.w(TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName}")
-            // Direct gagal → langsung galat (tidak ada lagi fallback konverter).
-            dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi.", rawDetail))
+            handlePlayerError(error)
+        }
+    }
+
+    /**
+     * Galat ExoPlayer — internal supaya tes bisa memicunya tanpa ExoPlayer
+     * sungguhan (listener hanya meneruskan ke sini).
+     *
+     * HTTP 403 dari googlevideo (`ERROR_CODE_IO_BAD_HTTP_STATUS` + cause
+     * 403) mendapat SATU kesempatan pulih: URL lama dibuang, stream
+     * di-resolve ulang secara segar, lalu diputar sekali lagi. Hanya sekali
+     * per lagu per percobaan putar ([retried403For]) — percobaan kedua yang
+     * tetap 403, atau re-resolve yang gagal, langsung jadi galat mentah
+     * seperti sebelumnya (jangan disembunyikan, jangan loop). Siaran
+     * langsung tidak di-re-resolve (URL-nya bukan dari resolver).
+     *
+     * Alasan: 403 googlevideo sering flaky per URL — URL segar dari klien
+     * yang sama bisa lolos — dan pola yang sama dipakai ArchiveTune
+     * (`retryPlaybackAfterStreamFailure`: invalidate + re-resolve + retry
+     * terbatas). Ini ketahanan, bukan perbaikan akar 403.
+     */
+    internal fun handlePlayerError(error: PlaybackException) {
+        val song = _state.value.current ?: return
+        val stream = _state.value.currentStream
+        val url = _state.value.currentUrl
+        // Jeda resolve→putar: dari waktu resolve dicatat di StreamSource
+        // sampai URL ini mulai dimuat. `null` = tidak dicatat.
+        val resolveToPlayMs = stream?.resolvedAtMs?.let { resolved -> loadedAtMs.takeIf { it > 0 }?.minus(resolved) }
+        // Detail mentah disusun SEBELUM dispatch: reducer PlaybackFailed
+        // membuang URL/stream lagu yang gagal, jadi format/host harus
+        // dibaca dari state sekarang (bukan sesudahnya).
+        val rawDetail = error.toRawDetail(song.videoId, stream, url, resolveToPlayMs)
+        val isHttp403 = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+            error.httpStatusCode() == 403
+        Log.w(TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName} klien=${stream?.resolvedClient ?: "?"} itag=${stream?.itag ?: "?"} param=${streamUrlParamPresence(url)} jedaResolveKePutarMs=${resolveToPlayMs ?: "?"} expiresInSeconds=${stream?.expiresInSeconds ?: "?"}")
+        loadedId = null
+        loadedUrl = null
+        if (isHttp403 && !song.live && retried403For != song.videoId) {
+            retried403For = song.videoId
+            Log.w(TAG, "403 googlevideo ${song.videoId}: re-resolve sekali (percobaan kedua)")
+            reResolveAfter403(song, rawDetail)
+            return
+        }
+        // Direct gagal → langsung galat (tidak ada lagi fallback konverter).
+        dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi.", rawDetail))
+    }
+
+    /** Re-resolve segar sekali setelah 403; gagal apa pun → galat mentah asal (bukan loop). */
+    private fun reResolveAfter403(song: Song, rawDetail: String) {
+        retry403Job?.cancel()
+        retry403Job = scope.launch {
+            val stream = try {
+                streamResolver.tryResolve(song.videoId, _settings.value.quality, authState(), _settings.value.preferMp4a)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            // Lagu sudah berganti selagi re-resolve jalan: buang hasilnya, jangan putar lagu lama.
+            if (_state.value.current?.videoId != song.videoId) return@launch
+            if (stream != null) {
+                Log.i(TAG, "re-resolve 403 ${song.videoId} OK klien=${stream.resolvedClient ?: "?"} itag=${stream.itag} param=${streamUrlParamPresence(stream.url)}")
+                dispatch(YtEvent.StreamInfo(song.videoId, stream.toStreamSource()))
+                dispatch(YtEvent.Ready(song.videoId, stream.url))
+            } else {
+                Log.w(TAG, "re-resolve 403 ${song.videoId} gagal: tampilkan galat mentah asal")
+                dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
+            }
         }
     }
 
@@ -236,6 +307,8 @@ class MusicPlayer(
     fun stop() {
         resolveJob?.cancel()
         resolving = null
+        retry403Job?.cancel()
+        retried403For = null
         cancelPrefetchExcept(null)
         if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
@@ -326,6 +399,9 @@ class MusicPlayer(
         StreamSource.SOURCE_DIRECT, mimeType, itag,
         expiresAt = expiresInSeconds?.let { now() + it * 1000L },
         loudnessDb = loudnessDb,
+        resolvedClient = resolvedClient,
+        expiresInSeconds = expiresInSeconds,
+        resolvedAtMs = now(),
     )
 
     /** Pesan galat yang jelas untuk tiap kegagalan resolve (PLAN G.4): bukan retry tanpa akhir. */
@@ -341,6 +417,12 @@ class MusicPlayer(
     }
 
     private fun resolveCurrent(song: Song) {
+        // Percobaan putar baru (dari antrean/jeda/galat): jatah re-resolve
+        // 403 lagu ini kembali segar. Re-resolve 403 sendiri TIDAK lewat
+        // sini (jalur `reResolveAfter403` terpisah), jadi reset ini tidak
+        // membatalkan batas sekali-per-percobaan.
+        retried403For = null
+        retry403Job?.cancel()
         if (resolving == song.videoId) return
         resolveJob?.cancel()
         resolving = null
@@ -397,6 +479,9 @@ class MusicPlayer(
                     return@launch
                 }
                 dispatch(YtEvent.StreamInfo(id, stream.toStreamSource()))
+                // Diagnostik 403 (logcat saja, tanpa URL lengkap/nilai query):
+                // klien mana yang memberi URL + keberadaan nama param.
+                Log.i(TAG, "stream $id OK klien=${stream.resolvedClient ?: "?"} itag=${stream.itag} expiresInSeconds=${stream.expiresInSeconds ?: "?"} param=${streamUrlParamPresence(stream.url)}")
                 if (_state.value.current?.videoId != id) return@launch
                 dispatch(YtEvent.Ready(id, stream.url))
             } catch (e: CancellationException) {
@@ -497,6 +582,7 @@ class MusicPlayer(
     private fun setMedia(song: Song, url: String, startMs: Long) {
         loadedId = song.videoId
         loadedUrl = url
+        loadedAtMs = now()
         val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist)
             .apply { song.cover.takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build()
         player.setMediaItem(MediaItem.Builder().setMediaId(song.videoId).setUri(url).setMediaMetadata(meta).build(), startMs)

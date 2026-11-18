@@ -23,4 +23,9 @@ data class DirectStream(
     val loudnessDb: Double?,
     /** Kekerasan perseptual dalam dB (hanya dari `playerConfig.audioConfig`). */
     val perceptualLoudnessDb: Double?,
+    /**
+     * Nama klien InnerTube yang menghasilkan URL ini (`ANDROID`/`WEB_REMIX`/`MWEB`);
+     * `null` = tidak dicatat. Diagnostik 403 (lihat `StreamSource.resolvedClient`).
+     */
+    val resolvedClient: String? = null,
 )
