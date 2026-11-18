@@ -69,10 +69,17 @@ object SponsorBlock {
 }
 
 object Loudness {
-    /** Target kekerasan relatif YouTube (0 dB); lagu yang lebih keras dilirihkan, tidak pernah dikeraskan. */
-    fun gain(loudnessDb: Double?): Float {
-        if (loudnessDb == null || loudnessDb.isNaN()) return 1f
-        return 10.0.pow(-loudnessDb / 20.0).coerceIn(0.1, 1.0).toFloat()
+    /**
+     * Faktor gain normalisasi (Tahap 8, C2-26 — ArchiveTune
+     * `calculateAudioNormalizationFactor`): `perceptualLoudnessDb` dulu
+     * (persepsi manusia), jatuh ke `loudnessDb`; faktor
+     * `10^(-db/20)`, dijaga 0,25–1,414 (boleh mengeraskan sampai +3 dB,
+     * tidak lebih — bukan tanpa batas). Tanpa data loudness → 1.
+     */
+    fun gain(loudnessDb: Double?, perceptualLoudnessDb: Double? = null): Float {
+        val db = perceptualLoudnessDb ?: loudnessDb
+        if (db == null || db.isNaN()) return 1f
+        return 10.0.pow(-db / 20.0).coerceIn(0.25, 1.414).toFloat()
     }
 }
 
@@ -80,7 +87,9 @@ object Loudness {
 enum class MusicQuality(val value: String, val label: String, val hint: String) {
     Auto("auto", "Otomatis", "Opus terbaik (~170 kbps)"),
     High("high", "Hemat", "Opus tengah (~68 kbps)"),
-    Low("low", "Paling hemat", "Bitrate terendah (~32 kbps)");
+    Low("low", "Paling hemat", "Bitrate terendah (~32 kbps)"),
+    /** Tier tertinggi (Tahap 8, C2-23 — ArchiveTune `AudioQuality.HIGHEST`): bitrate tertinggi apa pun codec-nya (~320 kbps). */
+    Highest("highest", "Tertinggi", "Kualitas tertinggi (~320 kbps)");
 
     companion object {
         fun of(value: String?): MusicQuality = entries.firstOrNull { it.value == value } ?: Auto

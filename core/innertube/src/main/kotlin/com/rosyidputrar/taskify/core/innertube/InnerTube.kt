@@ -26,6 +26,13 @@
 //     untuk antrean; PLAN merekomendasikan Worker kecuali uji HP berkata lain.
 //   - Header `ytClient()` ditambah `Accept-Language` dan `X-Goog-AuthUser: 0`
 //     dari `YT_HEADERS` Worker (terverifikasi live 2026-11-16).
+//   - `X-Goog-AuthUser: 0` SENGAJA tetap dikirim selalu (C2-9 tidak diikuti:
+//     nilai ini terverifikasi live Worker + tes wire; ArchiveTune hanya
+//     mengirimnya saat login ber-cookie — perbedaan rendah, jangan diubah
+//     tanpa uji live).
+//   - Cookie `player` disintesis ala youtubei.js (`youtubeiCookie`, C2-2)
+//     dan `player` di-retry sekali tanpa dataSyncId bila 400
+//     INVALID_ARGUMENT (C2-8).
 //   - Tanpa proxy/DNS kustom (ditunda; `MusicBackend` mencatatnya sebagai
 //     follow-up, bukan prasyarat tahap 1).
 
@@ -43,10 +50,12 @@ import com.rosyidputrar.taskify.core.innertube.models.body.PlayerBody
 import com.rosyidputrar.taskify.core.innertube.models.body.SearchBody
 import com.rosyidputrar.taskify.core.innertube.utils.sha1
 import com.rosyidputrar.taskify.core.innertube.utils.youtubeLoginCookieValue
+import com.rosyidputrar.taskify.core.innertube.utils.youtubeiCookie
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.compression.ContentEncoding
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
@@ -126,6 +135,14 @@ class InnerTube(
         setLogin: Boolean = false,
         authState: PlaybackAuthState = currentAuthState(),
         includeVisitorData: Boolean = true,
+        // C2-8: retry `player` tanpa dataSyncId — bila false, `X-Goog-PageId`
+        // tidak dikirim (badan konteks juga tanpa dataSyncId, lihat `player()`).
+        includeDataSyncId: Boolean = true,
+        // Tahap 9 (C2-21): telemetri putar memakai `Accept-Language` +
+        // `Cache-Control` ala AT (`en-US,en;q=0.9` / `no-cache`), bukan
+        // bawaan `player` di bawah; `null` = bawaan.
+        acceptLanguage: String? = null,
+        cacheControl: String? = null,
     ) {
         val requestOrigin = client.requestOrigin()
         val requestReferer = client.requestReferer()
@@ -137,7 +154,8 @@ class InnerTube(
         header("Referer", requestReferer)
         // Dari YT_HEADERS Worker (terverifikasi live): tanpa Accept-Language
         // lengkap InnerTube kadang membalas halaman consent.
-        header(HttpHeaders.AcceptLanguage, "id-ID,id;q=0.9,en;q=0.8")
+        header(HttpHeaders.AcceptLanguage, acceptLanguage ?: "id-ID,id;q=0.9,en;q=0.8")
+        cacheControl?.let { header(HttpHeaders.CacheControl, it) }
         // X-Goog-AuthUser dikirim SEKALI di sini untuk semua request (anonim
         // maupun login). Jangan tambah lagi di blok login di bawah: duplikat
         // digabung Ktor/OkHttp menjadi "0,0" di wire (bukan AuthUser valid).
@@ -146,13 +164,19 @@ class InnerTube(
             authState.visitorData?.let { header("X-Goog-Visitor-Id", it) }
         }
         if (setLogin && client.supportsCookieAuthentication) {
-            authState.cookie?.let { cookie ->
+            // C2-2: cookie disintesis ala youtubei.js — bila `SAPISID` tidak
+            // ada, nilainya diambil dari `__Secure-3/1PAPISID` dan ditempel
+            // sebagai `SAPISID=...` di string cookie yang dikirim.
+            val effectiveCookie = authState.cookie?.let(::youtubeiCookie)
+            effectiveCookie?.let { cookie ->
                 header("cookie", cookie)
                 val loginCookieValue = youtubeLoginCookieValue(cookie) ?: return@let
                 val currentTime = System.currentTimeMillis() / 1000
                 val sapisidHash = sha1("$currentTime $loginCookieValue $requestOrigin")
                 header("Authorization", "SAPISIDHASH ${currentTime}_$sapisidHash")
-                authState.dataSyncId.delegatedSessionIdOrNull()?.let { header("X-Goog-PageId", it) }
+                if (includeDataSyncId) {
+                    authState.dataSyncId.delegatedSessionIdOrNull()?.let { header("X-Goog-PageId", it) }
+                }
             }
         }
         header(HttpHeaders.UserAgent, client.userAgent)
@@ -299,15 +323,41 @@ class InnerTube(
         poToken: String? = null,
         setLogin: Boolean = true,
         authState: PlaybackAuthState = currentAuthState(),
+    ): String {
+        // C2-8 (ArchiveTune `InnerTube.kt:308-342,395-407`): bila `player`
+        // gagal 400 `INVALID_ARGUMENT` padahal dataSyncId ikut dikirim,
+        // ulangi sekali TANPA dataSyncId. Pesan `Origin doesn't match Host`
+        // dikecualikan (retry tidak ada gunanya untuk itu).
+        return try {
+            playerCall(client, videoId, playlistId, signatureTimestamp, poToken, setLogin, authState, includeDataSyncId = true)
+        } catch (e: ResponseException) {
+            val shouldRetry = e.response.status.value == 400 &&
+                authState.dataSyncId != null &&
+                runCatching { e.response.bodyAsText() }.getOrNull()
+                    ?.let { it.contains("INVALID_ARGUMENT") && !it.contains("Origin doesn't match Host") } == true
+            if (!shouldRetry) throw e
+            playerCall(client, videoId, playlistId, signatureTimestamp, poToken, setLogin, authState, includeDataSyncId = false)
+        }
+    }
+
+    private suspend fun playerCall(
+        client: YouTubeClient,
+        videoId: String,
+        playlistId: String?,
+        signatureTimestamp: Int?,
+        poToken: String?,
+        setLogin: Boolean,
+        authState: PlaybackAuthState,
+        includeDataSyncId: Boolean,
     ): String = withRetry {
         httpClient.post(client.requestApiUrl("player")) {
-            ytClient(client = client, setLogin = setLogin, authState = authState)
+            ytClient(client = client, setLogin = setLogin, authState = authState, includeDataSyncId = includeDataSyncId)
             jsonBody(
                 PlayerBody(
                     context = client.toContext(
                         locale = locale,
                         visitorData = authState.visitorData,
-                        dataSyncId = if (setLogin && client.supportsCookieAuthentication && authState.hasPlaybackLoginContext) authState.dataSyncId else null,
+                        dataSyncId = if (setLogin && includeDataSyncId && client.supportsCookieAuthentication && authState.hasPlaybackLoginContext) authState.dataSyncId else null,
                     ),
                     videoId = videoId,
                     playlistId = playlistId,
@@ -338,6 +388,38 @@ class InnerTube(
                 ),
             )
         }.bodyAsText()
+    }
+
+    /**
+     * Telemetri putar (Tahap 9, C2-21 — ArchiveTune `InnerTube.kt:409-431`):
+     * GET ke URL `playbackTracking` dari respons `player` dengan param
+     * `ver=2`, `c=<nama klien>`, `cpn` acak 16 karakter, `prettyPrint=false`
+     * (+ `list`/`referrer` bila [playlistId] ada). Mencatat putar di
+     * riwayat YouTube (bila login). Best-effort: pemanggil menelan gagal.
+     * Klien bawaan WEB_REMIX, sama seperti AT.
+     */
+    suspend fun registerPlayback(
+        url: String,
+        cpn: String,
+        playlistId: String? = null,
+        client: YouTubeClient = YouTubeClient.WEB_REMIX,
+        authState: PlaybackAuthState = currentAuthState(),
+    ) = withRetry {
+        httpClient.get(url) {
+            ytClient(
+                client, setLogin = true, authState = authState,
+                acceptLanguage = PLAYBACK_TELEMETRY_ACCEPT_LANGUAGE,
+                cacheControl = PLAYBACK_TELEMETRY_CACHE_CONTROL,
+            )
+            parameter("ver", PLAYBACK_TELEMETRY_VER)
+            parameter("c", client.clientName)
+            parameter("cpn", cpn)
+            parameter("prettyPrint", false)
+            if (playlistId != null) {
+                parameter("list", playlistId)
+                parameter("referrer", "https://music.youtube.com/playlist?list=$playlistId")
+            }
+        }
     }
 
     /**
@@ -426,6 +508,15 @@ class InnerTube(
     }
 
     companion object {
+        /** Versi telemetri putar (Tahap 9, C2-21 — AT `PLAYBACK_TELEMETRY_VER`). */
+        const val PLAYBACK_TELEMETRY_VER = "2"
+
+        /** `Accept-Language` telemetri putar (AT `PLAYBACK_TELEMETRY_ACCEPT_LANGUAGE`). */
+        const val PLAYBACK_TELEMETRY_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
+
+        /** `Cache-Control` telemetri putar (AT `PLAYBACK_TELEMETRY_CACHE_CONTROL`). */
+        const val PLAYBACK_TELEMETRY_CACHE_CONTROL = "no-cache"
+
         /**
          * Klien Ktor bawaan di atas [OkHttpClient] bersama ([SharedHttpClient]).
          *

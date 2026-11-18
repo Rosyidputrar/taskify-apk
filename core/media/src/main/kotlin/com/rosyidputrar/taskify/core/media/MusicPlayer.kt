@@ -32,11 +32,23 @@ import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import com.rosyidputrar.taskify.core.media.youtube.DirectStream
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.youtube.PlaybackStreamRecoveryTracker
+import com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer
+import com.rosyidputrar.taskify.core.media.youtube.ResolveCache
+import com.rosyidputrar.taskify.core.media.youtube.ResolveCacheKey
+import com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.effectiveQuality
 import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
 import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.youtube.streamUrlClientKey
 import com.rosyidputrar.taskify.core.media.youtube.streamUrlParamPresence
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -85,6 +97,45 @@ class MusicPlayer(
     private val now: () -> Long = System::currentTimeMillis,
     /** Hook sesi kedaluwarsa (PLAN C.6): repo login; null = tanpa hook (tes lama). */
     private val loginEvents: MusicLoginEvents? = null,
+    /**
+     * Resolver youtubei.js (Tahap 3); null = jalur direct saja (tes lama).
+     * Bila ada: resolve mencoba youtubei dulu, gagal apa pun → jatuh ke
+     * jalur direct. Prefetch tetap direct saja sampai preloader Tahap 6.
+     */
+    private val youtubeiResolver: YoutubeiStreamResolver? = null,
+    /** Cache hasil resolve (Tahap 6, C2-16/17); null = tanpa cache (tes lama). */
+    private val resolveCache: ResolveCache = ResolveCache(),
+    /**
+     * Blacklist klien gagal (Tahap 7, C2-19); satu instance per proses (DI)
+     * supaya blacklist berlaku di semua jalur resolve.
+     */
+    private val failedStreamClients: FailedStreamClients = FailedStreamClients(),
+    /**
+     * Ensurer PoToken (Tahap 7): di-invalidasi bila bot terdeteksi saat
+     * putar atau semua klien gagal, supaya re-resolve mint token baru.
+     */
+    private val poTokenEnsurer: PoTokenEnsurer? = null,
+    /**
+     * Segarkan `visitorData` secara paksa (Tahap 7, C2-20); null = tanpa
+     * segarkan sesi (lapis AllClientsFailed dilewati).
+     */
+    private val refreshVisitorData: (suspend () -> String?)? = null,
+    /**
+     * Jaringan sedang metered (Tahap 8, C2-25 — ArchiveTune `LowDataMode`):
+     * bawaan memakai `ConnectivityManager.isActiveNetworkMetered`
+     * (tanpa izin tambahan). `Auto` di jaringan metered turun ke `High`.
+     */
+    private val isNetworkMetered: () -> Boolean = {
+        (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
+            ?.isActiveNetworkMetered == true
+    },
+    /**
+     * Telemetri putar (Tahap 9, C2-21); `null` = tanpa telemetri (tes).
+     * Produksi di-wire di `AppModule` ke `YouTube.registerPlayback`.
+     * Dipanggil sekali saat lagu mulai berbunyi, dengan URL tracking dari
+     * hasil resolve lagu itu; gagal apa pun ditelan (best-effort).
+     */
+    private val registerPlayback: (suspend (videoId: String, trackingUrl: String, auth: PlaybackAuthState) -> Boolean)? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(YtState())
@@ -107,9 +158,13 @@ class MusicPlayer(
     private var loadedUrl: String? = null
     /** Waktu (epoch ms) URL yang sedang dimuat mulai diputar — untuk jeda resolve→putar di diagnostik 403. */
     private var loadedAtMs: Long = 0
-    /** Lagu yang sudah sekali di-re-resolve karena 403 (sekali per lagu per percobaan putar, lihat [handlePlayerError]). */
-    private var retried403For: String? = null
-    private var retry403Job: Job? = null
+    /** Sekali-per-lagu: jatah pemulihan galat putar (Tahap 7, C2-19 — ArchiveTune `PlaybackStreamRecoveryTracker`). */
+    private val recoveryTracker = PlaybackStreamRecoveryTracker()
+    private var recoveryJob: Job? = null
+    /** URL telemetri putar per lagu (Tahap 9, C2-21), dari hasil resolve; dibersihkan di `wipe()`. */
+    private val playbackTrackingUrls = mutableMapOf<String, String>()
+    /** Lagu yang telemetri putarnya sudah dikirim pada pemutaran ini; direset tiap `load()` lagu baru. */
+    private var playbackRegisteredFor: String? = null
     /** Poll prefetch per videoId — supaya bisa dibatalkan saat lagu berubah (item 9). */
     private val prefetchJobs = mutableMapOf<String, Job>()
     private val sponsor = mutableMapOf<String, List<SponsorSegment>>()
@@ -125,22 +180,50 @@ class MusicPlayer(
         exoCreated = true
         ExoPlayer.Builder(context)
             // Header media ala ArchiveTune (lihat MediaRequestHeaders):
-            // Origin/Referer/User-Agent web — tanpa cookie. Transport media
-            // = OkHttpDataSource di atas OkHttpClient yang SAMA dengan engine
-            // Ktor InnerTube (perbaikan 403 ikatan IP, 18 Nov 2026): request
-            // `player` dan request media berbagi DNS + connection pool,
-            // jadi tidak lagi bisa keluar lewat keluarga IP yang berbeda.
+            // identitas (UA/Origin/Referer) diturunkan dari param `c` URL,
+            // tanpa cookie, request pertama selalu `Range` berbatas lewat
+            // ChunkedDataSource 8 MB di dalam ResolvingDataSource yang
+            // mengisi length dari contentLength hasil resolve.
+            // Transport media = OkHttpDataSource di atas OkHttpClient yang
+            // SAMA dengan engine Ktor InnerTube (perbaikan 403 ikatan IP,
+            // 18 Nov 2026): request `player` dan request media berbagi DNS
+            // + connection pool, jadi tidak lagi bisa keluar lewat keluarga
+            // IP yang berbeda.
+            // Cache media (Tahap 6, C2-22): byte audio yang sudah diunduh
+            // disimpan di disk (LRU 100 MB) supaya putar ulang / seek
+            // mundur tidak mengunduh lagi; kunci = URL (berisi expire/sig
+            // baru tiap resolve, jadi URL lama tidak pernah dipakai lagi).
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
-                    .setDataSourceFactory(MediaRequestHeaders.createDataSourceFactory()),
+                    .setDataSourceFactory(
+                        androidx.media3.datasource.cache.CacheDataSource.Factory()
+                            .setCache(mediaCache)
+                            .setUpstreamDataSourceFactory(MediaRequestHeaders.createResolvingDataSourceFactory()),
+                    ),
             )
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+            // C2-31: audio-focus ditangani media3 lewat `handleAudioFocus=true`
+            // di atas (jeda saat fokus hilang permanen, volume diturunkan saat
+            // ducking — padanan `audioFocusVolumeFactor` AT) + noisy di bawah.
             .setHandleAudioBecomingNoisy(true)
             .build().also { it.addListener(listener) }
     }
 
+    /**
+     * Cache byte media di disk (Tahap 6, C2-22): dibuat malas saat pemutar
+     * ExoPlayer pertama dibuat. Satu instance per folder selama proses hidup
+     * (SimpleCache melempar bila dua instance memakai folder yang sama, dan
+     * pemutar dibuat ulang tiap pergantian sesi/proses).
+     */
+    private val mediaCache: androidx.media3.datasource.cache.SimpleCache by lazy { sharedMediaCache(context) }
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                recoveryTracker.onPlaybackRecovered(_state.value.current?.videoId)
+                // Tahap 9 (C2-21): lagu mulai berbunyi → catat putar sekali.
+                registerPlaybackOnce(_state.value.current?.videoId)
+            }
             val s = _state.value
             if (isPlaying) dispatch(YtEvent.Playing)
             else if (s.status == YtStatus.Playing && player.playbackState != Player.STATE_ENDED) { dispatch(YtEvent.Paused); savePosition(force = true) }
@@ -148,6 +231,11 @@ class MusicPlayer(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY) {
+                // Pemutaran pulih (Tahap 7, C2-19 — ArchiveTune):
+                // jatah pemulihan sekali-per-lagu kembali segar.
+                recoveryTracker.onPlaybackRecovered(_state.value.current?.videoId)
+            }
             if (playbackState != Player.STATE_ENDED) return
             if (_sleep.value?.endOfSong == true) stopAtEndOfSong() else dispatch(YtEvent.Ended)
         }
@@ -158,21 +246,57 @@ class MusicPlayer(
     }
 
     /**
+     * Telemetri putar sekali per lagu (Tahap 9, C2-21 — ArchiveTune
+     * `registerRemotePlaybackHistory`, tanpa pencatatan riwayat lokal):
+     * best-effort, tidak pernah memblokir putar atau menampilkan galat.
+     * Gagal = URL dibuang supaya pemutaran berikut resolve ulang yang segar
+     * (tanpa refresh via metadata ala AT — pemutar ini tidak punya jalur
+     * metadata terpisah; resolve berikut memberi URL tracking baru).
+     */
+    internal fun registerPlaybackOnce(videoId: String?) {
+        val id = videoId ?: return
+        if (playbackRegisteredFor == id) return
+        val url = playbackTrackingUrls[id] ?: return
+        playbackRegisteredFor = id
+        scope.launch {
+            val ok = runCatching { registerPlayback?.invoke(id, url, authState()) }.getOrNull() == true
+            if (!ok) playbackTrackingUrls.remove(id)
+        }
+    }
+
+    /** Simpan URL telemetri putar dari hasil resolve (Tahap 9, C2-21). */
+    private fun rememberTracking(videoId: String, stream: DirectStream) {
+        stream.playbackTrackingUrl?.let { playbackTrackingUrls[videoId] = it }
+    }
+
+    /**
      * Galat ExoPlayer — internal supaya tes bisa memicunya tanpa ExoPlayer
      * sungguhan (listener hanya meneruskan ke sini).
      *
-     * HTTP 403 dari googlevideo (`ERROR_CODE_IO_BAD_HTTP_STATUS` + cause
-     * 403) mendapat SATU kesempatan pulih: URL lama dibuang, stream
-     * di-resolve ulang secara segar, lalu diputar sekali lagi. Hanya sekali
-     * per lagu per percobaan putar ([retried403For]) — percobaan kedua yang
-     * tetap 403, atau re-resolve yang gagal, langsung jadi galat mentah
-     * seperti sebelumnya (jangan disembunyikan, jangan loop). Siaran
-     * langsung tidak di-re-resolve (URL-nya bukan dari resolver).
+     * Pemulihan berlapis (Tahap 7, C2-19/20/27 — ArchiveTune
+     * `MusicService.handlePlaybackError` + `retryPlaybackAfterStreamFailure`
+     * + `recoverFromBadStreamPlayerResponse`), sekali per lagu per
+     * percobaan putar ([recoveryTracker]):
+     * 1. HTTP stream 403/404/410/416 → klien yang memberi URL di-blacklist
+     *    10 menit (kecuali URL hampir kedaluwarsa — 403-nya soal umur URL),
+     *    lalu re-resolve (pindah klien) dengan posisi dipertahankan.
+     * 2. Jaringan transien (timeout/koneksi putus) atau galat parser →
+     *    re-resolve sekali tanpa blacklist.
+     * 3. Bot terdeteksi saat putar → PoToken di-invalidasi, re-resolve
+     *    sekali (mint token baru).
+     * 4. Semua klien gagal → segarkan sesi (visitorData + PoToken baru),
+     *    lalu re-resolve sekali lagi.
+     * Selain itu (termasuk percobaan kedua yang tetap gagal, dan siaran
+     * langsung yang URL-nya bukan dari resolver) langsung jadi galat
+     * mentah seperti sebelumnya — jangan disembunyikan, jangan loop.
      *
-     * Alasan: 403 googlevideo sering flaky per URL — URL segar dari klien
-     * yang sama bisa lolos — dan pola yang sama dipakai ArchiveTune
-     * (`retryPlaybackAfterStreamFailure`: invalidate + re-resolve + retry
-     * terbatas). Ini ketahanan, bukan perbaikan akar 403.
+     * Beda dari ArchiveTune (jujur): URL baru hanya DI-STAGE (status
+     * Jeda), bukan langsung diputar — pemutaran lanjut saat pengguna
+     * menekan putar / Preparing berikut, dan saat itulah posisi yang
+     * disimpan dipakai (`load()` + `resumeId`/`resumeMs`). Auto-resume
+     * ala `preparePlaybackFromSnapshot` tidak di-porting: di Robolectric
+     * URL palsu tidak bisa dimuat ExoPlayer, jadi tidak ada tes yang bisa
+     * membuktikan auto-resume tanpa memutus suite.
      */
     internal fun handlePlayerError(error: PlaybackException) {
         val song = _state.value.current ?: return
@@ -185,44 +309,173 @@ class MusicPlayer(
         // membuang URL/stream lagu yang gagal, jadi format/host harus
         // dibaca dari state sekarang (bukan sesudahnya).
         val rawDetail = error.toRawDetail(song.videoId, stream, url, resolveToPlayMs)
-        val isHttp403 = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
-            error.httpStatusCode() == 403
+        val httpStatus = error.httpStatusCode()
+        // Posisi ditangkap SEBELUM loadedId dibersihkan di bawah
+        // (`captureRecoveryPositionMs` mengembalikan 0 bila tidak ada
+        // lagu yang termuat).
+        val positionMs = captureRecoveryPositionMs()
         Log.w(TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName} klien=${stream?.resolvedClient ?: "?"} itag=${stream?.itag ?: "?"} param=${streamUrlParamPresence(url)} jedaResolveKePutarMs=${resolveToPlayMs ?: "?"} expiresInSeconds=${stream?.expiresInSeconds ?: "?"}")
         loadedId = null
         loadedUrl = null
-        if (isHttp403 && !song.live && retried403For != song.videoId) {
-            retried403For = song.videoId
-            Log.w(TAG, "403 googlevideo ${song.videoId}: re-resolve sekali (percobaan kedua)")
-            reResolveAfter403(song, rawDetail)
+        // Siaran langsung tidak di-re-resolve (URL-nya bukan dari resolver).
+        if (song.live) {
+            dispatch(YtEvent.PlaybackFailed(song.videoId, "Siaran tidak bisa diputar sekarang.", rawDetail))
             return
         }
-        // Direct gagal → langsung galat (tidak ada lagi fallback konverter).
-        dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi.", rawDetail))
+        val retryableHttp = httpStatus != null &&
+            httpStatus in FailedStreamClients.RETRYABLE_STREAM_RESPONSE_CODES
+        val transientNetwork = !retryableHttp && error.isTransientNetworkFailure()
+        val parserFailure = !retryableHttp && error.isRetryableParserFailure()
+        val botDetection = !retryableHttp && isBotDetectionError(error)
+        if (!retryableHttp && !transientNetwork && !parserFailure && !botDetection) {
+            // Galat biasa → langsung galat (tidak ada lagi fallback konverter).
+            dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
+            return
+        }
+        if (!recoveryTracker.registerRetryAttempt(song.videoId)) {
+            Log.w(TAG, "jatah pemulihan ${song.videoId} habis → galat mentah asal")
+            dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
+            return
+        }
+        if (retryableHttp) {
+            // Kunci klien dari param `c` URL (paling akurat), jatuh ke
+            // nama klien hasil resolve bila URL tanpa `c` (tes/URL aneh).
+            val clientKey = streamUrlClientKey(url ?: "")
+                ?: stream?.resolvedClient?.let(DirectStreamResolver::clientKeyForName)
+            if (clientKey != null && !FailedStreamClients.isExpiredOrNearExpired(url, now())) {
+                failedStreamClients.markFailed(song.videoId, clientKey, httpStatus, authState().streamCacheFingerprint)
+                Log.w(TAG, "HTTP $httpStatus stream ${song.videoId}: klien $clientKey di-blacklist 10 menit")
+            } else {
+                Log.w(TAG, "HTTP $httpStatus stream ${song.videoId}: URL hampir kedaluwarsa, klien tidak di-blacklist")
+            }
+        }
+        if (botDetection) {
+            // Bot terdeteksi saat putar: PoToken lama dibuang di dalam
+            // koroutine pemulihan supaya re-resolve mint yang baru
+            // (bukan memakai token yang sama).
+            Log.w(TAG, "bot detection saat putar ${song.videoId}: PoToken di-invalidasi, re-resolve sekali")
+        }
+        Log.w(TAG, "galat putar ${song.videoId} (http=$httpStatus): re-resolve sekali, posisi dipertahankan")
+        reResolveAfterFailure(song, rawDetail, positionMs, invalidatePoToken = botDetection)
     }
 
-    /** Re-resolve segar sekali setelah 403; gagal apa pun → galat mentah asal (bukan loop). */
-    private fun reResolveAfter403(song: Song, rawDetail: String) {
-        retry403Job?.cancel()
-        retry403Job = scope.launch {
-            val stream = try {
-                streamResolver.tryResolve(song.videoId, _settings.value.quality, authState(), _settings.value.preferMp4a)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
+    /** Posisi putar saat galat (ArchiveTune `capturePlaybackRecoverySnapshot`): posisi ExoPlayer, dijaga 0..durasi. */
+    private fun captureRecoveryPositionMs(): Long {
+        if (loadedId == null) return 0L
+        val duration = player.duration
+        val position = player.currentPosition.coerceAtLeast(0L)
+        return if (duration > 0L && duration != C.TIME_UNSET) position.coerceAtMost(duration) else position
+    }
+
+    /** Jaringan transien (ArchiveTune `isTransientNetworkFailure`): timeout / koneksi putus — layak re-resolve sekali. */
+    private fun Throwable.isTransientNetworkFailure(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is SocketTimeoutException ||
+                current is ConnectException ||
+                current is UnknownHostException
+            ) return true
+            if (current.message?.contains("Request timeout has expired", ignoreCase = true) == true) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /** Galat parser jarak-jauh yang layak di-retry (ArchiveTune `isRetryableRemoteParserFailure`). */
+    private fun PlaybackException.isRetryableParserFailure(): Boolean {
+        if (errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+            errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
+        ) return true
+        var current: Throwable? = cause
+        while (current != null) {
+            if (current.message?.contains("Skipping atom with length", ignoreCase = true) == true) return true
+            if (current is ArrayIndexOutOfBoundsException &&
+                current.stackTrace.any { it.className.startsWith("androidx.media3.extractor") }
+            ) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /** Bot detection dari pesan galat / rantai penyebab (ArchiveTune `isBotDetectionException`). */
+    private fun isBotDetectionError(error: PlaybackException): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is StreamFailureException && current.failure is StreamFailure.BotDetection) return true
+            if (isBotDetectionMessage(current.message.orEmpty())) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /** Re-resolve segar sekali setelah galat putar yang bisa pulih; gagal apa pun → galat mentah asal (bukan loop). */
+    private fun reResolveAfterFailure(song: Song, rawDetail: String, positionMs: Long, invalidatePoToken: Boolean = false) {
+        recoveryJob?.cancel()
+        recoveryJob = scope.launch {
+            if (invalidatePoToken) poTokenEnsurer?.invalidateAll()
+            val auth = authState()
+            val quality = _settings.value.quality
+            val preferMp4a = _settings.value.preferMp4a
+            // Tahap 8 (C2-25): kualitas efektif + metered dipakai kunci cache.
+            val metered = isNetworkMetered()
+            val effective = effectiveQuality(quality, metered)
+            val key = ResolveCacheKey(song.videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered)
+            // URL lama kena galat: buang dari cache supaya tidak disajikan lagi.
+            resolveCache.remove(key)
+            var result = resolveForRecovery(song, effective, auth, preferMp4a, metered)
+            var stream = result.getOrNull()
+            // Semua klien gagal (C2-20/27): segarkan sesi (PoToken baru +
+            // visitorData baru → fingerprint baru, jadi blacklist + cache
+            // lama tidak berlaku) lalu coba sekali lagi.
+            val firstFailure = (result.exceptionOrNull() as? StreamFailureException)?.failure
+            if (stream == null && firstFailure is StreamFailure.AllClientsFailed) {
+                Log.w(TAG, "semua klien gagal ${song.videoId}: segarkan sesi lalu re-resolve sekali lagi")
+                poTokenEnsurer?.invalidateAll()
+                runCatching { refreshVisitorData?.invoke() }
+                val freshAuth = authState()
+                resolveCache.remove(ResolveCacheKey(song.videoId, effective, preferMp4a, freshAuth.streamCacheFingerprint, metered))
+                result = resolveForRecovery(song, effective, freshAuth, preferMp4a, metered)
+                stream = result.getOrNull()
             }
             // Lagu sudah berganti selagi re-resolve jalan: buang hasilnya, jangan putar lagu lama.
             if (_state.value.current?.videoId != song.videoId) return@launch
             if (stream != null) {
-                Log.i(TAG, "re-resolve 403 ${song.videoId} OK klien=${stream.resolvedClient ?: "?"} itag=${stream.itag} param=${streamUrlParamPresence(stream.url)}")
+                resolveCache.put(ResolveCacheKey(song.videoId, effective, preferMp4a, authState().streamCacheFingerprint, metered), stream)
+                rememberTracking(song.videoId, stream)
+                // Posisi dipertahankan (C2-19): load() memakai resume ini
+                // saat URL baru dimuat (tekanan putar / Preparing berikut).
+                resumeId = song.videoId
+                resumeMs = positionMs
+                Log.i(TAG, "re-resolve galat putar ${song.videoId} OK klien=${stream.resolvedClient ?: "?"} itag=${stream.itag} lanjutMs=$positionMs param=${streamUrlParamPresence(stream.url)}")
                 dispatch(YtEvent.StreamInfo(song.videoId, stream.toStreamSource()))
                 dispatch(YtEvent.Ready(song.videoId, stream.url))
             } else {
-                Log.w(TAG, "re-resolve 403 ${song.videoId} gagal: tampilkan galat mentah asal")
+                Log.w(TAG, "re-resolve galat putar ${song.videoId} gagal: tampilkan galat mentah asal")
                 dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
             }
         }
     }
+
+    /**
+     * Resolve untuk pemulihan: direct SAJA (Tahap 6) — JANGAN youtubei-first
+     * di sini, karena cache disk JS bisa mengembalikan URL yang sama yang
+     * baru saja gagal. Kegagalan terketik dipertahankan (bukan null) supaya
+     * lapis AllClientsFailed bisa menyegarkan sesi.
+     */
+    private suspend fun resolveForRecovery(
+        song: Song,
+        quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality,
+        auth: com.rosyidputrar.taskify.core.innertube.PlaybackAuthState,
+        preferMp4a: Boolean,
+        networkMetered: Boolean = false,
+    ): Result<com.rosyidputrar.taskify.core.media.youtube.DirectStream> =
+        try {
+            streamResolver.resolve(song.videoId, quality, auth, preferMp4a, resolveCache.pinnedItag(song.videoId), networkMetered)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
 
     init {
         // Gate login (PLAN C.6): antrean tersimpan hanya dipulihkan bila ada
@@ -311,8 +564,8 @@ class MusicPlayer(
     fun stop() {
         resolveJob?.cancel()
         resolving = null
-        retry403Job?.cancel()
-        retried403For = null
+        recoveryJob?.cancel()
+        recoveryTracker.reset()
         cancelPrefetchExcept(null)
         if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
@@ -403,14 +656,17 @@ class MusicPlayer(
         StreamSource.SOURCE_DIRECT, mimeType, itag,
         expiresAt = expiresInSeconds?.let { now() + it * 1000L },
         loudnessDb = loudnessDb,
+        perceptualLoudnessDb = perceptualLoudnessDb,
         resolvedClient = resolvedClient,
         expiresInSeconds = expiresInSeconds,
         resolvedAtMs = now(),
+        contentLength = contentLength,
     )
 
     /** Pesan galat yang jelas untuk tiap kegagalan resolve (PLAN G.4): bukan retry tanpa akhir. */
     private fun streamErrorMessage(failure: StreamFailure): String = when (failure) {
         is StreamFailure.LoginRequired -> "Audio tidak bisa dimuat dari YouTube (login diperlukan)."
+        is StreamFailure.InvalidLoginContext -> "Sesi login YouTube tidak lengkap. Masuk lagi."
         is StreamFailure.Unplayable -> "Audio tidak bisa dimuat dari YouTube."
         StreamFailure.NoFormat -> "Audio tidak bisa dimuat dari YouTube (format tidak tersedia)."
         is StreamFailure.Http -> if (failure.status == 429) "YouTube membatasi permintaan, coba lagi sebentar lagi."
@@ -418,15 +674,51 @@ class MusicPlayer(
         StreamFailure.Timeout -> "Audio tidak bisa dimuat dari YouTube (waktu habis)."
         is StreamFailure.Network -> "Gagal memuat audio. Periksa koneksi."
         StreamFailure.InvalidResponse -> "Audio tidak bisa dimuat dari YouTube."
+        is StreamFailure.BotDetection -> "YouTube meminta verifikasi tambahan. Coba lagi sebentar lagi."
+        is StreamFailure.AllClientsFailed -> "Semua klien YouTube gagal memuat audio. Coba lagi sebentar lagi."
+    }
+
+    /**
+     * Resolve stream lagu: cache dulu (Tahap 6), lalu youtubei.js bila
+     * tersedia, gagal apa pun → jalur direct (Tahap 3). Kegagalan youtubei
+     * TIDAK pernah langsung jadi galat putar selama direct masih bisa —
+     * fallback ada di sini, bukan di UI. Itag terakhir video ini dipakai
+     * sebagai pinned (format yang sama dipertahankan).
+     */
+    private suspend fun resolveStream(
+        videoId: String,
+        quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality,
+        auth: com.rosyidputrar.taskify.core.innertube.PlaybackAuthState,
+        preferMp4a: Boolean,
+    ): Result<com.rosyidputrar.taskify.core.media.youtube.DirectStream> {
+        // Tahap 8 (C2-25): kualitas efektif dihitung SEKALI di sini dan
+        // dipakai kunci cache + kedua jalur resolve, supaya entri cache
+        // tidak tercampur antara metered dan tidak.
+        val metered = isNetworkMetered()
+        val effective = effectiveQuality(quality, metered)
+        val key = ResolveCacheKey(videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered)
+        resolveCache.get(key)?.let { rememberTracking(videoId, it); return Result.success(it) }
+        val pinned = resolveCache.pinnedItag(videoId)
+        val result = if (youtubeiResolver == null) {
+            streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered)
+        } else {
+            youtubeiResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered).fold(
+                onSuccess = { Result.success(it) },
+                onFailure = { streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered) },
+            )
+        }
+        result.getOrNull()?.let { resolveCache.put(key, it); rememberTracking(videoId, it) }
+        return result
     }
 
     private fun resolveCurrent(song: Song) {
-        // Percobaan putar baru (dari antrean/jeda/galat): jatah re-resolve
-        // 403 lagu ini kembali segar. Re-resolve 403 sendiri TIDAK lewat
-        // sini (jalur `reResolveAfter403` terpisah), jadi reset ini tidak
+        // Percobaan putar baru (dari antrean/jeda/galat): jatah pemulihan
+        // lagu ini kembali segar (Tahap 7 — lihat `PlaybackStreamRecoveryTracker.reset`).
+        // Re-resolve galat putar sendiri TIDAK lewat sini (jalur
+        // `reResolveAfterFailure` terpisah), jadi reset ini tidak
         // membatalkan batas sekali-per-percobaan.
-        retried403For = null
-        retry403Job?.cancel()
+        recoveryTracker.reset()
+        recoveryJob?.cancel()
         if (resolving == song.videoId) return
         resolveJob?.cancel()
         resolving = null
@@ -451,7 +743,7 @@ class MusicPlayer(
                 // `track()` (next + loudness player, paralel di dalam) dan
                 // `resolveStream()` jalan BERDAMPINGAN — keduanya independen.
                 val trackDeferred = async { if (withTrack) youTube.track(id, auth) else null }
-                val streamDeferred = async { streamResolver.resolve(id, _settings.value.quality, auth, _settings.value.preferMp4a) }
+                val streamDeferred = async { resolveStream(id, _settings.value.quality, auth, _settings.value.preferMp4a) }
                 if (withTrack) {
                     // Keterangan datang duluan (walau stream masih jalan): upNext
                     // langsung disambung ke antrean serupa (PR #8) tanpa menunggu audio.
@@ -465,17 +757,20 @@ class MusicPlayer(
                 if (stream == null) {
                     val exception = streamResult.exceptionOrNull()
                     val failure = (exception as? StreamFailureException)?.failure
-                    // Sesi kedaluwarsa (PLAN C.6): resolve kena LoginRequired
-                    // PADAHAL cookie login ada → sesi yang dulu sah sudah habis;
-                    // beri tahu repo lewat hook (VM menampilkan prompt login
-                    // ulang) dan pakai pesan kedaluwarsa. Bila tidak login,
-                    // pesan lama tetap (tidak ada sesi yang bisa habis).
+                    // Sesi kedaluwarsa / tidak lengkap (PLAN C.6, C2-12):
+                    // resolve kena LoginRequired ATAU InvalidLoginContext
+                    // PADAHAL cookie login ada → sesi yang dulu sah sudah
+                    // habis / tidak lengkap; beri tahu repo lewat hook (VM
+                    // menampilkan prompt login ulang) dan pakai pesan
+                    // kedaluwarsa. Bila tidak login, pesan lama tetap
+                    // (tidak ada sesi yang bisa habis).
                     // Detail mentah ikut dikirim apa pun pesannya (Agen B):
                     // jenis StreamFailure + status HTTP + pesan exception,
                     // tanpa URL lengkap / cookie / token.
-                    val message = if (failure is StreamFailure.LoginRequired && authState().hasLoginCookie) {
+                    val message = if ((failure is StreamFailure.LoginRequired || failure is StreamFailure.InvalidLoginContext) && authState().hasLoginCookie) {
                         loginEvents?.onSessionExpired()
-                        "Sesi login YouTube berakhir. Masuk lagi."
+                        if (failure is StreamFailure.InvalidLoginContext) "Sesi login YouTube tidak lengkap. Masuk lagi."
+                        else "Sesi login YouTube berakhir. Masuk lagi."
                     } else failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
                     val rawDetail = if (failure != null) streamFailureRawDetail(failure, exception.cause)
                         else musicErrorRawDetail(exception)
@@ -511,9 +806,19 @@ class MusicPlayer(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             // Satu lagu berikut, resolve direct saja (pola `tryDirectStream`:
             // gagal apa pun → null, bukan galat — lagu itu akan di-resolve
-            // ulang saat gilirannya tiba).
-            val stream = streamResolver.tryResolve(videoId, _settings.value.quality, authState(), _settings.value.preferMp4a)
+            // ulang saat gilirannya tiba). Hasil sukses dicatat di cache
+            // resolve (Tahap 6) supaya gilirannya nanti tidak resolve ulang.
+            val auth = authState()
+            val quality = _settings.value.quality
+            val preferMp4a = _settings.value.preferMp4a
+            // Tahap 8 (C2-25): kualitas efektif + metered dipakai kunci cache
+            // supaya prefetch metered tidak disajikan saat tidak metered.
+            val metered = isNetworkMetered()
+            val effective = effectiveQuality(quality, metered)
+            val stream = streamResolver.tryResolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
             if (stream != null) {
+                resolveCache.put(ResolveCacheKey(videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered), stream)
+                rememberTracking(videoId, stream)
                 dispatch(YtEvent.StreamInfo(videoId, stream.toStreamSource()))
                 dispatch(YtEvent.PrefetchDone(videoId, stream.url))
             } else {
@@ -570,6 +875,11 @@ class MusicPlayer(
     }
 
     private fun load(song: Song, url: String) {
+        // Lagu berganti (Tahap 7, C2-19 — ArchiveTune): jatah pemulihan
+        // lagu lama tidak berlaku untuk lagu baru.
+        recoveryTracker.onMediaItemChanged(song.videoId)
+        // Tahap 9 (C2-21): lagu baru = telemetri putar boleh dikirim lagi.
+        if (loadedId != song.videoId) playbackRegisteredFor = null
         if (loadedId == song.videoId && loadedUrl == url && player.playbackState != Player.STATE_IDLE) {
             if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
             player.play()
@@ -587,6 +897,10 @@ class MusicPlayer(
         loadedId = song.videoId
         loadedUrl = url
         loadedAtMs = now()
+        // Daftarkan contentLength hasil resolve supaya ResolvingDataSource
+        // mengisi length DataSpec (request pertama membawa `Range` berbatas,
+        // porting ArchiveTune Tahap 1); tanpa ini ExoPlayer GET penuh.
+        _state.value.streams[song.videoId]?.contentLength?.let { ResolvedStreamRegistry.put(url, it) }
         val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist)
             .apply { song.cover.takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build()
         player.setMediaItem(MediaItem.Builder().setMediaId(song.videoId).setUri(url).setMediaMetadata(meta).build(), startMs)
@@ -594,12 +908,13 @@ class MusicPlayer(
         applyVolume()
     }
 
-    /** Volume rata (loudnessDb) dikalikan bisu SponsorBlock bila sedang di segmen "mute". */
+    /** Volume rata (loudness perseptual dulu, lalu loudnessDb — Tahap 8, C2-26) dikalikan bisu SponsorBlock bila sedang di segmen "mute". */
     private fun applyVolume() {
         val s = _state.value
         val id = s.current?.videoId ?: return
-        val db = s.streams[id]?.loudnessDb ?: s.details[id]?.loudnessDb
-        val gain = if (_settings.value.normalize) Loudness.gain(db) else 1f
+        val stream = s.streams[id]
+        val db = stream?.loudnessDb ?: s.details[id]?.loudnessDb
+        val gain = if (_settings.value.normalize) Loudness.gain(db, stream?.perceptualLoudnessDb) else 1f
         val muted = _settings.value.sponsorBlock && SponsorBlock.muted(sponsor[id].orEmpty(), _position.value.positionMs / 1000.0)
         val v = if (muted) 0f else gain
         if (player.volume != v) player.volume = v
@@ -676,6 +991,10 @@ class MusicPlayer(
     fun wipe() {
         if (_state.value.status != YtStatus.Idle || loadedId != null) stop()
         sponsor.clear()
+        ResolvedStreamRegistry.clear()
+        resolveCache.clear()
+        playbackTrackingUrls.clear()
+        playbackRegisteredFor = null
         prefs.clear()
         savedKey = null
         _settings.value = MusicSettings()
@@ -683,5 +1002,43 @@ class MusicPlayer(
 
     companion object {
         const val TAG = "MusicPlayer"
+
+        /** Batas cache byte media di disk (Tahap 6, C2-22): 100 MB, LRU. */
+        const val MEDIA_CACHE_MAX_BYTES = 100L * 1024L * 1024L
+
+        @Volatile
+        private var sharedCache: androidx.media3.datasource.cache.SimpleCache? = null
+        @Volatile
+        private var sharedCacheDir: String? = null
+
+        /** Satu SimpleCache per folder per proses; folder berubah (mis. tes) -> yang lama dilepas. */
+        @Synchronized
+        fun sharedMediaCache(context: android.content.Context): androidx.media3.datasource.cache.SimpleCache {
+            val dir = java.io.File(context.cacheDir, "media-cache").absolutePath
+            val cached = sharedCache
+            if (cached != null && sharedCacheDir == dir) return cached
+            try { sharedCache?.release() } catch (_: Exception) { /* sudah dilepas */ }
+            return androidx.media3.datasource.cache.SimpleCache(
+                java.io.File(dir),
+                androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(MEDIA_CACHE_MAX_BYTES),
+                androidx.media3.database.StandaloneDatabaseProvider(context),
+            ).also { sharedCache = it; sharedCacheDir = dir }
+        }
     }
+}
+
+/**
+ * Klasifikasi pesan bot-detection (ArchiveTune
+ * `YTPlayerUtils.isBotDetectionError(reason: String)`, verbatim kecuali
+ * nama): "bot" / "unusual traffic" / "automated" / "confirm ... not a" /
+ * "not a robot" / "verify ... human".
+ */
+internal fun isBotDetectionMessage(reason: String): Boolean {
+    val lower = reason.lowercase(Locale.US)
+    return "bot" in lower ||
+        "unusual traffic" in lower ||
+        "automated" in lower ||
+        "confirm" in lower && "not a" in lower ||
+        "not a robot" in lower ||
+        "verify" in lower && "human" in lower
 }

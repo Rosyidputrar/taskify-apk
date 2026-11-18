@@ -74,10 +74,16 @@ class DirectStreamResolverTest {
         handler: MockRequestHandler,
         clients: List<YouTubeClient> = DirectStreamResolver.DEFAULT_CLIENTS,
         attemptTimeoutMs: Long = DirectStreamResolver.DIRECT_TIMEOUT_MS,
+        signatureTimestampProvider: (suspend (YouTubeClient, String) -> Int?)? = null,
+        ensureVisitorData: (suspend () -> String?)? = null,
+        failedStreamClients: FailedStreamClients? = null,
     ): DirectStreamResolver {
         val engine = MockEngine(handler)
         val tube = InnerTube(HttpClient(engine) { expectSuccess = true })
-        return DirectStreamResolver(tube, clients, attemptTimeoutMs)
+        return DirectStreamResolver(
+            tube, clients, attemptTimeoutMs, signatureTimestampProvider, ensureVisitorData,
+            failedStreamClients = failedStreamClients,
+        )
     }
 
     private fun failureOf(result: Result<DirectStream>): StreamFailure? =
@@ -103,8 +109,121 @@ class DirectStreamResolverTest {
         assertEquals(169643, direct.bitrate)
         assertEquals(21540, direct.expiresInSeconds)
         assertEquals("ANDROID", sentClient)
-        assertEquals("20.10.4", sentVersion)
+        assertEquals("21.26.364", sentVersion)
         assertEquals("1RrF6Ee_io0", sentVideoId)
+    }
+
+    @Test fun `contentLength dari format dipakai DirectStream`() = runBlocking {
+        val url = "https://rr1---sn-xxxx.googlevideo.com/videoplayback?c=ANDROID&itag=251&clen=5495333"
+        val formats = """{"itag":251,"mimeType":"audio/webm; codecs=\"opus\"","bitrate":169643,"contentLength":"5495333","url":"$url"}"""
+        val resolver = resolverFor({ _ -> okJson(playerOk(formats)) })
+        val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        assertEquals(5_495_333L, direct.contentLength)
+    }
+
+    @Test fun `clen URL dipakai bila format tanpa contentLength`() = runBlocking {
+        val url = "https://rr1---sn-xxxx.googlevideo.com/videoplayback?c=ANDROID&itag=251&clen=2898086"
+        val formats = """{"itag":251,"mimeType":"audio/webm; codecs=\"opus\"","bitrate":169643,"url":"$url"}"""
+        val resolver = resolverFor({ _ -> okJson(playerOk(formats)) })
+        val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        assertEquals(2_898_086L, direct.contentLength)
+    }
+
+    @Test fun `format cipher-only tidak dipilih tapi tidak menggagalkan resolve`() = runBlocking {
+        val formats = """
+            {"itag":251,"mimeType":"audio/webm; codecs=\"opus\"","bitrate":169643,"url":"$url251"},
+            {"itag":140,"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":131105,"signatureCipher":"s=abc&url=https%3A%2F%2Fexample.com%2Fx"}
+        """.trimIndent()
+        val resolver = resolverFor({ _ -> okJson(playerOk(formats)) })
+        val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        assertEquals(url251, direct.url, "format ber-URL langsung tetap dipilih")
+    }
+
+    @Test fun `login penuh memakai WEB_CREATOR dulu`() = runBlocking {
+        var sentClient = ""
+        val resolver = DirectStreamResolver(
+            InnerTube(HttpClient(MockEngine({ request ->
+                sentClient = clientNameOf(request)
+                okJson(playerOk(sixFormatsJson))
+            })) { expectSuccess = true }),
+        )
+        val auth = PlaybackAuthState(
+            cookie = "SAPISID=dummy; LOGIN_INFO=dummy",
+            dataSyncId = "delegatedDummy||userDummy",
+        )
+        val direct = resolver.resolve("1RrF6Ee_io0", authState = auth).getOrThrow()
+        assertEquals("WEB_CREATOR", sentClient)
+        assertEquals(url251, direct.url)
+    }
+
+    @Test fun `cookie tanpa dataSyncId ditolak tanpa memanggil player`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor({ _ ->
+            calls++
+            okJson(playerOk(sixFormatsJson))
+        })
+        val auth = PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy")
+        val result = resolver.resolve("1RrF6Ee_io0", authState = auth)
+        assertEquals(StreamFailure.InvalidLoginContext, failureOf(result))
+        assertEquals(0, calls, "gate C2-12: player tidak pernah dipanggil")
+    }
+
+    @Test fun `PoToken ditempel ke player dan pot ke URL`() = runBlocking {
+        var sentBody = ""
+        val resolver = DirectStreamResolver(
+            InnerTube(HttpClient(MockEngine({ request ->
+                sentBody = (request.body as TextContent).text
+                okJson(playerOk(sixFormatsJson))
+            })) { expectSuccess = true }),
+        )
+        val auth = PlaybackAuthState(
+            cookie = "SAPISID=dummy; LOGIN_INFO=dummy",
+            dataSyncId = "delegatedDummy||userDummy",
+            poTokenPlayer = "PTOK_VIDEO",
+            poTokenPlayerVideoId = "1RrF6Ee_io0",
+            poTokenGvs = "GTOK_VIDEO",
+            poTokenGvsVideoId = "1RrF6Ee_io0",
+            webClientPoTokenEnabled = true,
+        )
+        val direct = resolver.resolve("1RrF6Ee_io0", authState = auth).getOrThrow()
+        val body = testJson.parseToJsonElement(sentBody).jsonObject
+        assertEquals(
+            "PTOK_VIDEO",
+            body["serviceIntegrityDimensions"]?.jsonObject?.get("poToken")?.jsonPrimitive?.content,
+        )
+        assertTrue(direct.url.contains("pot=GTOK_VIDEO"), "pot ditempel ke URL stream")
+    }
+
+    @Test fun `signatureTimestamp diteruskan ke player bila klien mendukung`() = runBlocking {
+        var sentBody = ""
+        val resolver = resolverFor(
+            { request ->
+                sentBody = (request.body as TextContent).text
+                okJson(playerOk(sixFormatsJson))
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+            signatureTimestampProvider = { _, _ -> 19283 },
+        )
+        resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        val body = testJson.parseToJsonElement(sentBody).jsonObject
+        assertEquals(
+            19283,
+            body["playbackContext"]?.jsonObject?.get("contentPlaybackContext")
+                ?.jsonObject?.get("signatureTimestamp")?.jsonPrimitive?.content?.toInt(),
+        )
+    }
+
+    @Test fun `visitorData dipastikan sebelum resolve anonim`() = runBlocking {
+        var sentVisitorId: String? = null
+        val resolver = resolverFor(
+            { request ->
+                sentVisitorId = request.headers["X-Goog-Visitor-Id"]
+                okJson(playerOk(sixFormatsJson))
+            },
+            ensureVisitorData = { "VD_TEST_123" },
+        )
+        resolver.resolve("1RrF6Ee_io0", authState = PlaybackAuthState()).getOrThrow()
+        assertEquals("VD_TEST_123", sentVisitorId)
     }
 
     @Test fun `menggabungkan formats dan adaptiveFormats`() = runBlocking {
@@ -234,6 +353,41 @@ class DirectStreamResolverTest {
         // ANDROID + WEB_REMIX + MWEB semua LOGIN_REQUIRED → yang dilaporkan
         // kegagalan ANDROID (klien utama).
         assertEquals(StreamFailure.LoginRequired("Login"), failureOf(resolver.resolve("1RrF6Ee_io0")))
+    }
+
+    @Test fun `klien ter-blacklist dilewati, resolve pindah ke klien berikut`() = runBlocking {
+        val fingerprint = PlaybackAuthState().streamCacheFingerprint
+        val blacklist = FailedStreamClients()
+        blacklist.markFailed("1RrF6Ee_io0", FailedStreamClients.clientKey(YouTubeClient.ANDROID), 403, fingerprint)
+        val seen = mutableListOf<String>()
+        val resolver = resolverFor({ request ->
+            seen += clientNameOf(request)
+            okJson(playerOk(sixFormatsJson))
+        }, failedStreamClients = blacklist)
+        val direct = resolver.resolve("1RrF6Ee_io0").getOrThrow()
+        assertEquals(listOf("WEB_REMIX"), seen, "ANDROID ter-blacklist dilewati")
+        assertEquals("WEB_REMIX", direct.resolvedClient)
+        assertEquals(251, direct.itag)
+    }
+
+    @Test fun `semua klien ter-blacklist mengembalikan AllClientsFailed tanpa memanggil player`() = runBlocking {
+        val fingerprint = PlaybackAuthState().streamCacheFingerprint
+        val blacklist = FailedStreamClients()
+        for (client in DirectStreamResolver.DEFAULT_CLIENTS) {
+            blacklist.markFailed("1RrF6Ee_io0", FailedStreamClients.clientKey(client), 403, fingerprint)
+        }
+        var calls = 0
+        val resolver = resolverFor({ _ ->
+            calls++
+            okJson(playerOk(sixFormatsJson))
+        }, failedStreamClients = blacklist)
+        val failure = failureOf(resolver.resolve("1RrF6Ee_io0"))
+        assertTrue(failure is StreamFailure.AllClientsFailed, "harus AllClientsFailed, bukan ${failure?.javaClass?.simpleName}")
+        assertEquals(0, calls, "tidak ada klien yang dicoba")
+        assertEquals(
+            DirectStreamResolver.DEFAULT_CLIENTS.map { FailedStreamClients.clientKey(it) }.toSet(),
+            (failure as StreamFailure.AllClientsFailed).failedClients,
+        )
     }
 
     @Test fun `quality low high auto memilih itag yang benar dari respons player`() = runBlocking {
@@ -390,5 +544,85 @@ class DirectStreamResolverTest {
         // Tanpa flag, respons yang sama memberi opus 251.
         val biasa = resolver.resolve("1RrF6Ee_io0").getOrThrow()
         assertEquals(251, biasa.itag)
+    }
+
+    // ---- Tahap 8 (C2-23/25): tangga kualitas + metered ----
+
+    @Test fun `tangga kualitas turun bila tier Auto gagal Unplayable lalu High sukses`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                if (calls <= 3) {
+                    // Tier Auto: ketiga klien menjawab UNPLAYABLE.
+                    okJson("""{"playabilityStatus":{"status":"UNPLAYABLE","reason":"tidak bisa"}}""")
+                } else {
+                    okJson(playerOk(sixFormatsJson))
+                }
+            },
+        )
+        val direct = resolver.resolve("1RrF6Ee_io0", MusicQuality.Auto).getOrThrow()
+        assertEquals(249, direct.itag, "tier High memilih opus tengah 249")
+        assertEquals(4, calls, "3 panggilan tier Auto + 1 panggilan tier High")
+    }
+
+    @Test fun `tangga berhenti bila semua tier gagal kembalikan kegagalan terakhir`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                okJson("""{"playabilityStatus":{"status":"UNPLAYABLE","reason":"tidak bisa"}}""")
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertTrue(failureOf(resolver.resolve("1RrF6Ee_io0", MusicQuality.Auto)) is StreamFailure.Unplayable)
+        // 3 tier (Auto, High, Low) x 1 klien = 3 panggilan, tanpa retry.
+        assertEquals(3, calls)
+    }
+
+    @Test fun `LOGIN_REQUIRED tidak menuruni tangga kualitas`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                okJson("""{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Login"}}""")
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertTrue(failureOf(resolver.resolve("1RrF6Ee_io0", MusicQuality.Auto)) is StreamFailure.LoginRequired)
+        // Hanya retry LOGIN_REQUIRED (3x), tanpa percobaan tier High/Low.
+        assertEquals(3, calls)
+    }
+
+    @Test fun `metered Auto langsung memilih tier High`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            { _ ->
+                calls++
+                okJson(playerOk(sixFormatsJson))
+            },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        val direct = resolver.resolve("1RrF6Ee_io0", MusicQuality.Auto, networkMetered = true).getOrThrow()
+        assertEquals(249, direct.itag, "Auto metered = High, opus tengah 249")
+        assertEquals(1, calls, "langsung tier High, tanpa percobaan Auto")
+    }
+
+    @Test fun `playbackTrackingUrl diekstrak dari respons player`() = runBlocking {
+        val tracking = "https://www.youtube.com/api/stats/watchtime?ns=yt&ver=2"
+        val body = """{"playabilityStatus":{"status":"OK"},"playbackTracking":{"videostatsPlaybackUrl":{"baseUrl":"$tracking"}},"streamingData":{"expiresInSeconds":"21540","formats":[],"adaptiveFormats":[$sixFormatsJson]}}"""
+        val resolver = resolverFor(
+            { _ -> okJson(body) },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertEquals(tracking, resolver.resolve("1RrF6Ee_io0").getOrThrow().playbackTrackingUrl)
+    }
+
+    @Test fun `playbackTrackingUrl null bila respons tidak memuatnya`() = runBlocking {
+        val resolver = resolverFor(
+            { _ -> okJson(playerOk(sixFormatsJson)) },
+            clients = listOf(YouTubeClient.ANDROID),
+        )
+        assertNull(resolver.resolve("1RrF6Ee_io0").getOrThrow().playbackTrackingUrl)
     }
 }

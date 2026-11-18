@@ -61,13 +61,13 @@ class MusicViewModelGateTest {
         val calls = mutableMapOf<String, Int>()
         val gates = mutableMapOf<String, CompletableDeferred<DirectStream>>()
 
-        override suspend fun resolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): Result<DirectStream> {
+        override suspend fun resolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean, pinnedItag: Int?, networkMetered: Boolean): Result<DirectStream> {
             calls[videoId] = (calls[videoId] ?: 0) + 1
             gates.getOrPut(videoId) { CompletableDeferred() }.await() // audio tidak pernah siap
             error("tidak terjangkau")
         }
 
-        override suspend fun tryResolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): DirectStream? {
+        override suspend fun tryResolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean, pinnedItag: Int?, networkMetered: Boolean): DirectStream? {
             calls[videoId] = (calls[videoId] ?: 0) + 1
             gates.getOrPut(videoId) { CompletableDeferred() }.await()
             error("tidak terjangkau")

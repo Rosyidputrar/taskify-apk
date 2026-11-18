@@ -1,50 +1,73 @@
 package com.rosyidputrar.taskify.core.media
 
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.rosyidputrar.taskify.core.innertube.SharedHttpClient
 import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
+import com.rosyidputrar.taskify.core.media.youtube.streamRequestHeaders
 import okhttp3.OkHttpClient
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Header HTTP untuk permintaan media ExoPlayer ke `*.googlevideo.com`,
  * disamakan dengan ArchiveTune (`morideobfuscator/javascript/src/index.js`,
  * header media request): `Origin` + `Referer` + `User-Agent` web + `Accept`.
  *
- * Sebelumnya ExoPlayer memakai `DefaultHttpDataSource` bawaan tanpa header
- * apa pun (User-Agent `ExoPlayerLib/...`, tanpa `Origin`/`Referer`) — satu
- * dari sedikit perbedaan nyata dengan ArchiveTune pada jalur yang sama.
+ * Sejak porting penuh ArchiveTune (Tahap 1, PLAN.md §C.1) header TIDAK
+ * lagi satu nilai tetap untuk semua URL: [headersForUrl] menurunkan
+ * User-Agent/Origin/Referer dari param `c` di URL stream itu sendiri
+ * (ArchiveTune `StreamClientUtils.resolveRequestProfile`). URL `c=ANDROID`
+ * mendapat UA aplikasi `com.google.android.youtube/... gzip` TANPA
+ * Origin/Referer; URL `c=WEB_REMIX` mendapat Firefox + Origin
+ * `music.youtube.com`; URL `c=WEB_CREATOR`/`WEB` mendapat Chrome 141 +
+ * Origin `www.youtube.com`. [DEFAULT] dipertahankan sebagai fallback untuk
+ * URL tanpa param `c` (mis. siaran langsung) dan untuk kompatibilitas tes.
  *
  * TANPA cookie: ArchiveTune membuktikan cookie media tidak wajib (URL
  * di-resolve ber-cookie, diambil tanpa cookie, tetap jalan). Jangan tambah
  * cookie di sini — itu permukaan baru tanpa bukti.
  *
- * `User-Agent` memakai konstanta yang sama dengan profil `WEB_REMIX`
- * ([YouTubeClient.USER_AGENT_WEB_REMIX], Firefox 140) — satu sumber
- * kebenaran dengan `ytClient`, bukan salinan string lepas.
- *
  * Transport media = OkHttp, klien yang SAMA dengan InnerTube (perbaikan
- * 403 ikatan IP, 18 Nov 2026): [createDataSourceFactory] memakai
- * [SharedHttpClient.client] — klien yang sama dengan yang dipakai engine
- * Ktor `InnerTube` — lewat [OkHttpDataSource.Factory]. Sebelumnya media
- * memakai `DefaultHttpDataSource` (`HttpURLConnection`), stack yang
- * berbeda total dari Ktor/OkHttp: DNS, connection pool, dan keluarga IP
- * sumber bisa berbeda antara request `player` (yang mengikat URL ke IP
- * lewat param `ip`) dan request media, sehingga googlevideo menolak
- * dengan 403 di ponsel dual-stack + CGNAT. Satu klien bersama menutup
- * celah itu (pola ArchiveTune, yang memakai `OkHttpDataSource` untuk media).
+ * 403 ikatan IP, 18 Nov 2026): factory memakai [SharedHttpClient.client]
+ * — klien yang sama dengan yang dipakai engine Ktor `InnerTube` — lewat
+ * [OkHttpDataSource.Factory]. Sebelumnya media memakai
+ * `DefaultHttpDataSource` (`HttpURLConnection`), stack yang berbeda total
+ * dari Ktor/OkHttp: DNS, connection pool, dan keluarga IP sumber bisa
+ * berbeda antara request `player` (yang mengikat URL ke IP lewat param
+ * `ip`) dan request media, sehingga googlevideo menolak dengan 403 di
+ * ponsel dual-stack + CGNAT. Satu klien bersama menutup celah itu (pola
+ * ArchiveTune, yang memakai `OkHttpDataSource` untuk media).
+ *
+ * Request pertama SELALU membawa `Range` berbatas (ArchiveTune
+ * `ChunkedDataSource`, chunk 8 MB): [createResolvingDataSourceFactory]
+ * membungkus OkHttpDataSource dengan [ChunkedDataSource] di dalam
+ * [ResolvingDataSource] yang mengisi `length` DataSpec dari
+ * `contentLength` hasil resolve ([ResolvedStreamRegistry]) dan header
+ * per-URL. Tanpa length, `ProgressiveMediaPeriod` membuka DataSpec dengan
+ * length UNSET → `HttpUtil.buildRangeRequestHeader(0, -1)` null → GET
+ * penuh tanpa `Range` → googlevideo 403 0 byte pada URL ANDROID
+ * (INVESTIGASI-B §2.5, terbukti dari bytecode media3 1.11.1).
  */
 object MediaRequestHeaders {
     const val ORIGIN = "https://music.youtube.com"
     const val REFERER = "https://music.youtube.com/"
 
-    /** Header media request — tanpa `Cookie` (sengaja, lihat KDoc di atas). */
+    /** Panjang chunk media ArchiveTune (`MusicService.CHUNK_LENGTH`): 8 MB. */
+    const val CHUNK_LENGTH = 8 * 1024 * 1024L
+
+    /** Header media request — fallback untuk URL tanpa param `c`; tanpa `Cookie` (sengaja, lihat KDoc di atas). */
     val DEFAULT: Map<String, String> = mapOf(
         "Origin" to ORIGIN,
         "Referer" to REFERER,
         "User-Agent" to YouTubeClient.USER_AGENT_WEB_REMIX,
         "Accept" to "*/*",
     )
+
+    /** Header media untuk satu URL stream: per-`c` bila ada, [DEFAULT] bila URL tanpa param `c`. */
+    fun headersForUrl(url: String): Map<String, String> = streamRequestHeaders(url) ?: DEFAULT
 
     /**
      * Factory `HttpDataSource` ExoPlayer dengan header di atas, di atas
@@ -59,4 +82,88 @@ object MediaRequestHeaders {
         OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(YouTubeClient.USER_AGENT_WEB_REMIX)
             .setDefaultRequestProperties(DEFAULT)
+
+    /**
+     * Factory DataSource pemutar (yang dipakai [MusicPlayer]): lapisan
+     * ArchiveTune penuh — [ResolvingDataSource] (isi `length` + header
+     * per-URL saat `open()`) → [ChunkedDataSource] (pecah jadi chunk
+     * 8 MB, tiap chunk satu request `Range` berbatas) →
+     * [OkHttpDataSource] di atas klien bersama.
+     *
+     * OkHttp lapis dalam sengaja TANPA `setUserAgent`/default properties:
+     * UA/Origin/Referer datang dari DataSpec hasil resolve (per-URL),
+     * supaya tidak ada dua nilai UA yang saling menimpa di wire.
+     * `contentLength` dibaca dari [ResolvedStreamRegistry] yang diisi
+     * pemutar sebelum `setMediaItem`; URL yang tidak terdaftar tetap
+     * mendapat header per-`c` tapi tanpa length (perilaku lama).
+     */
+    fun createResolvingDataSourceFactory(
+        okHttpClient: OkHttpClient = SharedHttpClient.client,
+    ): DataSource.Factory {
+        val httpFactory = OkHttpDataSource.Factory(okHttpClient)
+            .setDefaultRequestProperties(mapOf("Accept" to "*/*"))
+        val chunkedFactory = DataSource.Factory { ChunkedDataSource(httpFactory.createDataSource(), CHUNK_LENGTH) }
+        return ResolvingDataSource.Factory(chunkedFactory, ResolvingDataSource.Resolver { dataSpec ->
+            resolvePlaybackDataSpec(dataSpec)
+        })
+    }
+
+    /**
+     * Resolve satu DataSpec media ala ArchiveTune
+     * (`MusicService.resolvePlaybackDataSpec`): header dari profil `c` URL
+     * + `length` = sisa `contentLength` dari posisi buka. Murni (tanpa
+     * jaringan) supaya bisa diuji di JVM.
+     */
+    fun resolvePlaybackDataSpec(dataSpec: DataSpec): DataSpec {
+        val url = dataSpec.uri.toString()
+        // Header dari resolver (youtubei.js) lebih utama daripada profil `c`
+        // URL; tanpa itu, header profil `c` (Tahap 1).
+        val headers = ResolvedStreamRegistry.headers(url) ?: headersForUrl(url)
+        val contentLength = ResolvedStreamRegistry.contentLength(url)
+        val length = contentLength
+            ?.let { it - dataSpec.position }
+            ?.takeIf { it > 0 }
+            ?: dataSpec.length
+        return dataSpec.buildUpon()
+            .setHttpRequestHeaders(headers)
+            .setLength(length)
+            .build()
+    }
+}
+
+/**
+ * `contentLength` hasil resolve per URL stream (in-memory, per sesi).
+ * Diisi pemutar sebelum `setMediaItem` supaya [MediaRequestHeaders]
+ * bisa mengisi `length` DataSpec — tanpa ini request pertama tidak
+ * membawa `Range`. Kunci = URL lengkap; nilai = panjang isi dalam byte.
+ * Entri tidak dihapus otomatis (URL berumur ~6 jam; jumlah lagu per sesi
+ * kecil) — [clear] dipakai saat pemutar di-`wipe()`.
+ */
+object ResolvedStreamRegistry {
+    private val lengths = ConcurrentHashMap<String, Long>()
+    private val headers = ConcurrentHashMap<String, Map<String, String>>()
+
+    fun put(url: String, contentLength: Long) {
+        if (url.isNotBlank() && contentLength > 0) lengths[url] = contentLength
+    }
+
+    /**
+     * Daftarkan contentLength + header media dari resolver (Tahap 3):
+     * header dari youtubei.js lebih utama daripada profil `c` URL, karena
+     * resolver-lah yang tahu konteks (klien/cookie/PoToken) yang menghasilkan
+     * URL itu (ala ArchiveTune `resolvePlaybackDataSpec`).
+     */
+    fun put(url: String, contentLength: Long, requestHeaders: Map<String, String>) {
+        put(url, contentLength)
+        if (url.isNotBlank() && requestHeaders.isNotEmpty()) headers[url] = requestHeaders
+    }
+
+    fun contentLength(url: String): Long? = lengths[url]
+
+    fun headers(url: String): Map<String, String>? = headers[url]
+
+    fun clear() {
+        lengths.clear()
+        headers.clear()
+    }
 }

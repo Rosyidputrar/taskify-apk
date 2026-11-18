@@ -24,6 +24,14 @@ sealed interface StreamFailure {
     /** Endpoint `player` menjawab `LOGIN_REQUIRED` (flaky per permintaan — di-retry terbatas, lihat `DirectStreamResolver`). */
     data class LoginRequired(val reason: String = "") : StreamFailure
 
+    /**
+     * Konteks login pemutaran tidak lengkap (C2-12, ArchiveTune
+     * `InvalidPlaybackLoginContextException`): cookie login ada tapi
+     * `dataSyncId` kosong — sesi setengah jalan harus DITOLAK, bukan
+     * dipakai. Pemutar menampilkan prompt masuk lagi.
+     */
+    data object InvalidLoginContext : StreamFailure
+
     /** `playabilityStatus` bukan OK dan bukan `LOGIN_REQUIRED`. */
     data class Unplayable(val reason: String) : StreamFailure
 
@@ -41,6 +49,24 @@ sealed interface StreamFailure {
 
     /** Respons `player` bukan JSON atau bukan objek. */
     data object InvalidResponse : StreamFailure
+
+    /**
+     * YouTube meminta PoToken/BotGuard (Tahap 3/5, `YoutubeiFailureKind.PO_TOKEN`):
+     * bukan sesi habis dan bukan format hilang — pemutaran butuh verifikasi
+     * tambahan. Pemulihan penuh (mint token) ada di Tahap 5/7; sampai saat
+     * itu pesan ini yang tampil, bukan "sesi berakhir" yang menyesatkan.
+     */
+    data class BotDetection(val message: String = "") : StreamFailure
+
+    /**
+     * Semua klien stream gagal / ter-blacklist sehingga tidak ada klien
+     * yang bisa dicoba (Tahap 7, C2-27 — ArchiveTune
+     * `BadStreamPlayerResponseException`): [failedClients] berisi kunci
+     * `KLIEN@VERSI` yang gagal atau sedang di-blacklist. Pemulihan
+     * lapis berikutnya: segarkan sesi (visitorData + PoToken baru) lalu
+     * coba sekali lagi.
+     */
+    data class AllClientsFailed(val failedClients: Set<String> = emptySet()) : StreamFailure
 }
 
 /**

@@ -34,18 +34,23 @@ fun streamFailureRawDetail(failure: StreamFailure?, cause: Throwable?): String? 
     val detail = buildRawDetail(
         "jenis" to when (failure) {
             is StreamFailure.LoginRequired -> "LoginRequired"
+            StreamFailure.InvalidLoginContext -> "InvalidLoginContext"
             is StreamFailure.Unplayable -> "Unplayable"
             StreamFailure.NoFormat -> "NoFormat"
             is StreamFailure.Http -> "Http"
             StreamFailure.Timeout -> "Timeout"
             is StreamFailure.Network -> "Network"
             StreamFailure.InvalidResponse -> "InvalidResponse"
+            is StreamFailure.BotDetection -> "BotDetection"
+            is StreamFailure.AllClientsFailed -> "AllClientsFailed"
             null -> null
         },
         "status" to (failure as? StreamFailure.Http)?.status?.toString(),
         "alasan" to when (failure) {
             is StreamFailure.LoginRequired -> failure.reason
             is StreamFailure.Unplayable -> failure.reason
+            is StreamFailure.BotDetection -> failure.message
+            is StreamFailure.AllClientsFailed -> failure.failedClients.sorted().joinToString(", ").takeIf { it.isNotEmpty() }
             else -> null
         }?.let(::scrubUrls),
         "pesan" to (failure as? StreamFailure.Network)?.message?.let(::scrubUrls),

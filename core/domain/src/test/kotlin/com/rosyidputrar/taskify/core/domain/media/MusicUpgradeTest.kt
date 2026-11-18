@@ -226,11 +226,20 @@ class MusicUpgradeTest {
         assertTrue(SponsorBlock.muted(segs, 105.0))
     }
 
-    @Test fun loudnessOnlyTurnsDown() {
+    @Test fun loudnessFollowsArchiveTuneNormalization() {
+        // Tahap 8 (C2-26), paritas ArchiveTune `calculateAudioNormalizationFactor`:
+        // penguatan dibatasi +3 dB (faktor maks 1.414), pelemahan maks 0.25.
         assertEquals(1f, Loudness.gain(null))
-        assertEquals(1f, Loudness.gain(-6.0), "lagu pelan tidak dikeraskan (bisa pecah)")
+        assertEquals(1.414f, Loudness.gain(-6.0), 0.01f, "lagu pelan dikeraskan sampai +3 dB")
         assertEquals(0.647f, Loudness.gain(3.78), 0.01f)
-        assertEquals(0.1f, Loudness.gain(40.0))
+        assertEquals(0.25f, Loudness.gain(40.0))
+    }
+
+    @Test fun loudnessPerceptualWinsOverLoudnessDb() {
+        // `perceptualLoudnessDb` dipakai dulu bila ada; bila null, pakai loudnessDb.
+        assertEquals(0.647f, Loudness.gain(3.78, perceptualLoudnessDb = 3.78), 0.01f)
+        assertEquals(1.414f, Loudness.gain(10.0, perceptualLoudnessDb = -6.0), 0.01f)
+        assertEquals(0.647f, Loudness.gain(3.78, perceptualLoudnessDb = null), 0.01f)
     }
 
     @Test fun sleepTimerLabels() {

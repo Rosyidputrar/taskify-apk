@@ -60,9 +60,20 @@ data class PlayerBody(
     data class PlaybackContext(
         val contentPlaybackContext: ContentPlaybackContext,
     ) {
+        /**
+         * Konteks playback ArchiveTune (`PlayerBody.kt:28-34`): diisi
+         * penuh bila `signatureTimestamp` ada — `html5Preference` /
+         * `vis` / `splay` / `lactMilliseconds` adalah nilai tetap yang
+         * dikirim ArchiveTune; tanpa mereka badan `player` kita lebih
+         * miskin dari pembanding (C2-6).
+         */
         @Serializable
         data class ContentPlaybackContext(
             val signatureTimestamp: Int? = null,
+            val html5Preference: String = "HTML5_PREF_WANTS",
+            val vis: Int = 0,
+            val splay: Boolean = false,
+            val lactMilliseconds: String = "-1",
         )
     }
 

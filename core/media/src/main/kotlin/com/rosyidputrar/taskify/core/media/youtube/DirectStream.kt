@@ -23,9 +23,17 @@ data class DirectStream(
     val loudnessDb: Double?,
     /** Kekerasan perseptual dalam dB (hanya dari `playerConfig.audioConfig`). */
     val perceptualLoudnessDb: Double?,
+    /** Panjang isi audio dalam byte (`contentLength` format / `clen` URL); `null` = tidak diketahui. Dipakai mengisi `length` DataSpec supaya request media pertama membawa `Range` (porting ArchiveTune Tahap 1). */
+    val contentLength: Long? = null,
     /**
      * Nama klien InnerTube yang menghasilkan URL ini (`ANDROID`/`WEB_REMIX`/`MWEB`);
      * `null` = tidak dicatat. Diagnostik 403 (lihat `StreamSource.resolvedClient`).
      */
     val resolvedClient: String? = null,
+    /**
+     * URL telemetri putar (`playbackTracking.videostatsPlaybackUrl.baseUrl`
+     * dari respons `player`); `null` = tidak ada. Dipakai `registerPlayback`
+     * (Tahap 9, C2-21) untuk mencatat putar di riwayat YouTube — bukan URL audio.
+     */
+    val playbackTrackingUrl: String? = null,
 )

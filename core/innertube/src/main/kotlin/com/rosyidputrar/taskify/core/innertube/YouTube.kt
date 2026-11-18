@@ -48,6 +48,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.random.Random
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -372,6 +373,28 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
      * (tanpa subrequest tambahan). Bila `player` juga gagal, tidak ada
      * sumber metadata tersisa → gagal (fail closed, jangan karang data).
      */
+    /**
+     * Telemetri putar (Tahap 9, C2-21 — ArchiveTune `YouTube.kt:2198-2225`):
+     * GET ke URL `playbackTracking` dengan `cpn` acak 16 karakter (alfabet
+     * base64url ala AT). Mencatat putar di riwayat YouTube (bila login).
+     * Best-effort: gagal apa pun → `Result.failure`, pemanggil menelan.
+     */
+    open suspend fun registerPlayback(
+        playbackTracking: String,
+        playlistId: String? = null,
+        authState: PlaybackAuthState = innerTube.currentAuthState(),
+    ): Result<Unit> = runCatching {
+        val cpn = (1..16)
+            .map { CPN_ALPHABET[Random.Default.nextInt(0, CPN_ALPHABET.length)] }
+            .joinToString("")
+        innerTube.registerPlayback(
+            url = playbackTracking,
+            cpn = cpn,
+            playlistId = playlistId,
+            authState = authState,
+        )
+    }
+
     open suspend fun track(
         videoId: String,
         authState: PlaybackAuthState = innerTube.currentAuthState(),
@@ -463,6 +486,9 @@ open class YouTube(private val innerTube: InnerTube = InnerTube()) {
         const val DISCOVERY_NEW_RELEASES = "FEmusic_new_releases"
         const val DISCOVERY_MOODS = "FEmusic_moods_and_genres"
         const val DISCOVERY_MOOD_CATEGORY = "FEmusic_moods_and_genres_category"
+
+        /** Alfabet `cpn` telemetri putar (Tahap 9, C2-21 — AT `YouTube.registerPlayback`). */
+        const val CPN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 
         /** Batas tunggu probe loudness untuk `track()` — sama dengan Worker. */
         const val LOUDNESS_TIMEOUT_MS = 5_000L

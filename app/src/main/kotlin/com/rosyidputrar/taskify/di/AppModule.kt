@@ -48,7 +48,12 @@ import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer
+import com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.youtube.potoken.BotGuardTokenGenerator
 import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.youtube.SignatureTimestampProvider
 import com.rosyidputrar.taskify.core.innertube.YouTube
 import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
@@ -185,14 +190,48 @@ private val deviceModule = module {
     // SponsorBlock lewat fasad YouTubeMusicClient. MUSIC_API_URL tidak lagi
     // dipakai musik (secret GitHub-nya dipertahankan untuk rollback, lihat
     // AppConfig); Supabase tetap dipakai auth/database, bukan musik.
-    single { DirectStreamResolver() }
+    // Porting ArchiveTune Tahap 2 (C1-8, C2-13): resolver memakai penyedia
+    // signatureTimestamp (base.js) + memastikan visitorData siap sebelum
+    // resolve anonim. Tanpa keduanya perilaku sama seperti sebelumnya.
+    single { SignatureTimestampProvider() }
+    // Porting ArchiveTune Tahap 7 (C2-19): blacklist klien stream yang gagal.
+    single { FailedStreamClients() }
+    // Porting ArchiveTune Tahap 5 (C1-1..5): mesin mint PoToken BotGuard.
+    // initialize() sekali di sini (butuh context aplikasi untuk WebView).
+    single {
+        PoTokenEnsurer().also {
+            BotGuardTokenGenerator.initialize(androidContext())
+        }
+    }
+    single {
+        DirectStreamResolver(
+            signatureTimestampProvider = { client, videoId ->
+                get<SignatureTimestampProvider>().signatureTimestamp(client, videoId)
+            },
+            ensureVisitorData = { get<VisitorDataBootstrap>().ensureVisitorData() },
+            poTokenEnsurer = get(),
+            failedStreamClients = get(),
+        )
+    }
     single { SponsorBlockRepository() }
     single { LyricsRepository(youTube = get()) }
     single {
         YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
     }
+    // Porting ArchiveTune Tahap 3 (C1-6): resolver youtubei.js (QuickJS).
+    // Malas dibuat — QuickJS baru dibuat saat pertama resolve, bukan saat
+    // aplikasi start. PoToken dipastikan lewat ensurer Tahap 5.
+    single { YoutubeiStreamResolver(androidContext(), poTokenEnsurer = get()) }
     single {
-        MusicPlayer(androidContext(), get(), loginEvents = get<MusicLoginRepository>()).also { player ->
+        MusicPlayer(
+            androidContext(), get(), get(), loginEvents = get<MusicLoginRepository>(),
+            youtubeiResolver = get(),
+            failedStreamClients = get(),
+            poTokenEnsurer = get(),
+            refreshVisitorData = { get<VisitorDataBootstrap>().refreshVisitorData() },
+            // Tahap 9 (C2-21): telemetri putar best-effort saat lagu mulai berbunyi.
+            registerPlayback = { _, trackingUrl, auth -> get<YouTube>().registerPlayback(trackingUrl, authState = auth).isSuccess },
+        ).also { player ->
             // Pesan pemutar (lewati sponsor, pewaktu tidur) tampil sebagai snackbar aplikasi, sekali saja.
             get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }
         }

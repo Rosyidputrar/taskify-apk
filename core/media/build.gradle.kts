@@ -11,6 +11,7 @@ android {
 dependencies {
     api(projects.core.data)
     api(projects.core.innertube)
+    api(projects.core.youtubei)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.serialization.json)
@@ -19,6 +20,7 @@ dependencies {
     api(libs.androidx.media3.exoplayer)
     api(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.media3.database)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
 

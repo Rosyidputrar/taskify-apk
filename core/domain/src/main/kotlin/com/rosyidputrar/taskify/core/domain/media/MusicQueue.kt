@@ -61,6 +61,11 @@ data class StreamSource(
     val expiresAt: Long? = null,
     val loudnessDb: Double? = null,
     /**
+     * Kekerasan perseptual format ini (Tahap 8, C2-26): dipakai normalisasi
+     * SEBELUM `loudnessDb` (ArchiveTune `normalizationLoudnessDb`).
+     */
+    val perceptualLoudnessDb: Double? = null,
+    /**
      * Nama klien InnerTube yang menghasilkan URL ini (`ANDROID`/`WEB_REMIX`/`MWEB`);
      * `null` = tidak diketahui (mis. siaran langsung atau stream lama). Dipakai
      * diagnostik 403: tanpa ini tidak bisa dibedakan URL ANDROID dari WEB_REMIX.
@@ -68,6 +73,8 @@ data class StreamSource(
     val resolvedClient: String? = null,
     /** Sisa umur URL dalam detik dari `streamingData.expiresInSeconds`; `null` = hulu tidak memberinya. */
     val expiresInSeconds: Int? = null,
+    /** Panjang isi audio dalam byte (`contentLength` format / `clen` URL); `null` = tidak diketahui. Dipakai mengisi `length` DataSpec supaya request media pertama membawa `Range`. */
+    val contentLength: Long? = null,
     /** Waktu (epoch ms) URL ini di-resolve; `null` = tidak dicatat. Dipakai menghitung jeda resolve→putar. */
     val resolvedAtMs: Long? = null,
 ) {

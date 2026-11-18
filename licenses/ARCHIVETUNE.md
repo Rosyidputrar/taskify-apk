@@ -33,9 +33,31 @@ pertama, dengan catatan adaptasi tepat di bawahnya. Paket diubah dari
 | `feature/media/.../MusicLoginViewModel.kt` | `app/.../viewmodels/LoginViewModel.kt` (state Loading/Success/Error + guard cookie ganda; tanpa Hilt, tanpa `UpdateYouTubeLoginContextUseCase`; pesan error = `MusicLoginError.message` bahasa Indonesia) |
 | `feature/media/.../MusicLoginWebUtils.kt` | `app/.../ui/screens/LoginScreen.kt` (helper URL/cookie `YouTubeLoginWebViewClient` + `mergeYouTubeCookies`, ditulis ulang JVM-murni dengan `java.net.URI`) |
 
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiResolver.kt` | `morideobfuscator/.../youtubei/YoutubeiResolver.kt` (verbatim kecuali nama paket + nama thread) |
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiQuickJsWorker.kt` | `morideobfuscator/.../youtubei/YoutubeiQuickJsWorker.kt` (verbatim kecuali nama paket + nama thread + nama berkas debug `taskify-*.js`) |
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiHttpClient.kt` | `morideobfuscator/.../youtubei/YoutubeiHttpClient.kt` (verbatim kecuali nama paket) |
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiDiskCache.kt` | `morideobfuscator/.../youtubei/YoutubeiDiskCache.kt` (verbatim kecuali nama paket) |
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiModels.kt` | `morideobfuscator/.../youtubei/YoutubeiModels.kt` (verbatim kecuali nama paket) |
+| `core/youtubei/src/main/kotlin/.../youtubei/YoutubeiRequestAuthentication.kt` | `morideobfuscator/.../youtubei/YoutubeiRequestAuthentication.kt` (verbatim kecuali nama paket) |
+| `core/youtubei/src/main/assets/youtubei/youtubei.bundle.js` + `runtime-polyfills.js` | `morideobfuscator/src/main/assets/youtubei/*` (verbatim, md5 `c2342b8a...` / `46d1ba45...`; rebuild dari sumber terbukti setara fungsional, lihat `core/youtubei/README.md`) |
+| `core/youtubei/javascript/` (sumber bundle: `package.json`, `src/`, `scripts/`) | `morideobfuscator/javascript/` (verbatim, untuk rebuild bundle) |
+| `core/media/.../youtube/YoutubeiStreamResolver.kt` | fasad baru di atas `YoutubeiResolver` (pemetaan ke `DirectStream`/`StreamFailure` + fallback ke jalur direct; ditulis baru) |
+| `core/media/.../youtube/potoken/BotGuardTokenGenerator.kt` | `app/.../utils/potoken/BotGuardTokenGenerator.kt` (verbatim kecuali nama paket + Timber → Log + ArrayMap → LinkedHashMap + `Response.body` nullable OkHttp 4.12) |
+| `core/media/.../youtube/potoken/ChallengeParser.kt` | `app/.../utils/potoken/ChallengeParser.kt` (verbatim kecuali nama paket) |
+| `core/media/.../youtube/potoken/PoTokenResult.kt` | `app/.../utils/potoken/PoTokenResult.kt` (verbatim kecuali nama paket) |
+| `core/media/.../youtube/potoken/PoTokenException.kt` | `app/.../utils/potoken/PoTokenException.kt` (verbatim kecuali nama paket) |
+| `app/src/main/assets/po_token.html` | `app/src/main/assets/po_token.html` (verbatim, md5 `3a773db9...`) |
+| `core/media/.../youtube/PoTokenEnsurer.kt` | fasad baru (padanan `YTPlayerUtils.ensureYoutubeiPoTokensForPlayback` + pre-warm; ditulis baru, best-effort) |
+| `core/media/.../youtube/FailedStreamClients.kt` | `app/.../utils/YTPlayerUtils.kt` (`markStreamClientFailed` / `isStreamClientTemporarilyBlocked` / `buildFailedClientKey` + konstanta; `YouTube.currentPlaybackAuthState()` diganti parameter fingerprint eksplisit) |
+| `core/media/.../youtube/PlaybackStreamRecoveryTracker.kt` | `app/.../playback/PlaybackStreamRecoveryTracker.kt` (verbatim kecuali paket + metode tambahan `reset()` — percobaan putar baru mendapat jatah segar, lihat KDoc) |
+| `core/media/.../MusicPlayer.kt` (pemulihan galat Tahap 7) | `app/.../playback/MusicService.kt` (`handlePlaybackError` / `retryPlaybackAfterStreamFailure` / `capturePlaybackRecoverySnapshot` / `isTransientNetworkFailure` / `isRetryableRemoteParserFailure` / `isBotDetectionError`) + `YTPlayerUtils.recoverFromBadStreamPlayerResponse` (diadaptasi ke state machine `MusicQueue`; tanpa auto-resume — URL baru di-stage, posisi dipakai saat putar berikut) |
+| `core/innertube/.../InnerTube.kt` (`registerPlayback` + konstanta telemetri; Tahap 9) | `core/.../innertube/InnerTube.kt:409-431` (`registerPlayback` + `ytPlaybackTrackingClient` + `PLAYBACK_TELEMETRY_*`; `ytClient` dipakai ulang dengan override Accept-Language/Cache-Control) |
+| `core/innertube/.../YouTube.kt` (`registerPlayback` + `CPN_ALPHABET`; Tahap 9) | `core/.../innertube/YouTube.kt:2198-2225` (generasi `cpn` 16 karakter; tanpa pencatatan riwayat lokal) |
+| `core/media/.../MusicPlayer.kt` (telemetri putar Tahap 9) | `app/.../playback/MusicService.kt:6879,6938-7010` (`registerRemotePlaybackHistory` + cache URL tracking per lagu; diadaptasi: dipicu saat lagu mulai berbunyi, gagal = URL dibuang tanpa refresh metadata) |
+
 Yang secara sadar TIDAK disalin: `NetworkGatekeeper.kt` (kill-switch
-verifikasi build — dilarang PLAN A.9), mesin PoToken/BotGuard, resolver
-QuickJS/`youtubei.js`, dan seluruh parser `pages/*` ArchiveTune.
+verifikasi build — dilarang PLAN A.9) dan seluruh parser `pages/*`
+ArchiveTune.
 
 ## File yang ditulis baru (bukan turunan ArchiveTune)
 

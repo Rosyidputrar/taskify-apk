@@ -51,12 +51,12 @@ class MusicQueueFromSearchTest {
     }
 
     private inner class FakeResolver : DirectStreamResolver() {
-        override suspend fun resolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): Result<DirectStream> {
+        override suspend fun resolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean, pinnedItag: Int?, networkMetered: Boolean): Result<DirectStream> {
             CompletableDeferred<DirectStream>().await() // audio tidak pernah siap di tes ini
             error("tidak terjangkau")
         }
 
-        override suspend fun tryResolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): DirectStream? {
+        override suspend fun tryResolve(videoId: String, quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean, pinnedItag: Int?, networkMetered: Boolean): DirectStream? {
             CompletableDeferred<DirectStream>().await()
             error("tidak terjangkau")
         }
