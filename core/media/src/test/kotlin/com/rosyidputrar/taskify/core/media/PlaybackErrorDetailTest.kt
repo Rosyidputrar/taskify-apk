@@ -8,6 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -151,6 +152,85 @@ class PlaybackErrorDetailTest {
         assertTrue(detail.contains("paramUrl: tidak diketahui"), detail)
         assertTrue(detail.contains("jedaResolveKePutarMs: tidak diketahui"), detail)
         assertTrue(detail.contains("expiresInSeconds: tidak diketahui"), detail)
+    }
+
+    @Test fun lastAttemptDipakaiBilaStreamTidakDiketahui() {
+        // Agen C (INVESTIGASI-C Jalur A): galat kedua setelah state
+        // dibersihkan — diagnostik percobaan terakhir mengisi semua field.
+        val last = LastStreamAttempt(
+            videoId = videoId, itag = 251, mimeType = "audio/webm; codecs=\"opus\"",
+            resolvedClient = "WEB_CREATOR", expiresInSeconds = 21524,
+            resolveToPlayMs = 2, host = "rr1---sn-cp1oxu-jb3ez.googlevideo.com",
+            paramUrl = "n: ada, pot: ada, sig: ada, expire: ada, ip: ada",
+        )
+        val detail = exception(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "Response code: 403")
+            .toRawDetail(videoId, null, null, lastAttempt = last)
+        assertTrue(detail.contains("format: itag 251 (audio/webm; codecs=\"opus\")"), detail)
+        assertTrue(detail.contains("host: rr1---sn-cp1oxu-jb3ez.googlevideo.com"), detail)
+        assertTrue(detail.contains("klien: WEB_CREATOR"), detail)
+        assertTrue(detail.contains("paramUrl: n: ada, pot: ada, sig: ada, expire: ada, ip: ada"), detail)
+        assertTrue(detail.contains("jedaResolveKePutarMs: 2"), detail)
+        assertTrue(detail.contains("expiresInSeconds: 21524"), detail)
+        assertTrue(detail.contains("diagnostikDari: percobaan terakhir"), detail)
+    }
+
+    @Test fun lastAttemptTidakMenimpaStreamHidup() {
+        // Stream hidup selalu menang; percobaan terakhir hanya fallback.
+        val hidup = StreamSource(
+            StreamSource.SOURCE_DIRECT, "audio/webm; codecs=\"opus\"", 251,
+            resolvedClient = "ANDROID", expiresInSeconds = 21540,
+        )
+        val last = LastStreamAttempt(
+            videoId = videoId, itag = 140, mimeType = "audio/mp4",
+            resolvedClient = "WEB_CREATOR", expiresInSeconds = 1,
+            resolveToPlayMs = 999, host = "rr-lama.test",
+            paramUrl = "n: tidak ada, pot: tidak ada, sig: tidak ada, expire: tidak ada, ip: tidak ada",
+        )
+        val detail = exception(
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+            "Response code: 403",
+        ).toRawDetail(videoId, hidup, streamUrl, resolveToPlayMs = 1234, lastAttempt = last)
+        assertTrue(detail.contains("format: itag 251 (audio/webm; codecs=\"opus\")"), detail)
+        assertTrue(detail.contains("klien: ANDROID"), detail)
+        assertTrue(detail.contains("jedaResolveKePutarMs: 1234"), detail)
+        assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
+        assertFalse(detail.contains("diagnostikDari: percobaan terakhir"), detail)
+        assertFalse(detail.contains("WEB_CREATOR"), detail)
+        assertFalse(detail.contains("rr-lama.test"), detail)
+    }
+
+    @Test fun lastAttemptLaguLainDiabaikan() {
+        val last = LastStreamAttempt(videoId = "video-lain", resolvedClient = "WEB_CREATOR")
+        val detail = exception(PlaybackException.ERROR_CODE_UNSPECIFIED, "Tidak diketahui.")
+            .toRawDetail(videoId, null, null, lastAttempt = last)
+        assertTrue(detail.contains("klien: tidak diketahui"), detail)
+        assertFalse(detail.contains("WEB_CREATOR"), detail)
+    }
+
+    @Test fun klienGagalHanyaTampilBilaAda() {
+        val detail = exception(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "Response code: 403")
+            .toRawDetail(videoId, opusStream, streamUrl, failedClients = setOf("WEB_CREATOR@1.0", "ANDROID@21.26.364"))
+        assertTrue(detail.contains("klienGagal: ANDROID@21.26.364, WEB_CREATOR@1.0"), detail)
+        val tanpa = exception(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "Response code: 403")
+            .toRawDetail(videoId, opusStream, streamUrl)
+        assertFalse(tanpa.contains("klienGagal"), tanpa)
+    }
+
+    @Test fun formatLastAttemptDiagnosticsMembawaEnamBaris() {
+        val last = LastStreamAttempt.from(
+            videoId, opusStream, streamUrl, resolveToPlayMs = 2,
+        )
+        val block = formatLastAttemptDiagnostics(last) ?: ""
+        assertTrue(block.contains("format: itag 251 (audio/webm; codecs=\"opus\")"), block)
+        assertTrue(block.contains("host: rr2---sn-a5mekn7z.googlevideo.com"), block)
+        assertTrue(block.contains("klien: tidak diketahui"), block)
+        assertTrue(block.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada, ip: ada"), block)
+        assertTrue(block.contains("jedaResolveKePutarMs: 2"), block)
+        assertTrue(block.contains("expiresInSeconds: tidak diketahui"), block)
+        assertTrue(block.contains("diagnostikDari: percobaan terakhir"), block)
+        assertFalse(block.contains("RAHASIA"), block)
+        assertFalse(block.contains("203.0.113.7"), block)
+        assertNull(formatLastAttemptDiagnostics(null))
     }
 
     @Test fun httpStatusCodeReads403FromCauseChain() {

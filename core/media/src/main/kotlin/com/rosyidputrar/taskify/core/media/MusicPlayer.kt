@@ -160,6 +160,15 @@ class MusicPlayer(
     private var loadedAtMs: Long = 0
     /** Sekali-per-lagu: jatah pemulihan galat putar (Tahap 7, C2-19 — ArchiveTune `PlaybackStreamRecoveryTracker`). */
     private val recoveryTracker = PlaybackStreamRecoveryTracker()
+    /**
+     * Diagnostik stream terakhir yang gagal diputar (Agen C, INVESTIGASI-C):
+     * dicatat di [handlePlayerError] selagi stream/URL masih ada di state,
+     * dipakai sebagai fallback bila galat berikut (atau galat resolve
+     * berikut) datang setelah state dibersihkan. Hanya berisi host, nama
+     * param, itag/mime/klien/angka — tanpa URL lengkap, cookie, atau token.
+     * Dibersihkan saat logout ([wipe]).
+     */
+    private var lastFailedStreamAttempt: LastStreamAttempt? = null
     private var recoveryJob: Job? = null
     /** URL telemetri putar per lagu (Tahap 9, C2-21), dari hasil resolve; dibersihkan di `wipe()`. */
     private val playbackTrackingUrls = mutableMapOf<String, String>()
@@ -196,9 +205,9 @@ class MusicPlayer(
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(
-                        androidx.media3.datasource.cache.CacheDataSource.Factory()
-                            .setCache(mediaCache)
-                            .setUpstreamDataSourceFactory(MediaRequestHeaders.createResolvingDataSourceFactory()),
+                        // Wiring lengkap ada di MediaRequestHeaders
+                        // (dipakai juga wire test, supaya tidak melenceng).
+                        MediaRequestHeaders.createPlayerDataSourceFactory(mediaCache),
                     ),
             )
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
@@ -305,10 +314,21 @@ class MusicPlayer(
         // Jeda resolve→putar: dari waktu resolve dicatat di StreamSource
         // sampai URL ini mulai dimuat. `null` = tidak dicatat.
         val resolveToPlayMs = stream?.resolvedAtMs?.let { resolved -> loadedAtMs.takeIf { it > 0 }?.minus(resolved) }
+        // Diagnostik percobaan terakhir (Agen C, INVESTIGASI-C): catat
+        // stream/URL yang sedang gagal SELAGI masih ada di state — reducer
+        // PlaybackFailed membuangnya, jadi galat berikut (atau galat resolve
+        // berikut) tidak lagi punya stream untuk dilaporkan. Pemulihan di
+        // bawah tidak berubah; ini hanya pengingat diagnostik.
+        LastStreamAttempt.from(song.videoId, stream, url, resolveToPlayMs)?.let { lastFailedStreamAttempt = it }
+        // Klien yang sudah gagal untuk lagu ini (blacklist Tahap 7):
+        // ringkasan singkat untuk baris `klienGagal` di detail mentah.
+        val failedClients = failedStreamClients.blockedClientKeys(song.videoId, authState().streamCacheFingerprint)
         // Detail mentah disusun SEBELUM dispatch: reducer PlaybackFailed
         // membuang URL/stream lagu yang gagal, jadi format/host harus
-        // dibaca dari state sekarang (bukan sesudahnya).
-        val rawDetail = error.toRawDetail(song.videoId, stream, url, resolveToPlayMs)
+        // dibaca dari state sekarang (bukan sesudahnya). Bila state sudah
+        // bersih (galat kedua untuk item yang sama), `lastAttempt` di atas
+        // yang mengisi field diagnostik — bukan "tidak diketahui".
+        val rawDetail = error.toRawDetail(song.videoId, stream, url, resolveToPlayMs, lastFailedStreamAttempt, failedClients)
         val httpStatus = error.httpStatusCode()
         // Posisi ditangkap SEBELUM loadedId dibersihkan di bawah
         // (`captureRecoveryPositionMs` mengembalikan 0 bila tidak ada
@@ -663,6 +683,21 @@ class MusicPlayer(
         contentLength = contentLength,
     )
 
+    /**
+     * Detail mentah galat resolve + diagnostik percobaan terakhir lagu ini
+     * (Agen C, INVESTIGASI-C Jalur B): galat resolve (`AllClientsFailed`
+     * dkk.) dibangun tanpa `DirectStream`, jadi detailnya tidak punya baris
+     * diagnostik stream — blok percobaan terakhir ditempel supaya error
+     * akhir tetap membawa klien/paramUrl/jeda/expires/host/itag percobaan
+     * yang gagal diputar. Bila belum pernah ada percobaan putar untuk lagu
+     * ini, detail dasar dikembalikan apa adanya.
+     */
+    private fun resolveFailureRawDetail(base: String?, videoId: String): String? {
+        val attempt = lastFailedStreamAttempt?.takeIf { it.videoId == videoId } ?: return base
+        val block = formatLastAttemptDiagnostics(attempt) ?: return base
+        return if (base.isNullOrBlank()) block else "$base\n$block"
+    }
+
     /** Pesan galat yang jelas untuk tiap kegagalan resolve (PLAN G.4): bukan retry tanpa akhir. */
     private fun streamErrorMessage(failure: StreamFailure): String = when (failure) {
         is StreamFailure.LoginRequired -> "Audio tidak bisa dimuat dari YouTube (login diperlukan)."
@@ -772,8 +807,11 @@ class MusicPlayer(
                         if (failure is StreamFailure.InvalidLoginContext) "Sesi login YouTube tidak lengkap. Masuk lagi."
                         else "Sesi login YouTube berakhir. Masuk lagi."
                     } else failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
-                    val rawDetail = if (failure != null) streamFailureRawDetail(failure, exception.cause)
-                        else musicErrorRawDetail(exception)
+                    val rawDetail = resolveFailureRawDetail(
+                        if (failure != null) streamFailureRawDetail(failure, exception.cause)
+                        else musicErrorRawDetail(exception),
+                        id,
+                    )
                     if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message, rawDetail))
                     return@launch
                 }
@@ -789,7 +827,7 @@ class MusicPlayer(
                 // Kegagalan komposisi track/stream di luar StreamFailure
                 // (mis. galat jaringan saat track()): detail mentah ikut
                 // dikirim supaya tampil di layar musik (Agen B).
-                if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio.", musicErrorRawDetail(e)))
+                if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio.", resolveFailureRawDetail(musicErrorRawDetail(e), id)))
             } finally {
                 // Keterangan yang belum datang (galat/batal) dilepas supaya bisa diambil lagi nanti.
                 if (!detailsDone && id in _state.value.detailsPending) dispatch(YtEvent.DetailsCancelled(id))
@@ -995,6 +1033,7 @@ class MusicPlayer(
         resolveCache.clear()
         playbackTrackingUrls.clear()
         playbackRegisteredFor = null
+        lastFailedStreamAttempt = null
         prefs.clear()
         savedKey = null
         _settings.value = MusicSettings()

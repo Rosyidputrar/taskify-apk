@@ -1096,4 +1096,93 @@ class MusicPlayerTest {
             Dispatchers.resetMain()
         }
     }
+
+    /**
+     * Agen C (INVESTIGASI-C Jalur A): galat pemutar KEDUA untuk item yang sama,
+     * setelah PlaybackFailed membuang URL/stream dari state — diagnostik
+     * percobaan terakhir (WEB_CREATOR) HARUS bertahan, bukan "tidak diketahui".
+     * Reproduksi error kedua di HP sir (18 Nov 19:29 WIB, videoId 7Xqon20TlH4).
+     */
+    @Test fun galatPutarKeduaSetelahStateDibersihkanTetapMembawaDiagnostik() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            var calls = 0
+            val url1 = "https://rr.test/${a.videoId}?c=WEB_CREATOR&cver=1.0&n=abc&pot=tok&sig=S1&expire=1893000000&ip=203.0.113.7"
+            fake.streamSupplier = { _, _ ->
+                calls++
+                if (calls == 1) stream(a.videoId, url1, "WEB_CREATOR")
+                else throw java.io.IOException("putus")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "re-resolve gagal → galat")
+            assertNull(player.state.value.currentStream, "PlaybackFailed membuang stream lagu gagal")
+            assertNull(player.state.value.currentUrl, "PlaybackFailed membuang URL lagu gagal")
+
+            // Galat pemutar kedua untuk item yang sama (state sudah bersih).
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status)
+            val detail = player.state.value.errorDetail ?: ""
+            assertTrue(detail.contains("klien: WEB_CREATOR"), detail)
+            assertTrue(detail.contains("paramUrl: n: ada, pot: ada, sig: ada, expire: ada, ip: ada"), detail)
+            assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
+            assertTrue(detail.contains("format: itag 251 (audio/webm; codecs=opus)"), detail)
+            assertTrue(detail.contains("host: rr.test"), detail)
+            assertTrue(detail.contains("klienGagal: WEB_CREATOR@"), detail)
+            assertFalse(detail.contains("S1"), "nilai signature tidak boleh bocor ke detail")
+            assertFalse(detail.contains("203.0.113.7"), "nilai IP tidak boleh bocor ke detail")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    /**
+     * Agen C (INVESTIGASI-C Jalur B): pengguna menekan putar lagi setelah
+     * galat putar, resolve gagal total (AllClientsFailed) — detail akhir
+     * HARUS tetap membawa diagnostik percobaan terakhir (WEB_CREATOR),
+     * bukan hanya "jenis: AllClientsFailed".
+     */
+    @Test fun gagalResolveSetelahGalatPutarTetapMembawaDiagnostik() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val url1 = "https://rr.test/${a.videoId}?c=WEB_CREATOR&cver=1.0&n=abc&pot=tok&sig=S1&expire=1893000000&ip=203.0.113.7"
+            fake.streamSupplier = { _, _ -> stream(a.videoId, url1, "WEB_CREATOR") }
+            // Panggilan pertama sukses; resolve berikutnya selalu AllClientsFailed.
+            fake.resolveFailure = {
+                if ((fake.calls[a.videoId] ?: 0) <= 1) null
+                else StreamFailure.AllClientsFailed(setOf("WEB_CREATOR@1.0"))
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "re-resolve gagal total → galat")
+
+            // Pengguna menekan putar lagi = percobaan baru → resolve gagal total.
+            player.togglePlay()
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Semua klien YouTube gagal memuat audio. Coba lagi sebentar lagi.", player.state.value.error)
+            val detail = player.state.value.errorDetail ?: ""
+            assertTrue(detail.contains("AllClientsFailed"), detail)
+            assertTrue(detail.contains("klien: WEB_CREATOR"), detail)
+            assertTrue(detail.contains("paramUrl: n: ada, pot: ada, sig: ada, expire: ada, ip: ada"), detail)
+            assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
+            assertTrue(detail.contains("format: itag 251 (audio/webm; codecs=opus)"), detail)
+            assertTrue(detail.contains("host: rr.test"), detail)
+            assertFalse(detail.contains("S1"), "nilai signature tidak boleh bocor ke detail")
+            assertFalse(detail.contains("203.0.113.7"), "nilai IP tidak boleh bocor ke detail")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
 }
