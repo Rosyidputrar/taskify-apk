@@ -7,10 +7,10 @@ import kotlin.test.assertEquals
 /** Katalog klien dari `youtube_clients.json`, termasuk profil ANDROID baru. */
 class YouTubeClientTest {
     @Test
-    fun profilAndroid20104AdaDenganFieldYangBenar() {
+    fun profilAndroid2126364AdaDenganFieldYangBenar() {
         val c = YouTubeClient.ANDROID
         assertEquals("ANDROID", c.clientName)
-        assertEquals("20.10.4", c.clientVersion)
+        assertEquals("21.26.364", c.clientVersion)
         assertEquals("3", c.clientId)
         assertEquals("34", c.androidSdkVersion)
         assertEquals("https://www.youtube.com", c.requestOrigin())
@@ -45,7 +45,7 @@ class YouTubeClientTest {
             dataSyncId = null,
         )
         assertEquals("ANDROID", ctx.client.clientName)
-        assertEquals("20.10.4", ctx.client.clientVersion)
+        assertEquals("21.26.364", ctx.client.clientVersion)
         assertEquals("ID", ctx.client.gl)
         assertEquals("id", ctx.client.hl)
         assertEquals("CgttZXN0", ctx.client.visitorData)

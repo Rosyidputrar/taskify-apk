@@ -7,8 +7,8 @@
 
 // Diadaptasi dari ArchiveTune `core/.../innertube/models/YouTubeClient.kt`
 // (v15.1.0, c7f0e24) — paket diubah ke Taskify, ditambah aksesori ANDROID
-// (profil 20.10.4 dari `youtube_clients.json` yang sama, ditambahkan untuk
-// rewrite ini karena katalog ArchiveTune tidak memilikinya).
+// (profil ANDROID disamakan dengan MOBILE ArchiveTune 21.26.364 — UA aplikasi
+// asli, bukan UA desktop Chrome 131 (porting ArchiveTune Tahap 1, gap 2).
 // Lihat licenses/ARCHIVETUNE.md.
 
 package com.rosyidputrar.taskify.core.innertube.models
@@ -62,6 +62,10 @@ data class YouTubeClient(
             Context.User(
                 onBehalfOfUser = if (supportsCookieAuthentication) dataSyncId.delegatedSessionIdOrNull() else null,
             ),
+        // Klien embedded (ArchiveTune `InnerTube.kt:344-395`, C2-7):
+        // `thirdParty.embedUrl` wajib ada bila klien embedded; klien
+        // biasa tidak membawa field ini.
+        thirdParty = if (isEmbedded) Context.ThirdParty("https://www.reddit.com/") else null,
     )
 
     fun requestOrigin(): String =
@@ -172,8 +176,9 @@ data class YouTubeClient(
 
         /**
          * Klien `player` utama rewrite ini — TIDAK ADA di katalog ArchiveTune.
-         * Profil ditambahkan di `youtube_clients.json`: ANDROID 20.10.4,
-         * clientId "3", androidSdkVersion 34 (lihat `worker/innertube.ts`
+         * Profil ditambahkan di `youtube_clients.json`: ANDROID 21.26.364
+         * (disamakan dengan MOBILE ArchiveTune), clientId "3",
+         * androidSdkVersion 34 (lihat `worker/innertube.ts`
          * DIRECT_CLIENT_CONTEXT; terverifikasi live 2026-11-16: OK + 24 format).
          */
         val ANDROID: YouTubeClient

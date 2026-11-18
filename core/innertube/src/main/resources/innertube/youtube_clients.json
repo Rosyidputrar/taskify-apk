@@ -283,9 +283,13 @@
     },
     "ANDROID": {
       "clientName": "ANDROID",
-      "clientVersion": "20.10.4",
+      "clientVersion": "21.26.364",
       "clientId": "3",
-      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "userAgent": "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+      "osName": "Android",
+      "osVersion": "11",
+      "loginSupported": true,
+      "useSignatureTimestamp": true,
       "androidSdkVersion": "34"
     }
   },

@@ -26,6 +26,26 @@ class AuthUtilsTest {
             "SSID=RAHASIA_SSID; __Secure-3PAPISID=RAHASIA_PAPISID"
 
     @Test
+    fun `youtubeiCookie mensintesis SAPISID dari Secure-3PAPISID`() {
+        assertEquals(
+            "__Secure-3PAPISID=xyz789; LOGIN_INFO=abc; SAPISID=xyz789",
+            youtubeiCookie("__Secure-3PAPISID=xyz789; LOGIN_INFO=abc"),
+        )
+    }
+
+    @Test
+    fun `youtubeiCookie membiarkan cookie yang sudah punya SAPISID`() {
+        val cookie = "SAPISID=asli; __Secure-3PAPISID=lain; LOGIN_INFO=abc"
+        assertEquals(cookie, youtubeiCookie(cookie))
+    }
+
+    @Test
+    fun `youtubeiCookie null dan kosong menjadi null`() {
+        assertEquals(null, youtubeiCookie(null))
+        assertEquals(null, youtubeiCookie("   "))
+    }
+
+    @Test
     fun `sesi parsial LOGIN_INFO plus satu PAPISID bukan sesi penuh`() {
         assertFalse(hasFullYouTubeLoginSession(partialSession))
     }

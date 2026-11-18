@@ -77,6 +77,28 @@ class TaskifyApplication : Application() {
                 Log.w("Taskify", "Musik: bootstrap visitorData gagal, lanjut anonim", e)
             }
         }
+        // Musik direct (Tahap 5, C1-9/C2-32): panaskan resolver youtubei.js
+        // (muat bundle ke QuickJS) + mesin PoToken BotGuard (boot WebView +
+        // token sesi) sekali saat start — best-effort, tidak memblokir.
+        // Tanpa ini mint pertama kena cold start ~45 detik dan resolve
+        // pertama jalan tanpa token (fallback yang sudah ditangani).
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            try {
+                get<com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver>().preWarm()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: pre-warm youtubei gagal (non-fatal)", e)
+            }
+            try {
+                val auth = get<com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore>().loadAuthState()
+                get<com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer>().preWarm(auth)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: pre-warm PoToken gagal (non-fatal)", e)
+            }
+        }
     }
 }
 

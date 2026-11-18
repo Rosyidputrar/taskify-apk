@@ -50,6 +50,26 @@ fun youtubeLoginCookieValue(cookie: String?): String? {
 }
 
 /**
+ * Cookie untuk sesi youtubei.js ala ArchiveTune
+ * (`morideobfuscator/javascript/src/index.js:125-134`, `youtubeiCookie`):
+ * bila `SAPISID` tidak ada tapi `__Secure-3PAPISID` /
+ * `__Secure-1PAPISID` ada, sintesis `SAPISID=<nilai itu>` di akhir
+ * string cookie. Tanpa ini `SAPISIDHASH` dihitung dari varian `__Secure`
+ * tapi cookie yang dikirim tidak membawa `SAPISID` sama sekali.
+ * Cookie yang sudah membawa `SAPISID` dikembalikan apa adanya.
+ * Hanya nama cookie yang dibaca — fungsi ini tidak pernah me-log nilai.
+ */
+fun youtubeiCookie(cookie: String?): String? {
+    val trimmed = cookie?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val cookieMap = parseCookieString(trimmed)
+    if (!cookieMap["SAPISID"].isNullOrBlank()) return trimmed
+    val authValue = listOf("__Secure-3PAPISID", "__Secure-1PAPISID")
+        .firstNotNullOfOrNull { name -> cookieMap[name]?.takeIf { it.isNotBlank() } }
+        ?: return trimmed
+    return "$trimmed; SAPISID=$authValue"
+}
+
+/**
  * True bila cookie berisi SATU SET SESI PENUH (PLAN §A/§B): `LOGIN_INFO`,
  * minimal satu SID (`SID` / `__Secure-1PSID` / `__Secure-3PSID`), `HSID`,
  * `SSID`, dan minimal satu APISID (`APISID` / `SAPISID` /

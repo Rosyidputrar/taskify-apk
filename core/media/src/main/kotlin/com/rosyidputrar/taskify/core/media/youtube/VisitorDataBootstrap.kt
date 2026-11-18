@@ -58,6 +58,32 @@ class VisitorDataBootstrap(
         }
     }
 
+    /**
+     * Ambil `visitorData` BARU dari jaringan, apa pun yang tersimpan
+     * (Tahap 7, C2-20 — ArchiveTune `recoverFromBadStreamPlayerResponse`:
+     * semua klien gagal → segarkan sesi). Dipakai lapis pemulihan
+     * `AllClientsFailed`: nilai baru mengubah fingerprint sesi, jadi
+     * blacklist + cache yang terikat fingerprint lama tidak berlaku lagi.
+     * Gagal = null (bukan throw), pemanggil lanjut dengan sesi lama.
+     */
+    suspend fun refreshVisitorData(): String? {
+        try {
+            val stored = authStore.loadAuthState()
+            val fetched = withTimeoutOrNull(timeoutMs) {
+                youTube.visitorData().getOrNull()
+            }?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            if (fetched == stored.visitorData) return fetched
+            val state = stored.copy(visitorData = fetched).normalized()
+            authStore.saveAuthState(state)
+            youTube.applyAuthState(state)
+            return state.visitorData
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        }
+    }
+
     companion object {
         /**
          * Batas tunggu bootstrap — sengaja singkat: ini hiasan opsional

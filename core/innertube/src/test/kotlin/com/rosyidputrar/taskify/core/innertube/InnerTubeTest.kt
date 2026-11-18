@@ -1,6 +1,8 @@
 package com.rosyidputrar.taskify.core.innertube
 
 import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
+import com.rosyidputrar.taskify.core.innertube.models.YouTubeLocale
+import com.rosyidputrar.taskify.core.innertube.models.body.PlayerBody
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -14,7 +16,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Test
@@ -100,7 +104,7 @@ class InnerTubeTest {
 
         assertEquals("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", capturedUrl)
         assertEquals("3", capturedHeaders["X-YouTube-Client-Name"])
-        assertEquals("20.10.4", capturedHeaders["X-YouTube-Client-Version"])
+        assertEquals("21.26.364", capturedHeaders["X-YouTube-Client-Version"])
         assertEquals("https://www.youtube.com", capturedHeaders["X-Origin"])
         val body = json.parseToJsonElement(capturedBody).jsonObject
         assertEquals("QqJ-Vp8mvbk", body["videoId"]?.jsonPrimitive?.content)
@@ -344,6 +348,123 @@ class InnerTubeTest {
     }
 
     @Test
+    fun player400BukanInvalidArgumentTidakDiRetry() = runTest {
+        var calls = 0
+        val tube = InnerTube(mockClient {
+            calls++
+            respond(
+                """{"error":{"code":400,"message":"Permintaan buruk"}}""",
+                HttpStatusCode.BadRequest,
+                headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        })
+        assertFailsWith<ClientRequestException> {
+            tube.player(
+                YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+                authState = PlaybackAuthState(
+                    cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                    dataSyncId = "delegatedDummy||userDummy",
+                ),
+            )
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun playerRetryTanpaDataSyncIdBila400InvalidArgument() = runTest {
+        var calls = 0
+        val bodies = mutableListOf<String>()
+        val pageIds = mutableListOf<String?>()
+        val tube = InnerTube(mockClient {
+            calls++
+            bodies += (it.body as TextContent).text
+            pageIds += it.headers["X-Goog-PageId"]
+            if (calls == 1) {
+                respond(
+                    """{"error":{"code":400,"message":"Request contains an invalid argument.","errors":[{"reason":"INVALID_ARGUMENT"}]}}""",
+                    HttpStatusCode.BadRequest,
+                    headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+            } else {
+                okJson("""{"playabilityStatus":{"status":"OK"}}""")
+            }
+        })
+        val result = tube.player(
+            YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+            authState = PlaybackAuthState(
+                cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                dataSyncId = "delegatedDummy||userDummy",
+            ),
+        )
+        assertTrue(result.contains("OK"))
+        assertEquals(2, calls, "percobaan pertama 400 INVALID_ARGUMENT, kedua tanpa dataSyncId")
+        fun onBehalfOfUser(body: String): String? =
+            json.parseToJsonElement(body).jsonObject["context"]?.jsonObject
+                ?.get("user")?.jsonObject?.get("onBehalfOfUser")?.jsonPrimitive?.contentOrNull
+        assertEquals("delegatedDummy", onBehalfOfUser(bodies[0]))
+        assertEquals("delegatedDummy", pageIds[0])
+        assertNull(onBehalfOfUser(bodies[1]), "retry tanpa dataSyncId di badan")
+        assertNull(pageIds[1], "retry tanpa header X-Goog-PageId")
+    }
+
+    @Test
+    fun player400InvalidArgumentDenganOriginMismatchTidakDiRetry() = runTest {
+        var calls = 0
+        val tube = InnerTube(mockClient {
+            calls++
+            respond(
+                """{"error":{"message":"Origin doesn't match Host. INVALID_ARGUMENT"}}""",
+                HttpStatusCode.BadRequest,
+                headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        })
+        assertFailsWith<ClientRequestException> {
+            tube.player(
+                YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+                authState = PlaybackAuthState(
+                    cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
+                    dataSyncId = "delegatedDummy||userDummy",
+                ),
+            )
+        }
+        assertEquals(1, calls, "pesan Origin mismatch dikecualikan dari retry")
+    }
+
+    @Test
+    fun cookieTanpaSapisidDisintesisDariSecure3Papisid() = runTest {
+        var cookieHeader: String? = null
+        var authHeader: String? = null
+        val tube = InnerTube(mockClient {
+            cookieHeader = it.headers["cookie"]
+            authHeader = it.headers["Authorization"]
+            okJson()
+        })
+        tube.player(
+            YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+            authState = PlaybackAuthState(cookie = "__Secure-3PAPISID=xyz789; LOGIN_INFO=abc"),
+        )
+        assertEquals("__Secure-3PAPISID=xyz789; LOGIN_INFO=abc; SAPISID=xyz789", cookieHeader)
+        assertTrue(authHeader?.startsWith("SAPISIDHASH ") == true)
+    }
+
+    @Test
+    fun playerBodyMembawaContentPlaybackContextLengkap() {
+        val body = PlayerBody(
+            context = YouTubeClient.WEB_REMIX.toContext(YouTubeLocale(gl = "ID", hl = "id"), null, null),
+            videoId = "QqJ-Vp8mvbk",
+            playbackContext = PlayerBody.PlaybackContext(
+                PlayerBody.PlaybackContext.ContentPlaybackContext(19283),
+            ),
+        )
+        val encoded = InnertubeJson.encodeToString(body)
+        assertTrue(encoded.contains("\"signatureTimestamp\":19283"))
+        assertTrue(encoded.contains("\"html5Preference\":\"HTML5_PREF_WANTS\""))
+        assertTrue(encoded.contains("\"vis\":0"))
+        assertTrue(encoded.contains("\"splay\":false"))
+        assertTrue(encoded.contains("\"lactMilliseconds\":\"-1\""))
+    }
+
+    @Test
     fun getSwJsDataTanpaRetryHanyaSekaliBilaGagal() = runTest {
         var calls = 0
         val tube = InnerTube(mockClient {
@@ -352,6 +473,47 @@ class InnerTubeTest {
         })
         assertFailsWith<IOException> { tube.getSwJsData(withRetry = false) }
         assertEquals(1, calls)
+    }
+
+    @Test
+    fun registerPlaybackMengirimParamTelemetri() = runTest {
+        var capturedUrl = ""
+        val capturedHeaders = mutableMapOf<String, String>()
+        val tube = InnerTube(mockClient {
+            capturedUrl = it.url.toString()
+            it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
+            okJson()
+        })
+        tube.registerPlayback(
+            url = "https://www.youtube.com/api/stats/watchtime?ns=yt",
+            cpn = "Ab3_xYz012345678",
+        )
+        assertTrue(capturedUrl.startsWith("https://www.youtube.com/api/stats/watchtime?"))
+        assertTrue("ver=2" in capturedUrl)
+        assertTrue("c=WEB_REMIX" in capturedUrl)
+        assertTrue("cpn=Ab3_xYz012345678" in capturedUrl)
+        assertTrue("prettyPrint=false" in capturedUrl)
+        assertEquals("en-US,en;q=0.9", capturedHeaders["Accept-Language"])
+        assertEquals("no-cache", capturedHeaders["Cache-Control"])
+        // Header ini berisi `clientId` numerik (67 = WEB_REMIX), bukan nama —
+        // sama seperti `ytClient` biasa dan kode AT (`client.clientId`).
+        assertEquals("67", capturedHeaders["X-YouTube-Client-Name"])
+    }
+
+    @Test
+    fun registerPlaybackDenganPlaylistMenambahListDanReferrer() = runTest {
+        var capturedUrl = ""
+        val tube = InnerTube(mockClient {
+            capturedUrl = it.url.toString()
+            okJson()
+        })
+        tube.registerPlayback(
+            url = "https://www.youtube.com/api/stats/watchtime?ns=yt",
+            cpn = "Ab3_xYz012345678",
+            playlistId = "PL123",
+        )
+        assertTrue("list=PL123" in capturedUrl)
+        assertTrue("referrer=https%3A%2F%2Fmusic.youtube.com%2Fplaylist%3Flist%3DPL123" in capturedUrl)
     }
 
     @Test
