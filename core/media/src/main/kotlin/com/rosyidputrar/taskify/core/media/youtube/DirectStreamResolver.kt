@@ -60,9 +60,15 @@ open class DirectStreamResolver(
      * Resolve satu URL audio langsung. Klien dicoba berurutan; tiap klien
      * mendapat satu retry langsung bila gagal HTTP 429/5xx/403 (flaky
      * sesaat — pola `callInnertubeWithRetry` Worker). `LOGIN_REQUIRED`
-     * TIDAK di-retry: sifatnya flaky per permintaan dan `visitorData`
-     * terbukti bukan penawar. Bila semua klien gagal, kegagalan yang
-     * dikembalikan adalah kegagalan klien UTAMA (paling diagnostik).
+     * di-retry sampai dua kali tambahan (total 3 percobaan per klien):
+     * status ini terbukti flaky per permintaan — `player` yang sama bisa
+     * menjawab `LOGIN_REQUIRED` lalu `OK` pada percobaan berikut — dan
+     * jatuh ke klien berikut tanpa retry justru yang berbahaya: fallback
+     * WEB_REMIX ber-cookie bisa menghasilkan URL ber-`n` yang tidak
+     * di-decipher, lalu googlevideo menolaknya dengan 403 saat diputar
+     * (teori koheren 403, lihat PLAN.md §D — TEORI, bukan fakta).
+     * Bila semua klien gagal, kegagalan yang dikembalikan adalah kegagalan
+     * klien UTAMA (paling diagnostik).
      *
      * [authState] diterima sebagai parameter (A.8.3) — pemanggil (Tahap 6)
      * meneruskan state dari `YouTubeAuthStore`; bawaan memakai state
@@ -108,20 +114,22 @@ open class DirectStreamResolver(
         preferMp4a: Boolean,
     ): Result<DirectStream> {
         var last: StreamFailureException? = null
-        repeat(MAX_ATTEMPTS_PER_CLIENT) { attempt ->
+        var attempt = 0
+        while (true) {
             try {
                 return Result.success(resolveOnce(client, videoId, quality, authState, preferMp4a))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: StreamFailureException) {
                 last = e
-                val retryable = e.failure is StreamFailure.Http &&
-                    (e.failure.status == 429 || e.failure.status == 403 || e.failure.status >= 500)
-                if (!retryable || attempt == MAX_ATTEMPTS_PER_CLIENT - 1) return Result.failure(e)
+                // Batas retry tergantung jenis kegagalan: HTTP flaky 1x ulang,
+                // LOGIN_REQUIRED 2x ulang (flaky per permintaan, lihat KDoc resolve).
+                val maxAttempts = if (e.failure is StreamFailure.LoginRequired) MAX_LOGIN_REQUIRED_ATTEMPTS else MAX_ATTEMPTS_PER_CLIENT
+                if (!e.failure.isRetryable || attempt >= maxAttempts - 1) return Result.failure(e)
+                attempt++
                 // Retry langsung, tanpa jeda — flaky sesaat.
             }
         }
-        return Result.failure(last ?: StreamFailureException(StreamFailure.NoFormat))
     }
 
     private suspend fun resolveOnce(
@@ -176,6 +184,7 @@ open class DirectStreamResolver(
             expiresInSeconds = expires,
             loudnessDb = loudness?.loudnessDb,
             perceptualLoudnessDb = loudness?.perceptualLoudnessDb,
+            resolvedClient = client.clientName,
         )
     }
 
@@ -207,6 +216,9 @@ open class DirectStreamResolver(
 
         /** Satu percobaan awal + satu retry langsung untuk HTTP flaky. */
         const val MAX_ATTEMPTS_PER_CLIENT = 2
+
+        /** Satu percobaan awal + dua retry langsung untuk `LOGIN_REQUIRED` flaky. */
+        const val MAX_LOGIN_REQUIRED_ATTEMPTS = 3
 
         /** Urutan klien: ANDROID utama, WEB_REMIX, MWEB. */
         val DEFAULT_CLIENTS: List<YouTubeClient> =

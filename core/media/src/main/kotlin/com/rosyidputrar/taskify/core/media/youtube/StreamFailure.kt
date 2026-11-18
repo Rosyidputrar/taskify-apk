@@ -11,7 +11,17 @@ package com.rosyidputrar.taskify.core.media.youtube
  * mentah dan kontrak terketiknya bocor.
  */
 sealed interface StreamFailure {
-    /** Endpoint `player` menjawab `LOGIN_REQUIRED` (flaky per permintaan; jangan di-retry). */
+    /**
+     * Boleh dicoba ulang langsung di klien yang sama: HTTP 429/403/5xx
+     * (flaky sesaat) dan `LOGIN_REQUIRED` (flaky per permintaan).
+     * Selain itu (Unplayable/NoFormat/Timeout/Network/InvalidResponse)
+     * percobaan ulang di klien yang sama tidak ada gunanya.
+     */
+    val isRetryable: Boolean
+        get() = (this is Http && (status == 429 || status == 403 || status >= 500)) ||
+            this is LoginRequired
+
+    /** Endpoint `player` menjawab `LOGIN_REQUIRED` (flaky per permintaan — di-retry terbatas, lihat `DirectStreamResolver`). */
     data class LoginRequired(val reason: String = "") : StreamFailure
 
     /** `playabilityStatus` bukan OK dan bukan `LOGIN_REQUIRED`. */

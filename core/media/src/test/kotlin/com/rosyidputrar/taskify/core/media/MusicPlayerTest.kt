@@ -35,6 +35,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -89,6 +90,8 @@ class MusicPlayerTest {
         fun gate(id: String) = gates.getOrPut(id) { CompletableDeferred() }
         /** Bila diisi, `resolve()` gagal langsung dengan kegagalan ini (tanpa menunggu gate). */
         var resolveFailure: ((String) -> StreamFailure?)? = null
+        /** Bila diisi, `resolve()`/`tryResolve()` mengembalikan stream ini (per panggilan ke-n) tanpa gate. */
+        var streamSupplier: ((String, Int) -> DirectStream)? = null
         var lastAuthState: PlaybackAuthState? = null
 
         override suspend fun resolve(videoId: String, quality: MusicQuality, authState: PlaybackAuthState, preferMp4a: Boolean): Result<DirectStream> {
@@ -97,6 +100,7 @@ class MusicPlayerTest {
             preferMp4aFlags[videoId] = preferMp4a
             lastAuthState = authState
             resolveFailure?.invoke(videoId)?.let { return Result.failure(StreamFailureException(it)) }
+            streamSupplier?.invoke(videoId, calls[videoId] ?: 0)?.let { return Result.success(it) }
             return try {
                 Result.success(gate(videoId).await())
             } catch (e: CancellationException) {
@@ -110,6 +114,7 @@ class MusicPlayerTest {
             qualities[videoId] = quality
             preferMp4aFlags[videoId] = preferMp4a
             lastAuthState = authState
+            streamSupplier?.invoke(videoId, calls[videoId] ?: 0)?.let { return it }
             return try {
                 gate(videoId).await()
             } catch (e: CancellationException) {
@@ -135,9 +140,30 @@ class MusicPlayerTest {
         authStore.saveAccount(AccountInfo("Tes Akun", "tes@example.com"))
     }
 
-    private fun stream(id: String) = DirectStream(
-        url = "https://rr.test/$id", mimeType = "audio/webm; codecs=opus", itag = 251,
+    private fun stream(id: String, url: String = "https://rr.test/$id", client: String? = null) = DirectStream(
+        url = url, mimeType = "audio/webm; codecs=opus", itag = 251,
         bitrate = 169643, expiresInSeconds = 21540, loudnessDb = 3.77, perceptualLoudnessDb = null,
+        resolvedClient = client,
+    )
+
+    /** Galat ExoPlayer HTTP 403 googlevideo, seperti yang dilihat sir di HP (`ERROR_CODE_IO_BAD_HTTP_STATUS`, 2004). */
+    private fun http403() = androidx.media3.common.PlaybackException(
+        "Response code: 403",
+        androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            403, "Forbidden", null, emptyMap(),
+            androidx.media3.datasource.DataSpec(android.net.Uri.parse("https://rr.test/x")), ByteArray(0),
+        ),
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    )
+
+    /** Galat ExoPlayer HTTP 404 — bukan 403, jadi tidak boleh memicu re-resolve. */
+    private fun http404() = androidx.media3.common.PlaybackException(
+        "Response code: 404",
+        androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            404, "Not Found", null, emptyMap(),
+            androidx.media3.datasource.DataSpec(android.net.Uri.parse("https://rr.test/x")), ByteArray(0),
+        ),
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
     )
 
     @Test fun jumpToPrefetchingSongDoesNotResolveTwice() = runTest {
@@ -412,6 +438,162 @@ class MusicPlayerTest {
             assertEquals(listOf("cur-1"), cursors, "dua lagu tersisa → ambil halaman radio berikutnya")
             assertEquals(listOf(a, b, c, d), player.state.value.ordered)
             assertEquals(null, player.state.value.radio!!.cursor)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun playback403ReResolvesOnceThenPlaysAgainWithFreshUrl() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S1"
+            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S2"
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, if (call <= 1) url1 else url2, "ANDROID")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(url1, player.state.value.urls[a.videoId])
+
+            // 403 dari ExoPlayer → re-resolve sekali, lagu diputar lagi dengan URL segar.
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId], "resolve awal + satu re-resolve 403")
+            assertEquals(url2, player.state.value.urls[a.videoId], "URL segar dipakai setelah 403")
+            assertTrue(player.state.value.status != YtStatus.Error, "belum jadi galat setelah re-resolve berhasil")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun secondPlayback403ShowsRawErrorWithoutLoop() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S1"
+            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S2"
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, if (call <= 1) url1 else url2, "ANDROID")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId])
+            assertEquals(url2, player.state.value.urls[a.videoId])
+
+            // Percobaan kedua tetap 403 → galat mentah, TIDAK ada re-resolve ketiga.
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId], "tidak ada loop re-resolve")
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Audio gagal diputar. Coba lagi.", player.state.value.error)
+            val detail = player.state.value.errorDetail ?: ""
+            assertTrue(detail.contains("errorCode: 2004"), detail)
+            assertTrue(detail.contains("klien: ANDROID"), detail)
+            assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada"), detail)
+            assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
+            assertFalse(detail.contains("S2"), "nilai signature tidak boleh bocor ke detail")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun non403PlaybackErrorDoesNotReResolve() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId])
+
+            // Galat jaringan biasa → langsung galat, tanpa re-resolve.
+            player.handlePlayerError(
+                androidx.media3.common.PlaybackException(
+                    "Gagal tersambung.",
+                    java.io.IOException("putus"),
+                    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId], "galat non-403 tidak memicu re-resolve")
+            assertEquals(YtStatus.Error, player.state.value.status)
+
+            // HTTP 404 juga bukan 403 → langsung galat, tanpa re-resolve.
+            val player2 = player(tube, fake)
+            player2.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            val callsBefore = fake.calls[a.videoId] ?: 0
+            player2.handlePlayerError(http404())
+            advanceUntilIdle()
+            assertEquals(callsBefore, fake.calls[a.videoId], "404 tidak memicu re-resolve")
+            assertEquals(YtStatus.Error, player2.state.value.status)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun playback403RetryAllowanceResetsOnNewPlayAttempt() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, "https://rr.test/${a.videoId}?expire=1793000000&sig=S$call", "ANDROID")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId])
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "jatah sekali habis → galat")
+
+            // Pengguna menekan putar lagi = percobaan putar baru → jatah re-resolve kembali segar.
+            player.togglePlay()
+            advanceUntilIdle()
+            assertEquals(3, fake.calls[a.videoId], "percobaan baru me-resolve ulang")
+            assertTrue(player.state.value.status != YtStatus.Error, "percobaan baru tidak langsung galat")
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(4, fake.calls[a.videoId], "percobaan baru mendapat satu re-resolve lagi")
+            assertTrue(player.state.value.status != YtStatus.Error, "re-resolve percobaan baru berhasil")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun playback403ReResolveFailureShowsOriginalRawError() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            var calls = 0
+            fake.streamSupplier = { _, _ ->
+                calls++
+                // Resolve awal berhasil, re-resolve gagal: supplier melempar
+                // di panggilan kedua — tryResolve di pemutar menangkapnya jadi null.
+                if (calls == 1) stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID")
+                else throw java.io.IOException("putus")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "re-resolve gagal → galat, bukan diam")
+            assertEquals("Audio gagal diputar. Coba lagi.", player.state.value.error)
+            assertTrue((player.state.value.errorDetail ?: "").contains("errorCode: 2004"), "detail mentah asal tetap tampil")
         } finally {
             Dispatchers.resetMain()
         }
