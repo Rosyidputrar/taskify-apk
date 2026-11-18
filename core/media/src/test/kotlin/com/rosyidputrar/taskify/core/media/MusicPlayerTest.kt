@@ -448,8 +448,8 @@ class MusicPlayerTest {
         try {
             val tube = FakeYouTube()
             val fake = FakeResolver()
-            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S1"
-            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S2"
+            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S1"
+            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S2"
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, if (call <= 1) url1 else url2, "ANDROID")
             }
@@ -474,8 +474,8 @@ class MusicPlayerTest {
         try {
             val tube = FakeYouTube()
             val fake = FakeResolver()
-            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S1"
-            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&sig=S2"
+            val url1 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S1"
+            val url2 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S2"
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, if (call <= 1) url1 else url2, "ANDROID")
             }
@@ -496,9 +496,10 @@ class MusicPlayerTest {
             val detail = player.state.value.errorDetail ?: ""
             assertTrue(detail.contains("errorCode: 2004"), detail)
             assertTrue(detail.contains("klien: ANDROID"), detail)
-            assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada"), detail)
+            assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada, ip: ada"), detail)
             assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
             assertFalse(detail.contains("S2"), "nilai signature tidak boleh bocor ke detail")
+            assertFalse(detail.contains("203.0.113.7"), "nilai IP tidak boleh bocor ke detail")
         } finally {
             Dispatchers.resetMain()
         }

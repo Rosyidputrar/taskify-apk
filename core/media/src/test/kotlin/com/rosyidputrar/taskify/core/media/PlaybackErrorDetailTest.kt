@@ -136,7 +136,7 @@ class PlaybackErrorDetailTest {
             "Response code: 403",
         ).toRawDetail(videoId, stream, streamUrl, resolveToPlayMs = 1234)
         assertTrue(detail.contains("klien: ANDROID"), detail)
-        assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada"), detail)
+        assertTrue(detail.contains("paramUrl: n: tidak ada, pot: tidak ada, sig: ada, expire: ada, ip: ada"), detail)
         assertTrue(detail.contains("jedaResolveKePutarMs: 1234"), detail)
         assertTrue(detail.contains("expiresInSeconds: 21540"), detail)
         // Nilai rahasia tetap tidak ikut walau diagnostik ditambah.

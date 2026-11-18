@@ -125,7 +125,11 @@ class MusicPlayer(
         exoCreated = true
         ExoPlayer.Builder(context)
             // Header media ala ArchiveTune (lihat MediaRequestHeaders):
-            // Origin/Referer/User-Agent web — tanpa cookie.
+            // Origin/Referer/User-Agent web — tanpa cookie. Transport media
+            // = OkHttpDataSource di atas OkHttpClient yang SAMA dengan engine
+            // Ktor InnerTube (perbaikan 403 ikatan IP, 18 Nov 2026): request
+            // `player` dan request media berbagi DNS + connection pool,
+            // jadi tidak lagi bisa keluar lewat keluarga IP yang berbeda.
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(MediaRequestHeaders.createDataSourceFactory()),

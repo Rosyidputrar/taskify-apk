@@ -22,14 +22,24 @@ class StreamUrlDiagnosticsTest {
         assertFalse("pot" in names, "tanpa PoToken")
     }
 
-    @Test fun `keberadaan n pot sig expire dilaporkan sebagai teks`() {
+    @Test fun `keberadaan n pot sig expire ip dilaporkan sebagai teks`() {
         assertEquals(
-            "n: tidak ada, pot: tidak ada, sig: ada, expire: ada",
+            "n: tidak ada, pot: tidak ada, sig: ada, expire: ada, ip: ada",
             streamUrlParamPresence(url),
         )
         assertEquals(
-            "n: ada, pot: tidak ada, sig: tidak ada, expire: ada",
+            "n: ada, pot: tidak ada, sig: tidak ada, expire: ada, ip: tidak ada",
             streamUrlParamPresence("https://rr.test/videoplayback?n=ABC123&expire=1793000000"),
+        )
+    }
+
+    @Test fun `ip dilaporkan ada bila ada dan tidak ada bila tidak ada, tanpa nilai`() {
+        val presence = streamUrlParamPresence(url)
+        assertTrue(presence.contains("ip: ada"), presence)
+        assertFalse(presence.contains("203.0.113.7"), presence)
+        assertTrue(
+            streamUrlParamPresence("https://rr.test/videoplayback?expire=1793000000")
+                .contains("ip: tidak ada"),
         )
     }
 
@@ -43,7 +53,7 @@ class StreamUrlDiagnosticsTest {
 
     @Test fun `url tanpa query dan url kosong jadi tidak diketahui`() {
         assertEquals(
-            "n: tidak ada, pot: tidak ada, sig: tidak ada, expire: tidak ada",
+            "n: tidak ada, pot: tidak ada, sig: tidak ada, expire: tidak ada, ip: tidak ada",
             streamUrlParamPresence("https://rr.test/videoplayback"),
         )
         assertEquals("tidak diketahui", streamUrlParamPresence(null))
