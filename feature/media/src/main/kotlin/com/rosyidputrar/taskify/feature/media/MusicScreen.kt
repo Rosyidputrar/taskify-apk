@@ -282,6 +282,13 @@ private fun NowPlaying(state: MusicUiState, actions: MusicActions, modifier: Mod
             Text(song.title, style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily), textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(MusicQueue.barStatus(p, state.online), style = MaterialTheme.typography.bodyMedium, color = if (p.status == YtStatus.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center)
+            // Error pemutar: detail mentah di bawah pesan ramah (perintah
+            // sir: error apa pun tampil teks mentah + bisa disalin di debug).
+            if (p.status == YtStatus.Error) {
+                p.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
             when {
                 p.status == YtStatus.Preparing -> LinearProgressIndicator(progress = { p.percent / 100f }, modifier = Modifier.fillMaxWidth())
                 song.live -> Text("Siaran langsung — tidak bisa digeser", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -367,6 +374,11 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
             }
             if (!state.online) Text("Tidak ada koneksi — pencarian & pemutaran butuh internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
             s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            // Gagal cari / muat lagi: detail mentah di bawah pesan ramah
+            // (perintah sir) — komponen bersama, bisa disalin di debug.
+            s.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+            }
         }
     }
     if (s.loading) { item(key = "s-skeleton") { ListSkeleton(TaskifyModule.Music, rows = 5, label = "Mencari…") }; return }
@@ -470,7 +482,15 @@ private fun Lyrics(state: MusicUiState, actions: MusicActions) {
             song == null -> EmptyState(TaskifyModule.Music, "Belum ada lagu", "Lirik muncul di sini saat lagu diputar.")
             song.live -> Text("Siaran radio langsung tidak punya lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             l.loading -> ListSkeleton(TaskifyModule.Music, rows = 5, lines = 1, label = "Memuat lirik…")
-            l.error != null -> Text(l.error, color = MaterialTheme.colorScheme.error)
+            l.error != null -> Column {
+                Text(l.error, color = MaterialTheme.colorScheme.error)
+                // Gagal muat lirik yang ditampilkan sebagai error: detail
+                // mentah di bawah pesan (komponen bersama, bisa disalin).
+                l.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    Spacer(Modifier.height(8.dp))
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
             l.lyrics?.instrumental == true -> Text("Lagu instrumental — tanpa lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             l.lyrics?.hasSynced == true -> SyncedLyrics(state, actions)
             l.lyrics?.plain.isNullOrBlank() -> Text("Lagu ini tidak punya lirik (atau belum tersedia).", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

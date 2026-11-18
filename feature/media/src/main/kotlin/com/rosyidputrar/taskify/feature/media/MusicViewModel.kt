@@ -30,6 +30,7 @@ import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
 import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
 import com.rosyidputrar.taskify.core.media.YouTubeMusicException
+import com.rosyidputrar.taskify.core.media.musicErrorRawDetail
 import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import kotlinx.coroutines.CancellationException
@@ -56,6 +57,8 @@ data class MusicSearch(
     val loading: Boolean = false,
     val loadingMore: Boolean = false,
     val error: String? = null,
+    /** Detail mentah error pencarian (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
     val searched: Boolean = false,
     val suggestions: List<Suggestion> = emptyList(),
 ) {
@@ -63,13 +66,15 @@ data class MusicSearch(
 }
 
 /** Lirik lagu yang sedang diputar; [lyrics] `null` + tidak memuat = tidak ada lirik. */
-data class LyricsState(val videoId: String = "", val lyrics: Lyrics? = null, val loading: Boolean = false, val error: String? = null)
+data class LyricsState(val videoId: String = "", val lyrics: Lyrics? = null, val loading: Boolean = false, val error: String? = null, val errorDetail: String? = null)
 
 /** Satu halaman yang dibuka di dalam layar Musik (album, playlist, artis, podcast, mood). */
 data class BrowsePage(
     val target: BrowseTarget,
     val loading: Boolean = true,
     val error: String? = null,
+    /** Detail mentah error halaman (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
     val collection: MusicCollection? = null,
     val artist: ArtistPage? = null,
     val mood: MoodPage? = null,
@@ -89,6 +94,8 @@ data class ExploreState(
     val loading: Boolean = false,
     val loaded: Boolean = false,
     val error: String? = null,
+    /** Detail mentah error Jelajah (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
     val home: List<DiscoverySection> = emptyList(),
     val charts: List<DiscoverySection> = emptyList(),
     val releases: List<DiscoverySection> = emptyList(),
@@ -253,7 +260,8 @@ class MusicViewModel(
             // langkah teks YouTube supaya tidak memanggil `next` lagi.
             val r = runCatching { client.syncedLyrics(song, details?.lyricsId) }
             if (local.value.lyrics.videoId != id) return@launchSafe
-            local.update { it.copy(lyrics = LyricsState(id, r.getOrNull()?.takeIf { l -> !l.empty || l.instrumental }, false, r.exceptionOrNull()?.message)) }
+            val failure = r.exceptionOrNull()
+            local.update { it.copy(lyrics = LyricsState(id, r.getOrNull()?.takeIf { l -> !l.empty || l.instrumental }, false, failure?.message, failure?.let(::musicErrorRawDetail))) }
         }
     }
 
@@ -283,9 +291,10 @@ class MusicViewModel(
             // Tapi galat auth InnerTube (401/403) saat login ditampilkan DAN
             // menandai sesi kedaluwarsa — saran hanya jalan bila login, jadi
             // isAuth di sini berarti sesi yang dulu sah sudah habis.
-            val blocked = (e as? YouTubeMusicException)?.takeIf { it.isAuth }?.message
+            val blockedEx = (e as? YouTubeMusicException)?.takeIf { it.isAuth }
+            val blocked = blockedEx?.message
             (e as? Exception)?.let(::noteAuthFailure)
-            local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error)) }
+            local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error, errorDetail = blockedEx?.let(::musicErrorRawDetail) ?: it.search.errorDetail)) }
         }
     }
 
@@ -302,7 +311,7 @@ class MusicViewModel(
         suggestJob?.cancel()
         if (MusicCatalog.isLink(q)) { openLink(q); return }
         searchJob?.cancel()
-        local.update { it.copy(tab = MusicTab.Search, pages = emptyList(), search = s.copy(loading = true, error = null, suggestions = emptyList())) }
+        local.update { it.copy(tab = MusicTab.Search, pages = emptyList(), search = s.copy(loading = true, error = null, errorDetail = null, suggestions = emptyList())) }
         searchJob = launchSafe {
             try {
                 val results = client.search(q, s.filter)
@@ -311,7 +320,7 @@ class MusicViewModel(
                 throw e
             } catch (e: Exception) {
                 noteAuthFailure(e)
-                local.update { it.copy(search = it.search.copy(loading = false, error = e.message, searched = true)) }
+                local.update { it.copy(search = it.search.copy(loading = false, error = e.message, errorDetail = musicErrorRawDetail(e), searched = true)) }
             }
         }
     }
@@ -321,7 +330,7 @@ class MusicViewModel(
         val cursor = s.cursor ?: return
         if (s.loading || s.loadingMore) return
         if (!requireLogin(prompt = true)) return
-        local.update { it.copy(search = s.copy(loadingMore = true, error = null)) }
+        local.update { it.copy(search = s.copy(loadingMore = true, error = null, errorDetail = null)) }
         launchSafe {
             try {
                 val next = client.searchMore(cursor)
@@ -330,7 +339,7 @@ class MusicViewModel(
                 throw e
             } catch (e: Exception) {
                 noteAuthFailure(e)
-                local.update { it.copy(search = it.search.copy(loadingMore = false, error = e.message)) }
+                local.update { it.copy(search = it.search.copy(loadingMore = false, error = e.message, errorDetail = musicErrorRawDetail(e))) }
             }
         }
     }
@@ -483,7 +492,7 @@ class MusicViewModel(
                 throw e
             } catch (e: Exception) {
                 noteAuthFailure(e)
-                updatePage(target) { it.copy(loading = false, error = e.message ?: "Gagal memuat.") }
+                updatePage(target) { it.copy(loading = false, error = e.message ?: "Gagal memuat.", errorDetail = musicErrorRawDetail(e)) }
             }
         }
     }
@@ -569,7 +578,7 @@ class MusicViewModel(
         if (!requireLogin(prompt = prompt)) return
         val e = local.value.explore
         if (e.loading || (e.loaded && !force && e.error == null)) return
-        local.update { it.copy(explore = it.explore.copy(loading = true, error = null)) }
+        local.update { it.copy(explore = it.explore.copy(loading = true, error = null, errorDetail = null)) }
         launchSafe {
             coroutineScope {
                 val home = async { runCatching { client.home() } }
@@ -584,6 +593,7 @@ class MusicViewModel(
                     it.copy(explore = ExploreState(
                         loading = false, loaded = true,
                         error = if (all.all { r -> r.isFailure }) firstError?.message ?: "Gagal memuat Jelajah." else null,
+                        errorDetail = if (all.all { r -> r.isFailure }) firstError?.let(::musicErrorRawDetail) else null,
                         home = home.await().getOrDefault(emptyList()),
                         charts = charts.await().getOrDefault(emptyList()),
                         releases = releases.await().getOrDefault(emptyList()),

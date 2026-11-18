@@ -221,6 +221,74 @@ class MusicScreenshotTest {
         )
     }
 
+    // Error pemutar + error cari/Jelajah tampilkan teks mentah + tombol
+    // salin (perintah sir, Agen A/B): golden baru supaya rendernya bisa
+    // diperiksa visual sebelum dikirim. Fixture rawDetail mengikuti format
+    // asli penyusunnya (PlaybackErrorDetail / musicErrorRawDetail): tanpa
+    // URL lengkap, cookie, atau token.
+    @Config(qualifiers = "w393dp-h1700dp-xxhdpi")
+    @Test fun playerErrorRaw() = shot("music_player_error_raw_light", false) {
+        val p = base.player.copy(
+            status = YtStatus.Error,
+            error = "Audio gagal diputar. Coba lagi.",
+            errorDetail = "videoId: ${songs[0].videoId}\nformat: itag 251 (audio/webm; codecs=\"opus\")\nhost: rr2---sn-a5mekn7z.googlevideo.com\nerrorCodeName: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED\nerrorCode: 2007\nmessage: Gagal tersambung.",
+        )
+        MusicContent(base.copy(tab = MusicTab.Queue, player = p), object : MusicActions {}, padding)
+    }
+
+    @Config(qualifiers = "w393dp-h1400dp-xxhdpi")
+    @Test fun searchErrorRaw() = shot("music_search_error_raw_light", false) {
+        MusicContent(
+            base.copy(
+                tab = MusicTab.Search,
+                player = base.player.copy(status = YtStatus.Idle),
+                search = MusicSearch(
+                    query = "negoro angin",
+                    error = "Pencarian gagal. Coba lagi.",
+                    errorDetail = "jenis: HttpException\nstatus: 403\npesan: Forbidden",
+                    searched = true,
+                ),
+            ),
+            object : MusicActions {},
+            padding,
+        )
+    }
+
+    @Config(qualifiers = "w393dp-h1700dp-xxhdpi")
+    @Test fun exploreErrorRaw() = shot("music_explore_error_raw_light", false) {
+        MusicContent(
+            base.copy(
+                tab = MusicTab.Explore,
+                player = base.player.copy(status = YtStatus.Idle),
+                explore = explore.copy(
+                    error = "Jelajah belum bisa dimuat. Coba lagi.",
+                    errorDetail = "jenis: HttpException\nstatus: 403\npesan: Forbidden",
+                ),
+            ),
+            object : MusicActions {},
+            padding,
+        )
+    }
+
+    @Config(qualifiers = "w393dp-h1400dp-xxhdpi")
+    @Test fun lyricsErrorRaw() = shot("music_lyrics_error_raw_light", false) {
+        val p = base.player.copy(streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm", 251)))
+        MusicContent(
+            base.copy(
+                tab = MusicTab.Lyrics,
+                player = p,
+                position = PlaybackPosition(23_000, 228_000),
+                lyrics = LyricsState(
+                    songs[1].videoId,
+                    error = "Lirik gagal dimuat. Coba lagi.",
+                    errorDetail = "jenis: HttpException\nstatus: 404\npesan: Not Found",
+                ),
+            ),
+            object : MusicActions {},
+            padding,
+        )
+    }
+
     @Composable
     private fun MusicContentSettings(s: MusicSettings) = MusicSettingsContent(base.copy(settings = s), object : MusicActions {})
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
@@ -149,7 +150,15 @@ fun LazyListScope.exploreTab(state: MusicUiState, actions: MusicActions) {
     if (e.loading && !e.loaded) { item(key = "x-load") { ExploreSkeleton() }; return }
     e.error?.let { err ->
         item(key = "x-err") {
-            EmptyState(TaskifyModule.Music, "Jelajah belum bisa dimuat", err, action = { OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") } })
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                EmptyState(TaskifyModule.Music, "Jelajah belum bisa dimuat", err, action = { OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") } })
+                // Semua seksi Jelajah gagal: detail mentah di bawah pesan
+                // (komponen bersama, bisa disalin di debug).
+                e.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    Spacer(Modifier.height(8.dp))
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
         }
     }
     e.moods.forEachIndexed { gi, group ->
@@ -189,7 +198,17 @@ fun LazyListScope.pageContent(page: BrowsePage, state: MusicUiState, actions: Mu
     when {
         page.loading -> { item(key = "p-load") { ListSkeleton(TaskifyModule.Music, rows = 6, label = "Memuat…") }; return }
         page.error != null -> {
-            item(key = "p-err") { EmptyState(TaskifyModule.Music, "Gagal memuat", page.error, action = { OutlinedButton(onClick = actions::retryPage) { Text("Coba lagi") } }) }
+            item(key = "p-err") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    EmptyState(TaskifyModule.Music, "Gagal memuat", page.error, action = { OutlinedButton(onClick = actions::retryPage) { Text("Coba lagi") } })
+                    // Gagal muat halaman: detail mentah di bawah pesan
+                    // (komponen bersama, bisa disalin di debug).
+                    page.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                        Spacer(Modifier.height(8.dp))
+                        RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
             return
         }
     }

@@ -5,6 +5,11 @@ plugins {
 
 android {
     namespace = "com.rosyidputrar.taskify.feature.media"
+    // BuildConfig.DEBUG dipakai RawErrorDetail: tombol "Salin detail"
+    // hanya tampil di build debug.
+    buildFeatures {
+        buildConfig = true
+    }
 }
 
 dependencies {
@@ -18,4 +23,7 @@ dependencies {
     implementation(libs.koin.androidx.compose)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
 }
