@@ -209,11 +209,13 @@ class MusicScreenshotTest {
     // di akhir rawDetail adalah format baru PLAN §C.3 butir 2 (Agen B):
     // nama cookie sesi penuh, tanpa nilai — satu-satunya perbedaan dari
     // golden sebelumnya, diverifikasi visual sebelum rekam ulang.
+    // Tiga baris diagnostik wire di bawahnya adalah format baru PLAN §C
+    // (Agen C): cookie terlampir / hash dari / hash origin, nama saja.
     @Test fun loginErrorRaw() = shot("music_login_error_raw_light", false) {
         MusicLoginStateContent(
             MusicLoginScreenState.Error(
                 MusicLoginError.UnrecognizedResponse.message,
-                rawDetail = "HTTP 200\n{\"accountMenu\":{\"items\":[]},\"responseContext\":{\"serviceTrackingParams\":[]}}\ncookie: HSID, LOGIN_INFO, SAPISID, SID, SSID",
+                rawDetail = "HTTP 200\n{\"accountMenu\":{\"items\":[]},\"responseContext\":{\"serviceTrackingParams\":[]}}\ncookie: HSID, LOGIN_INFO, SAPISID, SID, SSID\ncookie terlampir: ya\nhash dari: SAPISID\nhash origin: https://music.youtube.com",
             ),
             onRetry = {},
         )

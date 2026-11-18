@@ -46,6 +46,11 @@ class MusicLoginRepositoryTest {
         "LOGIN_INFO=dummy-login-info; SAPISID=dummy-sapisid; SID=dummy-sid; HSID=dummy-hsid; SSID=dummy-ssid"
     // Nama cookie terurut dari `completeCookie` (dipakai ekspektasi rawDetail).
     private val completeCookieNames = "HSID, LOGIN_INFO, SAPISID, SID, SSID"
+    // Tiga baris diagnostik wire (Agen C) di akhir rawDetail untuk
+    // `completeCookie`: header Cookie terlampir dari state sesi penuh,
+    // hash dari SAPISID, origin WEB_REMIX.
+    private val diagnosticsFull =
+        "cookie terlampir: ya\nhash dari: SAPISID\nhash origin: https://music.youtube.com"
     private val account = AccountInfo(
         name = "Nama Tes",
         email = "tes@example.com",
@@ -261,7 +266,7 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.HttpRejected(403), loginError(result))
-        assertEquals("HTTP 403", loginException(result)?.rawDetail)
+        assertEquals("HTTP 403\n$diagnosticsFull", loginException(result)?.rawDetail)
         assertNull(repo.account.value)
     }
 
@@ -275,7 +280,7 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.HttpRejected(500), loginError(result))
-        assertEquals("HTTP 500", loginException(result)?.rawDetail)
+        assertEquals("HTTP 500\n$diagnosticsFull", loginException(result)?.rawDetail)
     }
 
     @Test fun `accountInfo gagal IOException menghasilkan Network tanpa rawDetail`() = runTest {
@@ -392,7 +397,10 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
-        assertEquals("potongan menu\ncookie: $completeCookieNames", loginException(result)?.rawDetail)
+        assertEquals(
+            "potongan menu\ncookie: $completeCookieNames\n$diagnosticsFull",
+            loginException(result)?.rawDetail,
+        )
         assertNull(repo.account.value)
     }
 
@@ -406,7 +414,11 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(partialCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.IncompleteCookies, loginError(result))
-        assertEquals("cookie: LOGIN_INFO, __Secure-3PAPISID", loginException(result)?.rawDetail)
+        assertEquals(
+            "cookie: LOGIN_INFO, __Secure-3PAPISID\n" +
+                "cookie terlampir: tidak\nhash dari: __Secure-3PAPISID\nhash origin: https://music.youtube.com",
+            loginException(result)?.rawDetail,
+        )
         assertEquals(0, fake.accountInfoCalls)
         assertEquals(0, fake.selectedAccountCalls)
         assertFalse(loginException(result)?.rawDetail?.contains("dummy-login-info") == true)
@@ -425,7 +437,11 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(partialCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.IncompleteCookies, loginError(result))
-        assertEquals("cookie: LOGIN_INFO, SAPISID, SID", loginException(result)?.rawDetail)
+        assertEquals(
+            "cookie: LOGIN_INFO, SAPISID, SID\n" +
+                "cookie terlampir: tidak\nhash dari: SAPISID\nhash origin: https://music.youtube.com",
+            loginException(result)?.rawDetail,
+        )
         assertEquals(0, fake.accountInfoCalls)
         assertEquals(0, fake.selectedAccountCalls)
     }
@@ -444,7 +460,7 @@ class MusicLoginRepositoryTest {
         val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
 
         assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
-        assertEquals("cookie: $completeCookieNames", loginException(result)?.rawDetail)
+        assertEquals("cookie: $completeCookieNames\n$diagnosticsFull", loginException(result)?.rawDetail)
     }
 
     @Test fun `rawDetail UnrecognizedResponse tidak pernah mengandung nilai cookie SID`() = runTest {
@@ -464,7 +480,7 @@ class MusicLoginRepositoryTest {
 
         assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
         val rawDetail = loginException(result)?.rawDetail
-        assertEquals("potongan\ncookie: $completeCookieNames", rawDetail)
+        assertEquals("potongan\ncookie: $completeCookieNames\n$diagnosticsFull", rawDetail)
         assertTrue(rawDetail != null)
         assertFalse(rawDetail.contains("RAHASIA123"))
         assertFalse(scrubRawDetail("SID=RAHASIA123; lanjutan").contains("RAHASIA123"))
@@ -489,6 +505,135 @@ class MusicLoginRepositoryTest {
         val rawDetail = loginException(result)?.rawDetail
         assertTrue(rawDetail != null)
         assertFalse(rawDetail.contains("RAHASIA123"))
+    }
+
+    // ---- Diagnostik wire Agen C (PLAN §C): tiga baris baru di rawDetail ----
+
+    @Test fun `rawDetail sesi penuh memuat cookie terlampir hash dari dan origin`() = runTest {
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan"),
+            )
+            selectedAccountResult = Result.failure(
+                IllegalStateException("tidak ada akun terpilih"),
+            )
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(completeCookie, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
+        assertEquals(
+            "potongan\ncookie: $completeCookieNames\n$diagnosticsFull",
+            loginException(result)?.rawDetail,
+        )
+    }
+
+    @Test fun `rawDetail hash dari memakai Secure-3PAPISID bila itu satu-satunya PAPISID`() = runTest {
+        val cookie3p =
+            "LOGIN_INFO=dummy-login-info; __Secure-3PAPISID=dummy-papisid; SID=dummy-sid; HSID=dummy-hsid; SSID=dummy-ssid"
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException("potongan"),
+            )
+            selectedAccountResult = Result.failure(
+                IllegalStateException("tidak ada akun terpilih"),
+            )
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(cookie3p, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
+        assertEquals(
+            "potongan\ncookie: HSID, LOGIN_INFO, SID, SSID, __Secure-3PAPISID\n" +
+                "cookie terlampir: ya\nhash dari: __Secure-3PAPISID\nhash origin: https://music.youtube.com",
+            loginException(result)?.rawDetail,
+        )
+    }
+
+    @Test fun `cookie hanya APISID tanpa PAPISID ditolak gate pertama`() = runTest {
+        // `APISID` saja TIDAK lolos gate pertama (`hasCompleteYouTubeLoginCookies`
+        // menuntut LOGIN_INFO + satu PAPISID: SAPISID / __Secure-3PAPISID /
+        // __Secure-1PAPISID) — jadi tidak pernah mencapai gate sesi penuh
+        // maupun verifikasi, dan rawDetail tetap null seperti gate pertama
+        // lainnya. Catatan: karena gate pertama sudah menuntut PAPISID,
+        // `hash dari: - (tidak ada)` TIDAK PERNAH muncul lewat
+        // `completeLogin` — cabang itu hanya terjangkau lewat helper
+        // (`verificationDiagnostics(null/"", ...)`), yang diuji langsung di
+        // `verificationDiagnostics tanpa cookie hash dari tidak ada dan tidak terlampir`.
+        val cookieApisidOnly =
+            "LOGIN_INFO=dummy-login-info; APISID=dummy-apisid; SID=dummy-sid; HSID=dummy-hsid; SSID=dummy-ssid"
+        val fake = FakeYouTube()
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(cookieApisidOnly, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.IncompleteCookies, loginError(result))
+        assertNull(loginException(result)?.rawDetail)
+        assertEquals(0, fake.accountInfoCalls)
+        assertEquals(PlaybackAuthState.EMPTY, store.loadAuthState())
+    }
+
+    @Test fun `hashCookieName mengikuti urutan youtubeLoginCookieValue`() {
+        // SAPISID menang atas __Secure-3PAPISID bila dua-duanya ada.
+        assertEquals(
+            "SAPISID",
+            hashCookieName("SAPISID=a; __Secure-3PAPISID=b; __Secure-1PAPISID=c"),
+        )
+        assertEquals("__Secure-3PAPISID", hashCookieName("__Secure-3PAPISID=b; __Secure-1PAPISID=c"))
+        assertEquals("__Secure-1PAPISID", hashCookieName("__Secure-1PAPISID=c"))
+        assertNull(hashCookieName("APISID=a; SID=b"))
+        assertNull(hashCookieName(""))
+        assertNull(hashCookieName(null))
+    }
+
+    @Test fun `verificationDiagnostics tanpa cookie hash dari tidak ada dan tidak terlampir`() {
+        assertEquals(
+            "cookie terlampir: tidak\nhash dari: - (tidak ada)\nhash origin: https://music.youtube.com",
+            verificationDiagnostics(null, cookieAttached = false),
+        )
+        assertEquals(
+            "cookie terlampir: tidak\nhash dari: - (tidak ada)\nhash origin: https://music.youtube.com",
+            verificationDiagnostics("", cookieAttached = false),
+        )
+        assertEquals(
+            "cookie terlampir: ya\nhash dari: SAPISID\nhash origin: https://music.youtube.com",
+            verificationDiagnostics("SAPISID=dummy; SID=dummy", cookieAttached = true),
+        )
+    }
+
+    @Test fun `rawDetail diagnostik tidak pernah mengandung nilai cookie dummy`() = runTest {
+        val cookieRahasia =
+            "LOGIN_INFO=NILAI_LOGIN_RAHASIA; SAPISID=NILAI_SAPISID_RAHASIA; SID=NILAI_SID_RAHASIA; HSID=NILAI_HSID_RAHASIA; SSID=NILAI_SSID_RAHASIA"
+        val fake = FakeYouTube().apply {
+            accountInfoResult = Result.failure(
+                UnrecognizedAccountResponseException(
+                    "respons aneh berisi SAPISID=NILAI_SNIPPET_RAHASIA di tengah",
+                ),
+            )
+            selectedAccountResult = Result.failure(
+                IllegalStateException("tidak ada akun terpilih"),
+            )
+        }
+        val repo = repository(fake)
+
+        val result = repo.completeLogin(cookieRahasia, "Cgtv", "kandidat||kandidat")
+
+        assertEquals(MusicLoginError.UnrecognizedResponse, loginError(result))
+        val rawDetail = loginException(result)?.rawDetail
+        assertTrue(rawDetail != null)
+        // Tiga baris diagnostik tetap ada, dengan nama saja.
+        assertTrue(rawDetail.contains("cookie terlampir: ya"))
+        assertTrue(rawDetail.contains("hash dari: SAPISID"))
+        assertTrue(rawDetail.contains("hash origin: https://music.youtube.com"))
+        // TIDAK SATU PUN nilai dummy boleh lolos, dari cookie maupun cuplikan.
+        for (nilai in listOf(
+            "NILAI_LOGIN_RAHASIA", "NILAI_SAPISID_RAHASIA", "NILAI_SID_RAHASIA",
+            "NILAI_HSID_RAHASIA", "NILAI_SSID_RAHASIA", "NILAI_SNIPPET_RAHASIA",
+        )) {
+            assertFalse(rawDetail.contains(nilai), "nilai bocor di rawDetail: $nilai")
+        }
     }
 
     @Test fun `accountInfo parse null menghasilkan UnrecognizedResponse`() = runTest {

@@ -5,10 +5,12 @@ import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
 import com.rosyidputrar.taskify.core.innertube.UnrecognizedAccountResponseException
 import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
 import com.rosyidputrar.taskify.core.innertube.utils.cookieNames
 import com.rosyidputrar.taskify.core.innertube.utils.hasCompleteYouTubeLoginCookies
 import com.rosyidputrar.taskify.core.innertube.utils.hasFullYouTubeLoginSession
 import com.rosyidputrar.taskify.core.innertube.utils.hasYouTubeLoginCookie
+import com.rosyidputrar.taskify.core.innertube.utils.parseCookieString
 import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -144,7 +146,10 @@ open class MusicLoginRepository(
         // cookie (dari `cookieNames`), tanpa nilai.
         val names = cookieNames(normalizedCookie)
         if (!hasFullYouTubeLoginSession(normalizedCookie)) {
-            val detail = "cookie: ${names.joinToString(", ")}"
+            // Diagnostik wire (Agen C): request verifikasi TIDAK PERNAH
+            // dikirim untuk sesi parsial, jadi header Cookie tidak terlampir.
+            val detail = "cookie: ${names.joinToString(", ")}\n" +
+                verificationDiagnostics(normalizedCookie, cookieAttached = false)
             logFailure(
                 "completeLogin",
                 MusicLoginError.IncompleteCookies,
@@ -160,6 +165,19 @@ open class MusicLoginRepository(
             visitorData = visitorData,
             dataSyncId = dataSyncId,
         ).normalized()
+
+        // Diagnostik wire (Agen C) untuk kegagalan verifikasi: state inilah
+        // yang dipakai `youTube.accountInfo()` (auth state yang diterapkan
+        // di bawah). `accountMenu` selalu `setLogin=true` dengan
+        // `YouTubeClient.WEB_REMIX` (`supportsCookieAuthentication=true`),
+        // jadi header Cookie disetel `ytClient` bila cookie state ini
+        // tidak kosong. Catatan jujur: ini menyatakan header disetel dari
+        // state, BUKAN observasi wire — apakah header benar-benar sampai
+        // ke server adalah temuan eksperimen wire Agen A (PLAN §B.2).
+        val diagnostics = verificationDiagnostics(
+            initial.cookie,
+            cookieAttached = !initial.cookie.isNullOrBlank(),
+        )
 
         youTube.applyAuthState(initial.copy(dataSyncId = null))
         // Fallback verifikasi (PLAN music-login-raw-error): bila
@@ -185,7 +203,7 @@ open class MusicLoginRepository(
                         return@getOrElse selected.info
                     }
                 }
-                val rawDetail = rawDetailForVerification(error, cause, names)
+                val rawDetail = rawDetailForVerification(error, cause, names, diagnostics)
                 logFailure("verifikasi", error, cause, rawDetail = rawDetail, cookies = names)
                 return Result.failure(MusicLoginException(error, rawDetail))
             }
@@ -197,7 +215,7 @@ open class MusicLoginRepository(
             return Result.failure(MusicLoginException(error))
         } catch (e: Exception) {
             val error = classifyVerificationFailure(e)
-            val rawDetail = rawDetailForVerification(error, e, names)
+            val rawDetail = rawDetailForVerification(error, e, names, diagnostics)
             logFailure("verifikasi", error, e, rawDetail = rawDetail, cookies = names)
             return Result.failure(MusicLoginException(error, rawDetail))
         }
@@ -321,36 +339,91 @@ private fun isParseNull(cause: Throwable?): Boolean =
 /**
  * Teks mentah (sudah scrub) untuk kegagalan verifikasi, atau null bila
  * tidak ada yang aman ditampilkan:
- * - [MusicLoginError.HttpRejected] → `"HTTP $status"`.
+ * - [MusicLoginError.HttpRejected] → `"HTTP $status"`, DITAMBAH tiga baris
+ *   diagnostik wire [diagnostics] (PLAN §C, Agen C).
  * - [MusicLoginError.UnrecognizedResponse] → cuplikan dari
  *   `UnrecognizedAccountResponseException.rawSnippet` (Agen A), di-scrub
  *   sekali lagi secara defensif di sini, DITAMBAH baris akhir
- *   `"cookie: <nama, dipisah koma>"` (PLAN §C.3 butir 2). Bila tidak ada
- *   cuplikan, rawDetail menjadi baris cookie saja. [names] HANYA berisi
+ *   `"cookie: <nama, dipisah koma>"` (PLAN §C.3 butir 2) lalu tiga baris
+ *   diagnostik wire [diagnostics]. Bila tidak ada cuplikan, rawDetail
+ *   menjadi baris cookie saja + diagnostik. [names] HANYA berisi
  *   nama cookie (dari `cookieNames`), tanpa nilai — baris ini ditambah
  *   SETELAH scrub, jadi tidak pernah melewati scrub kedua yang beda gaya.
+ *   Begitu pula [diagnostics]: hanya nama cookie + origin, tanpa nilai.
  * - Lainnya → null (jangan karang).
  */
 private fun rawDetailForVerification(
     error: MusicLoginError,
     cause: Throwable?,
     names: List<String> = emptyList(),
-): String? =
-    when (error) {
-        is MusicLoginError.HttpRejected -> "HTTP ${error.status}"
+    diagnostics: String? = null,
+): String? {
+    val withDiagnostics = { base: String ->
+        if (diagnostics.isNullOrBlank()) base else "$base\n$diagnostics"
+    }
+    return when (error) {
+        is MusicLoginError.HttpRejected -> withDiagnostics("HTTP ${error.status}")
         is MusicLoginError.UnrecognizedResponse -> {
             val snippet = rawSnippetFrom(cause)?.let(::scrubRawDetail)?.takeIf { it.isNotEmpty() }
             val cookieLine = names.takeIf { it.isNotEmpty() }
                 ?.let { "cookie: ${it.joinToString(", ")}" }
             when {
-                snippet != null && cookieLine != null -> "$snippet\n$cookieLine"
-                snippet != null -> snippet
-                cookieLine != null -> cookieLine
-                else -> null
+                snippet != null && cookieLine != null -> withDiagnostics("$snippet\n$cookieLine")
+                snippet != null -> withDiagnostics(snippet)
+                cookieLine != null -> withDiagnostics(cookieLine)
+                else -> diagnostics?.takeIf { it.isNotBlank() }
             }
         }
         else -> null
     }
+}
+
+/**
+ * Urutan NAMA cookie yang dipakai `youtubeLoginCookieValue` untuk
+ * SAPISIDHASH (AuthUtils.kt `YOUTUBE_LOGIN_COOKIE_NAMES`): cerminan
+ * urutan itu, BUKAN salinan nilai. Bila urutan di AuthUtils berubah,
+ * daftar ini WAJIB ikut berubah — tidak ada API publik yang mengembalikan
+ * namanya, hanya nilainya.
+ */
+private val LOGIN_COOKIE_HASH_NAMES = listOf(
+    "SAPISID",
+    "__Secure-3PAPISID",
+    "__Secure-1PAPISID",
+)
+
+/**
+ * Nama cookie yang dipakai `youtubeLoginCookieValue` untuk menghitung
+ * SAPISIDHASH, atau null bila tidak ada yang cocok (mis. sesi penuh
+ * hanya bermodal `APISID`). NAMA SAJA, tanpa nilai.
+ * `internal` supaya tes modul ini bisa mengujinya langsung.
+ */
+internal fun hashCookieName(cookie: String?): String? {
+    val cookieMap = cookie?.let(::parseCookieString).orEmpty()
+    return LOGIN_COOKIE_HASH_NAMES.firstOrNull { !cookieMap[it].isNullOrBlank() }
+}
+
+/**
+ * Tiga baris diagnostik wire (PLAN §C, Agen C) yang ditambahkan di akhir
+ * rawDetail — string yang sama tampil di layar error DAN masuk log.
+ * HANYA berisi nama dan origin, TIDAK PERNAH nilai cookie, hash, atau
+ * token, jadi tidak perlu scrub:
+ * - `cookie terlampir: ya/tidak` — apakah request verifikasi melampirkan
+ *   header Cookie, ditentukan dari state yang dipakai verifikasi
+ *   ([cookieAttached]: cookie state tidak kosong + `setLogin=true` di
+ *   `accountMenu` + `WEB_REMIX` mendukung cookie auth). Ini menyatakan
+ *   header disetel dari state, BUKAN observasi wire (lihat PLAN §B.2).
+ * - `hash dari: <NAMA_COOKIE>` — nama cookie sumber SAPISIDHASH, atau
+ *   `- (tidak ada)` bila tidak ada yang cocok.
+ * - `hash origin: <origin>` — origin penghitung SAPISIDHASH dari
+ *   `YouTubeClient.WEB_REMIX.requestOrigin()`.
+ * `internal` supaya tes modul ini bisa mengujinya langsung.
+ */
+internal fun verificationDiagnostics(cookie: String?, cookieAttached: Boolean): String {
+    val hashFrom = hashCookieName(cookie) ?: "- (tidak ada)"
+    return "cookie terlampir: ${if (cookieAttached) "ya" else "tidak"}\n" +
+        "hash dari: $hashFrom\n" +
+        "hash origin: ${YouTubeClient.WEB_REMIX.requestOrigin()}"
+}
 
 /**
  * Cuplikan mentah dari penyebab `UnrecognizedResponse`, atau null bila
