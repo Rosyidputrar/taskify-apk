@@ -67,24 +67,27 @@ class ResolvingMediaDataSourceTest {
         }
     }
 
-    @Test fun `URL ANDROID request pertama Range 8MB dengan UA aplikasi tanpa origin`() {
-        val url = "https://rr1---sn-aaaa.googlevideo.com/videoplayback?c=ANDROID&cver=21.26.364&itag=251&clen=20000000"
+    @Test fun `URL ANDROID request pertama Range 6 detik dengan UA aplikasi tanpa origin`() {
+        // clen 20.000.000 / dur 2000 dtk = 10.000 B/dtk → chunk 6 dtk = 60.000 byte
+        // (INVESTIGASI-A §7: bukan 8 MB — ujung Range harus dalam jendela ~60 detik).
+        val url = "https://rr1---sn-aaaa.googlevideo.com/videoplayback?c=ANDROID&cver=21.26.364&itag=251&clen=20000000&dur=2000.0"
         val cap = CapturingClient(20_000_000)
         val read = openAndReadAll(url, 20_000_000L, cap.client)
         assertEquals(20_000_000L, read)
         assertTrue(cap.requests.isNotEmpty())
         val first = cap.requests[0]
-        assertEquals("bytes=0-8388607", first.header("Range"), "chunk pertama ArchiveTune = 8 MB")
+        assertEquals("bytes=0-59999", first.header("Range"), "chunk pertama = 6 detik media")
         assertEquals("com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip", first.header("User-Agent"))
         assertNull(first.header("Origin"), "klien native tanpa Origin")
         assertNull(first.header("Referer"), "klien native tanpa Referer")
-        assertTrue(cap.requests.size >= 3, "20 MB = 3 chunk, nyatanya ${cap.requests.size}")
-        assertEquals("bytes=8388608-16777215", cap.requests[1].header("Range"))
-        assertEquals("bytes=16777216-19999999", cap.requests[2].header("Range"))
+        assertEquals(334, cap.requests.size, "20 MB / 60 KB = 334 chunk, nyatanya ${cap.requests.size}")
+        assertEquals("bytes=60000-119999", cap.requests[1].header("Range"))
+        assertEquals("bytes=19980000-19999999", cap.requests[333].header("Range"))
     }
 
     @Test fun `URL WEB_REMIX request pertama Range berbatas dengan Firefox dan origin music`() {
-        val url = "https://rr1---sn-bbbb.googlevideo.com/videoplayback?c=WEB_REMIX&cver=1.20260707.12.00&itag=251&clen=100000"
+        // clen 100.000 / dur 1 dtk → chunk 6 dtk = 600.000 byte > isi → 1 chunk utuh.
+        val url = "https://rr1---sn-bbbb.googlevideo.com/videoplayback?c=WEB_REMIX&cver=1.20260707.12.00&itag=251&clen=100000&dur=1.0"
         val cap = CapturingClient(100_000)
         val read = openAndReadAll(url, 100_000L, cap.client)
         assertEquals(100_000L, read)
@@ -96,11 +99,14 @@ class ResolvingMediaDataSourceTest {
         assertEquals("https://music.youtube.com/", first.header("Referer"))
     }
 
-    @Test fun `URL tanpa contentLength terdaftar tetap dapat header per-c tanpa Range`() {
+    @Test fun `URL googlevideo tanpa contentLength tetap Range 32KB lewat cap ChunkedDataSource`() {
+        // F2 (INVESTIGASI-A §5) + F3 (§7): tanpa registry DAN tanpa `clen`/`dur`,
+        // request pertama googlevideo TETAP membawa Range berbatas —
+        // ChunkedDataSource membatasi chunk pertama ke fallback 32 KB.
+        // Sebelumnya tes ini meng-assert tanpa Range (perilaku lama yang
+        // menyebabkan 403), lalu sempat 8 MB (juga 403, lihat §7).
         val url = "https://rr1---sn-cccc.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251"
         val cap = CapturingClient(100_000)
-        // Tanpa put() ke registry: length UNSET → tanpa Range (perilaku lama),
-        // tapi header tetap per-c.
         val source = MediaRequestHeaders.createResolvingDataSourceFactory(cap.client).createDataSource()
         try {
             source.open(DataSpec(Uri.parse(url)))
@@ -109,9 +115,39 @@ class ResolvingMediaDataSourceTest {
         }
         assertEquals(1, cap.requests.size)
         val first = cap.requests[0]
-        assertNull(first.header("Range"))
+        assertEquals("bytes=0-32767", first.header("Range"))
         assertTrue(first.header("User-Agent")!!.contains("Chrome/141.0.0.0"))
         assertEquals("https://www.youtube.com", first.header("Origin"))
+    }
+
+    @Test fun `URL googlevideo dengan clen tanpa registry tetap Range dari fallback clen`() {
+        // F1 (INVESTIGASI-A §5): `resolvePlaybackDataSpec` jatuh ke `clen`.
+        // Tanpa `dur`, chunk memakai fallback 32 KB → 100.000 byte = 4 chunk.
+        val url = "https://rr1---sn-eeee.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251&clen=100000"
+        val cap = CapturingClient(100_000)
+        val read = openAndReadAllWithoutRegistry(url, cap.client)
+        assertEquals(100_000L, read)
+        assertEquals(4, cap.requests.size)
+        assertEquals("bytes=0-32767", cap.requests[0].header("Range"))
+        assertEquals("bytes=98304-99999", cap.requests[3].header("Range"))
+    }
+
+    /** Seperti [openAndReadAll] tapi tanpa mendaftarkan URL ke registry. */
+    private fun openAndReadAllWithoutRegistry(url: String, client: OkHttpClient): Long {
+        val source = MediaRequestHeaders.createResolvingDataSourceFactory(client).createDataSource()
+        try {
+            source.open(DataSpec(Uri.parse(url)))
+            val buf = ByteArray(8192)
+            var total = 0L
+            while (true) {
+                val n = source.read(buf, 0, buf.size)
+                if (n == C.RESULT_END_OF_INPUT) break
+                total += n
+            }
+            return total
+        } finally {
+            source.close()
+        }
     }
 
     @Test fun `resolvePlaybackDataSpec mengisi length dari registry dan header per-c`() {

@@ -4,10 +4,13 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.cache.Cache
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.rosyidputrar.taskify.core.innertube.SharedHttpClient
 import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
 import com.rosyidputrar.taskify.core.media.youtube.streamRequestHeaders
+import com.rosyidputrar.taskify.core.media.youtube.urlQueryParam
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,7 +45,9 @@ import java.util.concurrent.ConcurrentHashMap
  * ArchiveTune, yang memakai `OkHttpDataSource` untuk media).
  *
  * Request pertama SELALU membawa `Range` berbatas (ArchiveTune
- * `ChunkedDataSource`, chunk 8 MB): [createResolvingDataSourceFactory]
+ * `ChunkedDataSource`, chunk sadar-bitrate ~6 detik media — INVESTIGASI-A
+ * §7: 8 MB buta ditolak server karena ujung Range-nya melewati jendela
+ * throttle ~60 detik dari posisi putar): [createResolvingDataSourceFactory]
  * membungkus OkHttpDataSource dengan [ChunkedDataSource] di dalam
  * [ResolvingDataSource] yang mengisi `length` DataSpec dari
  * `contentLength` hasil resolve ([ResolvedStreamRegistry]) dan header
@@ -55,7 +60,11 @@ object MediaRequestHeaders {
     const val ORIGIN = "https://music.youtube.com"
     const val REFERER = "https://music.youtube.com/"
 
-    /** Panjang chunk media ArchiveTune (`MusicService.CHUNK_LENGTH`): 8 MB. */
+    /** Batas atas byte per chunk media ArchiveTune (`MusicService.CHUNK_LENGTH`): 8 MB.
+     * Chunk efektif untuk googlevideo lebih kecil dan sadar-bitrate
+     * (~6 detik media dari `clen`/`dur` URL — lihat
+     * [resolveBitrateAwareChunkLength], INVESTIGASI-A §7); 8 MB di sini
+     * hanya batas atas yang tidak pernah mengikat untuk audio. */
     const val CHUNK_LENGTH = 8 * 1024 * 1024L
 
     /** Header media request — fallback untuk URL tanpa param `c`; tanpa `Cookie` (sengaja, lihat KDoc di atas). */
@@ -87,8 +96,8 @@ object MediaRequestHeaders {
      * Factory DataSource pemutar (yang dipakai [MusicPlayer]): lapisan
      * ArchiveTune penuh — [ResolvingDataSource] (isi `length` + header
      * per-URL saat `open()`) → [ChunkedDataSource] (pecah jadi chunk
-     * 8 MB, tiap chunk satu request `Range` berbatas) →
-     * [OkHttpDataSource] di atas klien bersama.
+     * sadar-bitrate ~6 detik media, tiap chunk satu request `Range`
+     * berbatas) → [OkHttpDataSource] di atas klien bersama.
      *
      * OkHttp lapis dalam sengaja TANPA `setUserAgent`/default properties:
      * UA/Origin/Referer datang dari DataSpec hasil resolve (per-URL),
@@ -109,10 +118,33 @@ object MediaRequestHeaders {
     }
 
     /**
+     * Factory DataSource PERSIS pemutar (yang dipakai [MusicPlayer]): lapisan
+     * ArchiveTune penuh di atas [cache] media (lihat
+     * [createResolvingDataSourceFactory]) — `CacheDataSource` → Resolving →
+     * Chunked → OkHttp. Dipisah dari `MusicPlayer` supaya wire test memakai
+     * wiring produksi yang sama persis, bukan salinan yang bisa melenceng.
+     */
+    fun createPlayerDataSourceFactory(
+        cache: Cache,
+        okHttpClient: OkHttpClient = SharedHttpClient.client,
+    ): DataSource.Factory =
+        CacheDataSource.Factory()
+            .setCache(cache)
+            .setUpstreamDataSourceFactory(createResolvingDataSourceFactory(okHttpClient))
+
+    /**
      * Resolve satu DataSpec media ala ArchiveTune
      * (`MusicService.resolvePlaybackDataSpec`): header dari profil `c` URL
      * + `length` = sisa `contentLength` dari posisi buka. Murni (tanpa
      * jaringan) supaya bisa diuji di JVM.
+     *
+     * Panjang diambil dari [ResolvedStreamRegistry] dulu; bila URL itu tidak
+     * terdaftar (mis. jalur youtubei yang `contentLength`-nya 0 karena JSON
+     * `player` tidak membawa `contentLength` — INVESTIGASI-A §3), jatuh ke
+     * param `clen` URL itu sendiri (fallback yang sama dengan yang dipakai
+     * `DirectStreamResolver` untuk `DirectStream.contentLength`). Tanpa
+     * salah satu dari keduanya, `length` tetap UNSET dan `ChunkedDataSource`
+     * yang menutupnya dengan cap sintetis untuk host googlevideo.
      */
     fun resolvePlaybackDataSpec(dataSpec: DataSpec): DataSpec {
         val url = dataSpec.uri.toString()
@@ -120,6 +152,7 @@ object MediaRequestHeaders {
         // URL; tanpa itu, header profil `c` (Tahap 1).
         val headers = ResolvedStreamRegistry.headers(url) ?: headersForUrl(url)
         val contentLength = ResolvedStreamRegistry.contentLength(url)
+            ?: urlQueryParam(url, "clen")?.toLongOrNull()?.takeIf { it > 0 }
         val length = contentLength
             ?.let { it - dataSpec.position }
             ?.takeIf { it > 0 }
