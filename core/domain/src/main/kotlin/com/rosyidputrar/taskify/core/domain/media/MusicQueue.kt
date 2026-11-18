@@ -87,6 +87,13 @@ data class YtState(
     val percent: Int = 0,
     val label: String = "",
     val error: String = "",
+    /**
+     * Detail mentah error pemutar terakhir (dari `PlaybackException`,
+     * disusun [com.rosyidputrar.taskify.core.media.PlaybackException.toRawDetail]):
+     * sudah dibersihkan dari nilai sensitif, tampil di layar musik di bawah
+     * pesan ramah. `null` = tidak ada detail (atau error bukan dari pemutar).
+     */
+    val errorDetail: String? = null,
     val urls: Map<String, String> = emptyMap(),
     val prefetching: List<String> = emptyList(),
     val repeat: RepeatMode = RepeatMode.Off,
@@ -120,7 +127,7 @@ sealed interface YtEvent {
     /** Antrean tersimpan dipulihkan (setelah proses mati) — dalam keadaan jeda, URL diminta ulang saat diputar. */
     data class Restore(val snapshot: QueueSnapshot) : YtEvent
     /** Pemutaran gagal: langsung jadi galat (tidak ada lagi jalur konverter). */
-    data class PlaybackFailed(val videoId: String, val message: String) : YtEvent
+    data class PlaybackFailed(val videoId: String, val message: String, val rawDetail: String? = null) : YtEvent
     /** Lupakan URL yang kedaluwarsa (direct ±6 jam) supaya diminta ulang. */
     data class Expire(val now: Long) : YtEvent
     data object RadioStart : YtEvent
@@ -137,7 +144,7 @@ sealed interface YtEvent {
     data object Next : YtEvent
     data object Prev : YtEvent
     data class Jump(val position: Int) : YtEvent
-    data class Error(val message: String) : YtEvent
+    data class Error(val message: String, val rawDetail: String? = null) : YtEvent
     data class PrefetchStart(val videoId: String) : YtEvent
     data class PrefetchDone(val videoId: String, val url: String) : YtEvent
     data class PrefetchFailed(val videoId: String) : YtEvent
@@ -245,7 +252,7 @@ object MusicQueue {
                 val order = if (state.shuffle) shuffleOrder(sequential(songs.size), startAt, event.rng) else sequential(songs.size)
                 val live = songs.filter { it.live && it.url.isNotEmpty() }
                 state.copy(queue = songs, order = order, position = if (state.shuffle) 0 else startAt, status = YtStatus.Preparing,
-                    percent = 0, label = "", error = "", prefetching = emptyList(), continued = emptyList(), awaitingMore = false,
+                    percent = 0, label = "", error = "", errorDetail = null, prefetching = emptyList(), continued = emptyList(), awaitingMore = false,
                     radio = event.radio,
                     similarSeed = if (event.similar) songs[startAt].videoId.takeIf { !songs[startAt].live } else null,
                     urls = state.urls + live.associate { it.videoId to it.url },
@@ -272,10 +279,10 @@ object MusicQueue {
             if (state.current?.videoId != event.videoId) {
                 state.copy(urls = state.urls - event.videoId, streams = state.streams - event.videoId)
             } else if (state.current?.live == true) {
-                state.copy(status = YtStatus.Error, error = event.message, percent = 0, label = "")
+                state.copy(status = YtStatus.Error, error = event.message, errorDetail = event.rawDetail, percent = 0, label = "")
             } else {
                 state.copy(urls = state.urls - event.videoId, streams = state.streams - event.videoId,
-                    status = YtStatus.Error, error = event.message, percent = 0, label = "")
+                    status = YtStatus.Error, error = event.message, errorDetail = event.rawDetail, percent = 0, label = "")
             }
         }
         is YtEvent.Expire -> {
@@ -290,11 +297,11 @@ object MusicQueue {
             // Halaman radio kosong bukan galat; bila tak ada lagu baru & tak ada cursor, berhenti menunggu.
             if (next.awaitingMore && event.cursor == null) next.copy(awaitingMore = false) else next
         }
-        YtEvent.Preparing -> state.copy(status = YtStatus.Preparing, percent = 0, label = "", error = "")
+        YtEvent.Preparing -> state.copy(status = YtStatus.Preparing, percent = 0, label = "", error = "", errorDetail = null)
         is YtEvent.Progress -> if (state.status != YtStatus.Preparing) state else state.copy(percent = event.percent, label = event.label)
         is YtEvent.Ready -> state.copy(urls = state.urls + (event.videoId to event.url), percent = 100, label = "")
         is YtEvent.StreamInfo -> state.copy(streams = state.streams + (event.videoId to event.info))
-        YtEvent.Playing -> state.copy(status = YtStatus.Playing, error = "", percent = 100, label = "", awaitingMore = false)
+        YtEvent.Playing -> state.copy(status = YtStatus.Playing, error = "", errorDetail = null, percent = 100, label = "", awaitingMore = false)
         YtEvent.Paused -> if (state.status == YtStatus.Playing) state.copy(status = YtStatus.Paused) else state
         YtEvent.Ended -> {
             val pos = nextPosition(state)
@@ -306,11 +313,15 @@ object MusicQueue {
         }
         YtEvent.Next, YtEvent.Prev -> {
             val pos = if (event == YtEvent.Next) nextPosition(state, manual = true) else prevPosition(state)
-            if (pos == null) state else state.copy(position = pos, status = YtStatus.Preparing, percent = 0, label = "", error = "", awaitingMore = false)
+            if (pos == null) state else state.copy(position = pos, status = YtStatus.Preparing, percent = 0, label = "", error = "", errorDetail = null, awaitingMore = false)
         }
         is YtEvent.Jump -> if (event.position !in state.order.indices) state
-            else state.copy(position = event.position, status = YtStatus.Preparing, percent = 0, label = "", error = "")
-        is YtEvent.Error -> state.copy(status = YtStatus.Error, error = event.message, percent = 0, label = "")
+            else state.copy(position = event.position, status = YtStatus.Preparing, percent = 0, label = "", error = "", errorDetail = null)
+        // Galat baru (bukan dari pemutar) mengganti detail lama: detail basi
+        // tidak boleh tampil di bawah pesan error yang berbeda. Error resolve
+        // membawa rawDetail-nya sendiri (jenis StreamFailure + status HTTP);
+        // tanpa rawDetail, detail lama dibersihkan.
+        is YtEvent.Error -> state.copy(status = YtStatus.Error, error = event.message, errorDetail = event.rawDetail, percent = 0, label = "")
         is YtEvent.PrefetchStart -> if (event.videoId in state.prefetching) state else state.copy(prefetching = state.prefetching + event.videoId)
         is YtEvent.PrefetchDone -> state.copy(urls = state.urls + (event.videoId to event.url), prefetching = state.prefetching - event.videoId)
         is YtEvent.PrefetchFailed -> state.copy(prefetching = state.prefetching - event.videoId)

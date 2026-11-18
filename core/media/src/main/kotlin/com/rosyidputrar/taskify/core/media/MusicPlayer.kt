@@ -137,11 +137,15 @@ class MusicPlayer(
 
         override fun onPlayerError(error: PlaybackException) {
             val song = _state.value.current ?: return
+            // Detail mentah disusun SEBELUM dispatch: reducer PlaybackFailed
+            // membuang URL/stream lagu yang gagal, jadi format/host harus
+            // dibaca dari state sekarang (bukan sesudahnya).
+            val rawDetail = error.toRawDetail(song.videoId, _state.value.currentStream, _state.value.currentUrl)
             loadedId = null
             loadedUrl = null
             Log.w(TAG, "pemutaran ${song.videoId} gagal: ${error.errorCodeName}")
             // Direct gagal → langsung galat (tidak ada lagi fallback konverter).
-            dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi."))
+            dispatch(YtEvent.PlaybackFailed(song.videoId, if (song.live) "Siaran tidak bisa diputar sekarang." else "Audio gagal diputar. Coba lagi.", rawDetail))
         }
     }
 
@@ -373,17 +377,23 @@ class MusicPlayer(
                 val streamResult = streamDeferred.await()
                 val stream = streamResult.getOrNull()
                 if (stream == null) {
-                    val failure = (streamResult.exceptionOrNull() as? StreamFailureException)?.failure
+                    val exception = streamResult.exceptionOrNull()
+                    val failure = (exception as? StreamFailureException)?.failure
                     // Sesi kedaluwarsa (PLAN C.6): resolve kena LoginRequired
                     // PADAHAL cookie login ada → sesi yang dulu sah sudah habis;
                     // beri tahu repo lewat hook (VM menampilkan prompt login
                     // ulang) dan pakai pesan kedaluwarsa. Bila tidak login,
                     // pesan lama tetap (tidak ada sesi yang bisa habis).
+                    // Detail mentah ikut dikirim apa pun pesannya (Agen B):
+                    // jenis StreamFailure + status HTTP + pesan exception,
+                    // tanpa URL lengkap / cookie / token.
                     val message = if (failure is StreamFailure.LoginRequired && authState().hasLoginCookie) {
                         loginEvents?.onSessionExpired()
                         "Sesi login YouTube berakhir. Masuk lagi."
                     } else failure?.let(::streamErrorMessage) ?: "Gagal memuat audio."
-                    if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message))
+                    val rawDetail = if (failure != null) streamFailureRawDetail(failure, exception.cause)
+                        else musicErrorRawDetail(exception)
+                    if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message, rawDetail))
                     return@launch
                 }
                 dispatch(YtEvent.StreamInfo(id, stream.toStreamSource()))
@@ -392,7 +402,10 @@ class MusicPlayer(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio."))
+                // Kegagalan komposisi track/stream di luar StreamFailure
+                // (mis. galat jaringan saat track()): detail mentah ikut
+                // dikirim supaya tampil di layar musik (Agen B).
+                if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(e.message ?: "Gagal memuat audio.", musicErrorRawDetail(e)))
             } finally {
                 // Keterangan yang belum datang (galat/batal) dilepas supaya bisa diambil lagi nanti.
                 if (!detailsDone && id in _state.value.detailsPending) dispatch(YtEvent.DetailsCancelled(id))
