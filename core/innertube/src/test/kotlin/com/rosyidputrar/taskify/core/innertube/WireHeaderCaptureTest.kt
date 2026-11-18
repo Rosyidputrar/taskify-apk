@@ -10,6 +10,7 @@ import io.ktor.client.plugins.compression.ContentEncoding
 import io.ktor.client.plugins.defaultRequest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
@@ -136,11 +137,17 @@ class WireHeaderCaptureTest {
      * Salinan VERBATIM `InnerTube.createDefaultClient()` (InnerTube.kt:426-443),
      * kecuali URL `defaultRequest` diganti ke server lokal. Bila builder
      * produksi berubah, salinan ini HARUS ikut diubah — lihat komentar di
-     * atas kelas.
+     * atas kelas. Satu-satunya perbedaan lain: `preconfigured` memakai
+     * klien lokal baru (bukan [SharedHttpClient.client]) supaya tes ini
+     * tidak menyentuh singleton proses.
      */
     private fun localClient(port: Int): HttpClient =
         HttpClient(OkHttp) {
             expectSuccess = true
+
+            engine {
+                preconfigured = OkHttpClient.Builder().build()
+            }
 
             install(ContentEncoding) {
                 gzip(0.9F)

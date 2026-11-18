@@ -18,6 +18,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     api(libs.androidx.media3.exoplayer)
     api(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.datasource.okhttp)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
 

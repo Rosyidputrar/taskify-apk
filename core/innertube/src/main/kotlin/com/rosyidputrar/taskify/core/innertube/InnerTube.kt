@@ -61,6 +61,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import java.io.IOException
@@ -425,9 +426,27 @@ class InnerTube(
     }
 
     companion object {
-        fun createDefaultClient(): HttpClient =
+        /**
+         * Klien Ktor bawaan di atas [OkHttpClient] bersama ([SharedHttpClient]).
+         *
+         * `engine { preconfigured }` membuat engine Ktor memakai klien ini
+         * sebagai basis (`newBuilder()` — connection pool, dispatcher, DNS,
+         * dan socket factory DIBAGI dengan klien asal), jadi request `player`
+         * dan request media ExoPlayer (yang memakai klien yang sama lewat
+         * `OkHttpDataSource`) keluar lewat jalur jaringan yang sama. Tanpa
+         * ini tiap `InnerTube` punya pool OkHttp sendiri dan media memakai
+         * `HttpURLConnection` — dua stack yang bisa memilih keluarga IP
+         * berbeda di ponsel dual-stack + CGNAT (403 googlevideo 18 Nov 2026).
+         *
+         * [okHttpClient] bisa diinjeksi (tes); bawaan = klien bersama.
+         */
+        fun createDefaultClient(okHttpClient: OkHttpClient = SharedHttpClient.client): HttpClient =
             HttpClient(OkHttp) {
                 expectSuccess = true
+
+                engine {
+                    preconfigured = okHttpClient
+                }
 
                 install(ContentEncoding) {
                     gzip(0.9F)
