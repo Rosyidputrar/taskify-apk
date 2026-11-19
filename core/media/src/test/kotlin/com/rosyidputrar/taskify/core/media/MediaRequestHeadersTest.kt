@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
@@ -25,6 +26,24 @@ import kotlin.test.assertTrue
  */
 @RunWith(AndroidJUnit4::class)
 class MediaRequestHeadersTest {
+    @After fun tearDown() {
+        ResolvedStreamRegistry.clear()
+    }
+
+    @Test fun `cacheKeyFor memakai identitas stabil bila dikenal dan URL bila tidak`() {
+        // Optimasi Agen A (A3): kunci cache media = `videoId:itag` supaya
+        // putar ulang setelah resolve ulang (URL baru) memakai cache lama.
+        val url1 = "https://rr1---sn-x.googlevideo.com/videoplayback?expire=111&sig=AAA"
+        val url2 = "https://rr1---sn-x.googlevideo.com/videoplayback?expire=222&sig=BBB"
+        assertEquals(url1, ResolvedStreamRegistry.cacheKeyFor(url1), "tanpa identitas: kunci = URL")
+        ResolvedStreamRegistry.putIdentity(url1, "aaaaaaaaaaa", 251)
+        ResolvedStreamRegistry.putIdentity(url2, "aaaaaaaaaaa", 251)
+        assertEquals("aaaaaaaaaaa:251", ResolvedStreamRegistry.cacheKeyFor(url1))
+        assertEquals("aaaaaaaaaaa:251", ResolvedStreamRegistry.cacheKeyFor(url2), "URL baru, lagu sama: kunci sama")
+        ResolvedStreamRegistry.putIdentity(url2, "bbbbbbbbbbb", 251)
+        assertEquals("bbbbbbbbbbb:251", ResolvedStreamRegistry.cacheKeyFor(url2), "video berbeda: kunci berbeda")
+    }
+
     @Test fun `header media berisi origin referer user-agent web dan accept`() {
         val headers = MediaRequestHeaders.DEFAULT
         assertEquals("https://music.youtube.com", headers["Origin"])

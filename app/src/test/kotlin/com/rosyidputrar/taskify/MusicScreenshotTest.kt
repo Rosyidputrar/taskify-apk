@@ -225,13 +225,16 @@ class MusicScreenshotTest {
     // salin (perintah sir, Agen A/B): golden baru supaya rendernya bisa
     // diperiksa visual sebelum dikirim. Fixture rawDetail mengikuti format
     // asli penyusunnya (PlaybackErrorDetail / musicErrorRawDetail): tanpa
-    // URL lengkap, cookie, atau token.
+    // URL lengkap, cookie, atau token. Empat baris diagnostik 403
+    // (Agen C, webcreator-403-fix): klien, paramUrl (keberadaan NAMA param
+    // n/pot/sig/expire/ip — tanpa nilai, jadi `ip` ikut tercakup),
+    // jedaResolveKePutarMs, expiresInSeconds.
     @Config(qualifiers = "w393dp-h1700dp-xxhdpi")
     @Test fun playerErrorRaw() = shot("music_player_error_raw_light", false) {
         val p = base.player.copy(
             status = YtStatus.Error,
             error = "Audio gagal diputar. Coba lagi.",
-            errorDetail = "videoId: ${songs[0].videoId}\nformat: itag 251 (audio/webm; codecs=\"opus\")\nhost: rr2---sn-a5mekn7z.googlevideo.com\nerrorCodeName: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED\nerrorCode: 2007\nmessage: Gagal tersambung.",
+            errorDetail = "videoId: ${songs[0].videoId}\nformat: itag 251 (audio/webm; codecs=\"opus\")\nhost: rr2---sn-a5mekn7z.googlevideo.com\nerrorCodeName: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED\nerrorCode: 2007\nmessage: Gagal tersambung.\nklien: WEB_CREATOR\nparamUrl: n: ada, pot: ada, sig: ada, expire: ada, ip: ada\njedaResolveKePutarMs: 1240\nexpiresInSeconds: 21540",
         )
         MusicContent(base.copy(tab = MusicTab.Queue, player = p), object : MusicActions {}, padding)
     }

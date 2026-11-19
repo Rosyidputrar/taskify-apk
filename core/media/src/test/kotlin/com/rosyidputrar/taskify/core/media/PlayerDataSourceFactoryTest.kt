@@ -310,6 +310,52 @@ class PlayerDataSourceFactoryTest {
         assertEquals(1, server.requests.size, "putar ulang dilayani cache, tanpa request upstream")
     }
 
+    @Test fun `putar ulang setelah resolve baru pakai cache yang sama`() {
+        // Optimasi Agen A (A3): URL baru tiap resolve (`expire`/`sig` baru)
+        // membuat kunci cache berbasis URL selalu miss. Kunci stabil
+        // `videoId:itag` membuat putar ulang setelah resolve ulang dilayani
+        // cache — 0 request upstream (sebelum perbaikan: unduh ulang penuh,
+        // 2 request untuk 100.000 byte ini).
+        val videoId = "aaaaaaaaaaa"
+        val url1 = "https://rr1---sn-cacheA.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=100000&dur=10.0&expire=111111&sig=AAAA"
+        val url2 = "https://rr1---sn-cacheA.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=100000&dur=10.0&expire=222222&sig=BBBB"
+        val total = 100_000
+        val server = GoogleVideoLikeClient(total)
+        val sourceFactory = factory(server.client)
+        ResolvedStreamRegistry.put(url1, total.toLong())
+        ResolvedStreamRegistry.putIdentity(url1, videoId, 251)
+        assertEquals(total.toLong(), openAndReadAll(url1, sourceFactory))
+        assertEquals(2, server.requests.size, "100.000 byte / chunk 60.000 = 2 request")
+        ResolvedStreamRegistry.put(url2, total.toLong())
+        ResolvedStreamRegistry.putIdentity(url2, videoId, 251)
+        assertEquals(total.toLong(), openAndReadAll(url2, sourceFactory))
+        assertEquals(2, server.requests.size, "URL baru, lagu sama: dilayani cache, tanpa request upstream")
+    }
+
+    @Test fun `video dan itag berbeda tidak berbagi cache`() {
+        // Kunci stabil harus membedakan video (videoId) dan format (itag):
+        // video lain dengan itag sama, dan video sama dengan itag lain, harus
+        // tetap mengunduh — bukan menyajikan audio yang salah.
+        val url1 = "https://rr1---sn-cacheB.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=100000&dur=10.0&expire=111111&sig=AAAA"
+        val urlOtherVideo = "https://rr1---sn-cacheB.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=100000&dur=10.0&expire=222222&sig=BBBB"
+        val urlOtherItag = "https://rr1---sn-cacheB.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=140&clen=100000&dur=10.0&expire=333333&sig=CCCC"
+        val total = 100_000
+        val server = GoogleVideoLikeClient(total)
+        val sourceFactory = factory(server.client)
+        ResolvedStreamRegistry.put(url1, total.toLong())
+        ResolvedStreamRegistry.putIdentity(url1, "aaaaaaaaaaa", 251)
+        assertEquals(total.toLong(), openAndReadAll(url1, sourceFactory))
+        assertEquals(2, server.requests.size)
+        ResolvedStreamRegistry.put(urlOtherVideo, total.toLong())
+        ResolvedStreamRegistry.putIdentity(urlOtherVideo, "bbbbbbbbbbb", 251)
+        assertEquals(total.toLong(), openAndReadAll(urlOtherVideo, sourceFactory))
+        assertEquals(4, server.requests.size, "video berbeda: cache miss, unduh ulang")
+        ResolvedStreamRegistry.put(urlOtherItag, total.toLong())
+        ResolvedStreamRegistry.putIdentity(urlOtherItag, "aaaaaaaaaaa", 140)
+        assertEquals(total.toLong(), openAndReadAll(urlOtherItag, sourceFactory))
+        assertEquals(6, server.requests.size, "itag berbeda: cache miss, unduh ulang")
+    }
+
     @Test fun `URL non-googlevideo tanpa panjang pass-through tanpa Range`() {
         // Siaran langsung (bukan googlevideo): cap sintetis TIDAK berlaku,
         // dibaca penuh 200 seperti sebelumnya.

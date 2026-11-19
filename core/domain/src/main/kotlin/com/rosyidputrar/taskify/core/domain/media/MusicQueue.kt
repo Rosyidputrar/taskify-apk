@@ -161,7 +161,8 @@ sealed interface YtEvent {
     data object Next : YtEvent
     data object Prev : YtEvent
     data class Jump(val position: Int) : YtEvent
-    data class Error(val message: String, val rawDetail: String? = null) : YtEvent
+    /** Galat resolve / komposisi: `skippable = false` = galat sesi login — antrean TIDAK boleh auto-skip (Agen B); pengguna harus masuk lagi, bukan melewati lagu. */
+    data class Error(val message: String, val rawDetail: String? = null, val skippable: Boolean = true) : YtEvent
     data class PrefetchStart(val videoId: String) : YtEvent
     data class PrefetchDone(val videoId: String, val url: String) : YtEvent
     data class PrefetchFailed(val videoId: String) : YtEvent
@@ -440,7 +441,10 @@ object MusicQueue {
         s.status == YtStatus.Error -> s.error.ifEmpty { "Gagal memuat audio." }
         s.current?.live == true && s.status != YtStatus.Preparing -> listOf("Siaran langsung", s.current?.artist.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
         s.awaitingMore -> if (online) "Mencari lagu lanjutan…" else "Tidak ada koneksi"
-        s.status == YtStatus.Preparing -> if (online) s.label.ifEmpty { "Menyiapkan audio…" } else "Tidak ada koneksi"
+        s.status == YtStatus.Preparing -> if (online) s.label.ifEmpty { "Menyiapkan audio…" }
+            // Offline tapi label terisi = antrean sedang MENUNGGU jaringan
+            // kembali (Agen B), bukan sekadar menyiapkan: tampilkan labelnya.
+            else s.label.ifEmpty { "Tidak ada koneksi" }
         s.status == YtStatus.Idle -> if (online) "Cari lagu untuk diputar" else "Tidak ada koneksi"
         else -> listOf(s.current?.artist.orEmpty(), if (s.order.size > 1) "${s.position + 1}/${s.order.size}" else "").filter { it.isNotEmpty() }.joinToString(" · ")
     }

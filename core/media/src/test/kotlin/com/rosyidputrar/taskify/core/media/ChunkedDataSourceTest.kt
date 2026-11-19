@@ -5,9 +5,11 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.ceil
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -207,5 +209,25 @@ class ChunkedDataSourceTest {
         // Bitrate tidak wajar tinggi → hasil hitung > 1 MB → turun ke 1 MB.
         val high = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=10000000&dur=1.0")
         assertEquals(1024 * 1024L, resolveBitrateAwareChunkLength(high))
+    }
+
+    @Test fun `chunk 6 detik di buffer default 50 detik ujungnya 56 detik masih dalam jendela 60 detik`() {
+        // Invarian yang dijaga optimasi Agen A (A5): buffer default ExoPlayer
+        // (DefaultLoadControl min=maks=50 detik) + chunk 6 detik → ujung Range
+        // steady-state ≈ 56 detik < 60 detik jendela throttle. Bila default
+        // media3 berubah, tes ini gagal supaya hitung jendela diperiksa ulang
+        // sebelum chunk atau buffer diubah.
+        assertEquals(50_000, DefaultLoadControl.DEFAULT_MIN_BUFFER_MS)
+        assertEquals(50_000, DefaultLoadControl.DEFAULT_MAX_BUFFER_MS)
+        val worstEndSeconds = DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 1000.0 + TARGET_CHUNK_MEDIA_SECONDS
+        assertTrue(worstEndSeconds < 60.0, "ujung steady-state $worstEndSeconds detik harus < 60 detik")
+        // Jumlah request per lagu pada chunk ini (angka pengukuran Agen A,
+        // tidak berubah karena chunk dipertahankan 6 detik):
+        // 7Xqon20TlH4: 3.371.685 byte / chunk ≈98.348 → 35 request;
+        // BLQPNaBklGA: 5.495.333 byte / chunk ≈105.510 → 53 request.
+        val sevenX = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=3371685&dur=205.7")
+        assertEquals(35, ceil(3_371_685.0 / resolveBitrateAwareChunkLength(sevenX)).toInt())
+        val blqp = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=5495333&dur=312.5")
+        assertEquals(53, ceil(5_495_333.0 / resolveBitrateAwareChunkLength(blqp)).toInt())
     }
 }
