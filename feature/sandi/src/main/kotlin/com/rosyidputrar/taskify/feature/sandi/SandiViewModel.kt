@@ -4,7 +4,9 @@ import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
+import com.rosyidputrar.taskify.core.domain.sandi.ExportKind
 import com.rosyidputrar.taskify.core.domain.sandi.Generator
+import com.rosyidputrar.taskify.core.domain.sandi.GoogleAuthPlan
 import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
 import com.rosyidputrar.taskify.core.domain.sandi.MasterPassword
 import com.rosyidputrar.taskify.core.domain.sandi.Strength
@@ -61,6 +63,10 @@ data class SandiUiState(
     val email: String? = null,
     /** HP punya kunci layar → "ingat perangkat" bisa dipakai. */
     val trustAvailable: Boolean = true,
+    /** QR Google Authenticator yang sedang ditampilkan (rahasia; hilang saat ditutup atau brankas terkunci). */
+    val migration: GoogleAuthPlan? = null,
+    /** Berkas ekspor siap disimpan: UI membuka pemilih lokasi, lalu memanggil [SandiActions.finishExport]. */
+    val pendingExport: PendingExport? = null,
 ) {
     /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
     val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
@@ -99,7 +105,18 @@ interface SandiActions {
     fun clearLog()
     fun setGenerator(p: Generator.Prefs)
     fun regenerate()
+
+    // ekspor (bawaan kosong supaya implementasi palsu di tes tidak perlu ikut diubah)
+    /** Cek ulang master password, lalu siapkan ekspor [kind] (berkas atau QR). */
+    fun startExport(kind: ExportKind, password: String) {}
+    /** Pemilih lokasi sudah dibuka untuk [PendingExport] ini (jangan dibuka lagi setelah rotasi layar). */
+    fun exportLaunched() {}
+    /** Lokasi dipilih ([uri] null = batal): tulis berkas, lalu buang isinya dari memori. */
+    fun finishExport(uri: String?) {}
+    /** Tutup QR Google Authenticator dan buang isinya. */
+    fun closeMigration() {}
 }
+
 
 class SandiViewModel(
     private val service: SandiService,
@@ -107,6 +124,7 @@ class SandiViewModel(
     private val prefs: SandiPrefs,
     private val messenger: Messenger,
     private val email: AccountEmail,
+    private val writer: SandiFileWriter,
 ) : ViewModel(), SandiActions {
     private val local = MutableStateFlow(
         SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get(), now = service.totpNow()),
@@ -119,15 +137,21 @@ class SandiViewModel(
     val clock: StateFlow<Long> = flow { while (true) { emit(service.totpNow()); delay(1_000) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), service.totpNow())
 
+    private val exporter = SandiExporter(viewModelScope, service::verifyMaster, writer, messenger::show)
+
     val state: StateFlow<SandiUiState> = combine(
         local,
         service.status,
         combine(service.items, service.totpLog) { i, l -> i to l },
         combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
-    ) { l, status, (items, log), (rk, rr, sw) ->
+        exporter.state,
+    ) { l, status, (items, log), (rk, rr, sw), export ->
         l.copy(
             status = status, items = items, log = log, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
             clockOffsetMs = service.clockOffsetMs,
+            // QR rahasia tidak pernah tampil di atas brankas yang terkunci.
+            migration = export.migration.takeIf { status is VaultStatus.Unlocked },
+            pendingExport = export.pending,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
@@ -145,6 +169,8 @@ class SandiViewModel(
         refreshTrust()
         if (local.value.generated.isEmpty()) regenerate()
         launchSafe { runCatching { withContext(Dispatchers.Default) { MasterPassword.warmUp() } } }
+        // Brankas terkunci → QR rahasia dibuang dari memori juga (bukan hanya disembunyikan).
+        launchSafe { service.status.collect { s -> if (s !is VaultStatus.Unlocked) exporter.onLocked() } }
     }
 
     private fun run(busy: String, block: suspend () -> Unit) {
@@ -282,6 +308,21 @@ class SandiViewModel(
 
     override fun deleteLog(id: String) { launchSafe { service.deleteTotpLog(id) } }
     override fun clearLog() { launchSafe { service.clearTotpLog() } }
+
+    // ---------------------------------------------------------------- ekspor
+
+    override fun startExport(kind: ExportKind, password: String) = run("Memeriksa master password…") {
+        exporter.start(kind, password, state.value.items.items.map { it.payload })
+    }
+
+    override fun exportLaunched() = exporter.launched()
+    override fun finishExport(uri: String?) = exporter.finish(uri)
+    override fun closeMigration() = exporter.closeMigration()
+
+    override fun onCleared() {
+        exporter.clear()
+        super.onCleared()
+    }
 
     // ---------------------------------------------------------------- generator
 

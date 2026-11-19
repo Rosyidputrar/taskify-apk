@@ -186,6 +186,8 @@ fun SandiContent(
         if (settings) SettingsSheet(state, actions, onDismiss = { settings = false })
         if (history) HistorySheet(state, actions, onDismiss = { history = false })
     }
+    // Di luar `if (unlocked)`: pemilih lokasi bisa kembali saat brankas sudah terkunci otomatis.
+    ExportHost(state, actions)
     if (quick) QuickCheckSheet(state, actions, now, onDismiss = { quick = false })
     state.recoveryToShow?.let { RecoveryKeyDialog(it, state.email, actions) }
 }

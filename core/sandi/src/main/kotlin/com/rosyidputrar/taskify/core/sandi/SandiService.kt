@@ -312,6 +312,22 @@ class SandiService(
     suspend fun deleteTotpLog(id: String) = repo.deleteTotpLog(id)
     suspend fun clearTotpLog() = repo.clearTotpLog()
 
+    // ================================================================== ekspor
+
+    /**
+     * Cek ulang master password sebelum isi brankas diekspor sebagai teks biasa (brankas yang sudah
+     * terbuka — mis. lewat sidik jari — tidak cukup). Tidak mengubah sesi: DEK hasil pengecekan
+     * langsung dihancurkan. false = sandi salah.
+     */
+    suspend fun verifyMaster(password: String): Boolean {
+        val open = session.require()
+        val k = key.value ?: repo.getKey() ?: throw SandiUserException("Brankas belum tersinkron ke perangkat ini.")
+        if (k.record.wrappedKey != open.stamp) throw SandiUserException("Kunci brankas baru diganti. Buka brankas lagi lalu ulangi.")
+        val dek = withContext(Dispatchers.Default) { SandiCrypto.unlockWithPassword(k.record, password, users.require()) } ?: return false
+        dek.destroy()
+        return true
+    }
+
     suspend fun dismissRejectedKeyCreation() = repo.dismissRejectedKeyCreation()
     suspend fun dismissRejectedRotation() = repo.dismissRejectedRotation()
     suspend fun dismissStaleWrites() = repo.dismissStaleWrites()

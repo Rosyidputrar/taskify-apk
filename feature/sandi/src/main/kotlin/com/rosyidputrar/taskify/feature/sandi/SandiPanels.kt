@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
+import com.rosyidputrar.taskify.core.domain.sandi.ExportKind
 import com.rosyidputrar.taskify.core.domain.sandi.Generator
 import com.rosyidputrar.taskify.core.domain.sandi.SANDI_AUTO_LOCK_OPTIONS
 import com.rosyidputrar.taskify.core.domain.sandi.TOTP_LOG_RETENTION_DAYS
@@ -217,19 +218,25 @@ internal fun HistorySheet(state: SandiUiState, actions: SandiActions, onDismiss:
 internal fun SettingsSheet(state: SandiUiState, actions: SandiActions, onDismiss: () -> Unit) {
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        SettingsBody(state, actions, onChangePassword = { dialog = "password" }, onRotate = { dialog = "recovery" })
+        SettingsBody(state, actions, onChangePassword = { dialog = "password" }, onRotate = { dialog = "recovery" },
+            onExport = { actions.clearError(); dialog = "export:" + it.name })
     }
-    when (dialog) {
+    when (val d = dialog) {
         "password" -> ChangePasswordDialog(state, actions, onDismiss = { dialog = null; actions.clearError() })
         "recovery" -> RotateRecoveryDialog(state, actions, onDismiss = { dialog = null; actions.clearError() })
+        null -> Unit
+        else -> ExportKind.entries.firstOrNull { "export:" + it.name == d }?.let { kind ->
+            ExportDialog(kind, state, actions, onDismiss = { dialog = null; actions.clearError() })
+        }
     }
-    // Dialog ditutup otomatis setelah rotasi berhasil (kunci pemulihan baru tampil).
+    // Dialog ditutup otomatis setelah rotasi berhasil (kunci pemulihan baru tampil) atau ekspor siap.
     if (state.recoveryToShow != null && dialog != null) dialog = null
+    if ((state.pendingExport != null || state.migration != null) && dialog?.startsWith("export:") == true) dialog = null
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: () -> Unit, onRotate: () -> Unit) {
+fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: () -> Unit, onRotate: () -> Unit, onExport: (ExportKind) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Pengaturan brankas", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
@@ -255,6 +262,8 @@ fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: (
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FilledTonalButton(onClick = onChangePassword, modifier = Modifier.fillMaxWidth()) { Text("Ganti master password") }
         OutlinedButton(onClick = onRotate, modifier = Modifier.fillMaxWidth()) { Text("Buat kunci pemulihan baru") }
+        HorizontalDivider()
+        ExportSection(onExport)
     }
 }
 
