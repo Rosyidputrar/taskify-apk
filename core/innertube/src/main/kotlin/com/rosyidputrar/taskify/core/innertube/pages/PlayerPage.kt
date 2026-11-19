@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Parser respons `player` untuk metadata + loudness — port
  * `loudnessFromPlayer` dan `fetchPlayerTrack` dari `worker/direct.ts`.
- * Dipakai `YouTube.track()` sebagai pelengkap `next` (loudness) dan sebagai
+ * Dipakai `MyTube.track()` sebagai pelengkap `next` (loudness) dan sebagai
  * fallback bila `next` diblokir. Pemilihan format audio ada di
  * `DirectStreamResolver` (Tahap 3), bukan di sini.
  */

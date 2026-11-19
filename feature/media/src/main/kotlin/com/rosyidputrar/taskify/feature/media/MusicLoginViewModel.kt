@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginError
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginException
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginError
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginException
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +27,7 @@ sealed interface MusicLoginScreenState {
 
 /**
  * Port `LoginViewModel` ArchiveTune (tanpa Hilt, tanpa
- * `UpdateYouTubeLoginContextUseCase` — di Taskify `visitorData`/`dataSyncId`
+ * `UpdateMyTubeLoginContextUseCase` — di Taskify `visitorData`/`dataSyncId`
  * dibawa langsung ke [MusicLoginRepository.completeLogin]).
  *
  * Guard persis ArchiveTune: jangan `startLogin` dua kali untuk cookie yang

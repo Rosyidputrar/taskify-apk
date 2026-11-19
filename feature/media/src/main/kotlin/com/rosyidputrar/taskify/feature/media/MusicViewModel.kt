@@ -28,10 +28,10 @@ import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
-import com.rosyidputrar.taskify.core.media.YouTubeMusicException
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicException
 import com.rosyidputrar.taskify.core.media.musicErrorRawDetail
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -181,7 +181,7 @@ fun interface OnlineFlow {
 
 class MusicViewModel(
     private val player: MusicPlayer,
-    private val client: YouTubeMusicClient,
+    private val client: MyTubeMusicClient,
     online: OnlineFlow,
     /** Snackbar aplikasi (sama dengan modul lain); null di tes. */
     private val messenger: Messenger? = null,
@@ -242,7 +242,7 @@ class MusicViewModel(
 
     /** Fasad gagal isAuth (401/403) saat login → sesi dianggap kedaluwarsa (PLAN C.7). */
     private fun noteAuthFailure(e: Exception) {
-        if ((e as? YouTubeMusicException)?.isAuth == true && loginRepo.isLoggedIn) loginRepo.markSessionExpired()
+        if ((e as? MyTubeMusicException)?.isAuth == true && loginRepo.isLoggedIn) loginRepo.markSessionExpired()
     }
 
     private fun loadLyrics(song: Song, details: com.rosyidputrar.taskify.core.domain.media.TrackDetails?) {
@@ -255,9 +255,9 @@ class MusicViewModel(
         }
         local.update { it.copy(lyrics = LyricsState(id, loading = true)) }
         lyricsJob = launchSafe {
-            // Repository lirik (LRCLib -> teks YouTube -> transkrip); null =
+            // Repository lirik (LRCLib -> teks MyTube -> transkrip); null =
             // tidak ada lirik, bukan galat. lyricsId dari Track dipakai untuk
-            // langkah teks YouTube supaya tidak memanggil `next` lagi.
+            // langkah teks MyTube supaya tidak memanggil `next` lagi.
             val r = runCatching { client.syncedLyrics(song, details?.lyricsId) }
             if (local.value.lyrics.videoId != id) return@launchSafe
             val failure = r.exceptionOrNull()
@@ -291,7 +291,7 @@ class MusicViewModel(
             // Tapi galat auth InnerTube (401/403) saat login ditampilkan DAN
             // menandai sesi kedaluwarsa — saran hanya jalan bila login, jadi
             // isAuth di sini berarti sesi yang dulu sah sudah habis.
-            val blockedEx = (e as? YouTubeMusicException)?.takeIf { it.isAuth }
+            val blockedEx = (e as? MyTubeMusicException)?.takeIf { it.isAuth }
             val blocked = blockedEx?.message
             (e as? Exception)?.let(::noteAuthFailure)
             local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error, errorDetail = blockedEx?.let(::musicErrorRawDetail) ?: it.search.errorDetail)) }

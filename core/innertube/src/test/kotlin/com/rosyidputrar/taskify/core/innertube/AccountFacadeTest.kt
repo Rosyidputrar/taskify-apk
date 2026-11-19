@@ -18,14 +18,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Fasad akun `YouTube.accountInfo()` / `accountDataSyncId()` via MockEngine.
+ * Fasad akun `MyTube.accountInfo()` / `accountDataSyncId()` via MockEngine.
  * Fixture JSON minimal inline (data dummy, bukan cookie/respons asli):
  * akun lengkap, varian tanpa akun, dan `accounts_list` dengan beberapa akun.
  */
 class AccountFacadeTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun youtubeWith(menuJson: String, channelsJson: String, onRequest: ((String) -> Unit)? = null): YouTube {
+    private fun myTubeWith(menuJson: String, channelsJson: String, onRequest: ((String) -> Unit)? = null): MyTube {
         val engine = MockEngine { request ->
             onRequest?.invoke(request.url.encodedPath)
             val body = when {
@@ -39,7 +39,7 @@ class AccountFacadeTest {
                 headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )
         }
-        return YouTube(
+        return MyTube(
             InnerTube(
                 HttpClient(engine) {
                     expectSuccess = true
@@ -51,8 +51,8 @@ class AccountFacadeTest {
 
     @Test
     fun `accountInfo mengembalikan akun lengkap dari account_menu`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountInfo(
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountInfo(
             authState = PlaybackAuthState(cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login"),
         )
         assertTrue(result.isSuccess)
@@ -65,8 +65,8 @@ class AccountFacadeTest {
 
     @Test
     fun `accountInfo gagal bila respons tanpa akun aktif`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_NO_ACCOUNT, ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountInfo()
+        val myTube = myTubeWith(ACCOUNT_MENU_NO_ACCOUNT, ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountInfo()
         assertTrue(result.isFailure)
     }
 
@@ -75,38 +75,38 @@ class AccountFacadeTest {
         // Parser langsung: header ada tapi accountName tanpa runs.
         val root = json.parseToJsonElement(ACCOUNT_MENU_NO_NAME)
         assertNull(parseAccountInfo(root))
-        val youTube = youtubeWith(ACCOUNT_MENU_NO_NAME, ACCOUNTS_LIST_EMPTY)
-        assertTrue(youTube.accountInfo().isFailure)
+        val myTube = myTubeWith(ACCOUNT_MENU_NO_NAME, ACCOUNTS_LIST_EMPTY)
+        assertTrue(myTube.accountInfo().isFailure)
     }
 
     @Test
     fun `accountDataSyncId memilih akun selected dan mengabaikan yang disabled`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED)
-        val result = youTube.accountDataSyncId()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED)
+        val result = myTube.accountDataSyncId()
         assertTrue(result.isSuccess)
         assertEquals("delegatedB||userB", result.getOrThrow())
     }
 
     @Test
     fun `accountDataSyncId memakai mainAppWebDataSyncId bila ada`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_MAIN)
-        val result = youTube.accountDataSyncId()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_MAIN)
+        val result = myTube.accountDataSyncId()
         assertTrue(result.isSuccess)
         assertEquals("delegatedMain||userMain", result.getOrThrow())
     }
 
     @Test
     fun `accountDataSyncId tanpa selected mengambil yang pertama`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_NONE_SELECTED)
-        val result = youTube.accountDataSyncId()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_NONE_SELECTED)
+        val result = myTube.accountDataSyncId()
         assertTrue(result.isSuccess)
         assertEquals("delegatedA||userA", result.getOrThrow())
     }
 
     @Test
     fun `accountDataSyncId gagal bila tidak ada dataSyncId`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountDataSyncId()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountDataSyncId()
         assertTrue(result.isFailure)
         // Parser langsung: respons kosong → null.
         assertNull(parseAccountDataSyncId(json.parseToJsonElement(ACCOUNTS_LIST_EMPTY)))
@@ -115,16 +115,16 @@ class AccountFacadeTest {
     @Test
     fun `accountInfo memanggil endpoint account_menu`() = runTest {
         val paths = mutableListOf<String>()
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY) { paths += it }
-        assertTrue(youTube.accountInfo().isSuccess)
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_EMPTY) { paths += it }
+        assertTrue(myTube.accountInfo().isSuccess)
         assertEquals(listOf("/youtubei/v1/account/account_menu"), paths)
     }
 
     @Test
     fun `accountDataSyncId memanggil endpoint accounts_list`() = runTest {
         val paths = mutableListOf<String>()
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED) { paths += it }
-        assertTrue(youTube.accountDataSyncId().isSuccess)
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED) { paths += it }
+        assertTrue(myTube.accountDataSyncId().isSuccess)
         assertEquals(listOf("/youtubei/v1/account/accounts_list"), paths)
     }
 

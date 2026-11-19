@@ -6,7 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * `hasFullYouTubeLoginSession` (gate sesi penuh, PLAN §C.2) dan
+ * `hasFullMyTubeLoginSession` (gate sesi penuh, PLAN §C.2) dan
  * `cookieNames` (daftar nama cookie tanpa nilai).
  *
  * Sesi parsial = kondisi gagal tes HP 18 Nov 01:54: hanya `LOGIN_INFO` +
@@ -47,66 +47,66 @@ class AuthUtilsTest {
 
     @Test
     fun `sesi parsial LOGIN_INFO plus satu PAPISID bukan sesi penuh`() {
-        assertFalse(hasFullYouTubeLoginSession(partialSession))
+        assertFalse(hasFullMyTubeLoginSession(partialSession))
     }
 
     @Test
     fun `sesi penuh semua kelompok terpenuhi`() {
-        assertTrue(hasFullYouTubeLoginSession(fullSession))
+        assertTrue(hasFullMyTubeLoginSession(fullSession))
     }
 
     @Test
     fun `sesi penuh varian Secure PSID dan PAPISID`() {
-        assertTrue(hasFullYouTubeLoginSession(fullSessionSecure))
+        assertTrue(hasFullMyTubeLoginSession(fullSessionSecure))
     }
 
     @Test
     fun `sesi penuh minus HSID bukan sesi penuh`() {
         val cookie = "LOGIN_INFO=x; SID=y; SSID=z; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `sesi penuh minus SSID bukan sesi penuh`() {
         val cookie = "LOGIN_INFO=x; SID=y; HSID=z; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `sesi penuh minus LOGIN_INFO bukan sesi penuh`() {
         val cookie = "SID=y; HSID=z; SSID=a; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `sesi penuh minus SID bukan sesi penuh`() {
         val cookie = "LOGIN_INFO=x; HSID=z; SSID=a; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `sesi penuh minus APISID bukan sesi penuh`() {
         val cookie = "LOGIN_INFO=x; SID=y; HSID=z; SSID=a"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `cookie null dan kosong bukan sesi penuh`() {
-        assertFalse(hasFullYouTubeLoginSession(null))
-        assertFalse(hasFullYouTubeLoginSession(""))
-        assertFalse(hasFullYouTubeLoginSession("   "))
+        assertFalse(hasFullMyTubeLoginSession(null))
+        assertFalse(hasFullMyTubeLoginSession(""))
+        assertFalse(hasFullMyTubeLoginSession("   "))
     }
 
     @Test
     fun `nilai kosong atau spasi dianggap tidak ada`() {
         val cookie = "LOGIN_INFO= ; SID=y; HSID=z; SSID=a; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
     fun `PSIDTS saja tanpa SID bukan bukti SID`() {
         val cookie = "LOGIN_INFO=x; __Secure-3PSIDTS=123; HSID=z; SSID=a; SAPISID=w"
-        assertFalse(hasFullYouTubeLoginSession(cookie))
+        assertFalse(hasFullMyTubeLoginSession(cookie))
     }
 
     @Test
@@ -128,6 +128,6 @@ class AuthUtilsTest {
 
     @Test
     fun `gate lama tetap menerima sesi parsial untuk kompatibilitas`() {
-        assertTrue(hasCompleteYouTubeLoginCookies(partialSession))
+        assertTrue(hasCompleteMyTubeLoginCookies(partialSession))
     }
 }

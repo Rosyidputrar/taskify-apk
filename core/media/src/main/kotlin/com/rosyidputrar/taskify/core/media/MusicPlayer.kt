@@ -30,23 +30,23 @@ import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
-import com.rosyidputrar.taskify.core.media.youtube.DirectStream
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.FailedStreamClients
-import com.rosyidputrar.taskify.core.media.youtube.PlaybackStreamRecoveryTracker
-import com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer
-import com.rosyidputrar.taskify.core.media.youtube.ResolveCache
-import com.rosyidputrar.taskify.core.media.youtube.ResolveCacheKey
-import com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.effectiveQuality
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
-import com.rosyidputrar.taskify.core.media.youtube.streamUrlClientKey
-import com.rosyidputrar.taskify.core.media.youtube.streamUrlParamPresence
+import com.rosyidputrar.taskify.core.media.mytube.DirectStream
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.mytube.PlaybackStreamRecoveryTracker
+import com.rosyidputrar.taskify.core.media.mytube.PoTokenEnsurer
+import com.rosyidputrar.taskify.core.media.mytube.ResolveCache
+import com.rosyidputrar.taskify.core.media.mytube.ResolveCacheKey
+import com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.effectiveQuality
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginEvents
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailure
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailureException
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
+import com.rosyidputrar.taskify.core.media.mytube.streamUrlClientKey
+import com.rosyidputrar.taskify.core.media.mytube.streamUrlParamPresence
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -77,13 +77,13 @@ fun Track.toDetails() = TrackDetails(lyricsId, upNext, loudnessDb, lyrics, lyric
  * lagu berikut, lanjutan radio, SponsorBlock) dijalankan di sini. ExoPlayer hidup di
  * thread utama dan dibungkus [MusicService] (MediaSession) supaya musik tetap berbunyi di latar.
  *
- * Sumber data direct (rewrite, Tahap 6): katalog + `track()` lewat fasad [YouTube],
+ * Sumber data direct (rewrite, Tahap 6): katalog + `track()` lewat fasad [MyTube],
  * stream audio lewat [DirectStreamResolver], SponsorBlock lewat [SponsorBlockRepository].
  * Tidak ada lagi panggilan ke Worker dari pemutar ini.
  *
  * Auth (gap Tahap 5): [DirectStreamResolver] punya instance `InnerTube` sendiri yang
- * tidak disinkronkan bootstrap — karena itu SETIAP panggilan ke `youTube`/`streamResolver`
- * meneruskan [authState] eksplisit dari [YouTubeAuthStore] (dibaca segar dari
+ * tidak disinkronkan bootstrap — karena itu SETIAP panggilan ke `myTube`/`streamResolver`
+ * meneruskan [authState] eksplisit dari [MyTubeAuthStore] (dibaca segar dari
  * SharedPreferences `"youtube_auth"`), bukan mengandalkan state internal transport.
  * Instance tidak disatukan di sini supaya DI Tahap 7 bebas memilih bentuknya;
  * explicit passing tetap benar apa pun bentuk DI-nya.
@@ -93,10 +93,10 @@ fun Track.toDetails() = TrackDetails(lyricsId, upNext, loudnessDb, lyrics, lyric
  */
 class MusicPlayer(
     private val context: Context,
-    private val youTube: YouTube = YouTube(),
+    private val myTube: MyTube = MyTube(),
     private val streamResolver: DirectStreamResolver = DirectStreamResolver(),
     private val sponsorBlock: SponsorBlockRepository = SponsorBlockRepository(),
-    private val authStore: YouTubeAuthStore = YouTubeAuthStore(context),
+    private val authStore: MyTubeAuthStore = MyTubeAuthStore(context),
     private val prefs: MusicPrefs = MusicPrefs(context),
     private val now: () -> Long = System::currentTimeMillis,
     /** Hook sesi kedaluwarsa (PLAN C.6): repo login; null = tanpa hook (tes lama). */
@@ -135,7 +135,7 @@ class MusicPlayer(
     },
     /**
      * Telemetri putar (Tahap 9, C2-21); `null` = tanpa telemetri (tes).
-     * Produksi di-wire di `AppModule` ke `YouTube.registerPlayback`.
+     * Produksi di-wire di `AppModule` ke `MyTube.registerPlayback`.
      * Dipanggil sekali saat lagu mulai berbunyi, dengan URL tracking dari
      * hasil resolve lagu itu; gagal apa pun ditelan (best-effort).
      */
@@ -529,7 +529,7 @@ class MusicPlayer(
         auth: com.rosyidputrar.taskify.core.innertube.PlaybackAuthState,
         preferMp4a: Boolean,
         networkMetered: Boolean = false,
-    ): Result<com.rosyidputrar.taskify.core.media.youtube.DirectStream> =
+    ): Result<com.rosyidputrar.taskify.core.media.mytube.DirectStream> =
         try {
             streamResolver.resolve(song.videoId, quality, auth, preferMp4a, resolveCache.pinnedItag(song.videoId), networkMetered)
         } catch (e: CancellationException) {
@@ -717,7 +717,7 @@ class MusicPlayer(
         if (_state.value.status == YtStatus.Playing) startTicker()
     }
 
-    suspend fun lyrics(lyricsId: String): String = youTube.lyrics(lyricsId, authState()).getOrThrow()
+    suspend fun lyrics(lyricsId: String): String = myTube.lyrics(lyricsId, authState()).getOrThrow()
 
     // ------------------------------------------------------------------ efek
 
@@ -829,7 +829,7 @@ class MusicPlayer(
         quality: com.rosyidputrar.taskify.core.domain.media.MusicQuality,
         auth: com.rosyidputrar.taskify.core.innertube.PlaybackAuthState,
         preferMp4a: Boolean,
-    ): Result<com.rosyidputrar.taskify.core.media.youtube.DirectStream> {
+    ): Result<com.rosyidputrar.taskify.core.media.mytube.DirectStream> {
         // Tahap 8 (C2-25): kualitas efektif dihitung SEKALI di sini dan
         // dipakai kunci cache + kedua jalur resolve, supaya entri cache
         // tidak tercampur antara metered dan tidak.
@@ -886,7 +886,7 @@ class MusicPlayer(
                 // Komposisi direct (pola Worker `loadTrack` + `tryDirectStream`):
                 // `track()` (next + loudness player, paralel di dalam) dan
                 // `resolveStream()` jalan BERDAMPINGAN — keduanya independen.
-                val trackDeferred = async { if (withTrack) youTube.track(id, auth) else null }
+                val trackDeferred = async { if (withTrack) myTube.track(id, auth) else null }
                 val streamDeferred = async { resolveStream(id, _settings.value.quality, auth, _settings.value.preferMp4a) }
                 if (withTrack) {
                     // Keterangan datang duluan (walau stream masih jalan): upNext
@@ -1009,7 +1009,7 @@ class MusicPlayer(
         dispatch(YtEvent.DetailsStart(videoId))
         scope.launch {
             try {
-                youTube.track(videoId, authState())
+                myTube.track(videoId, authState())
                     .onSuccess { dispatch(YtEvent.DetailsDone(videoId, it.toDetails())) }
                     .onFailure { dispatch(YtEvent.DetailsFailed(videoId)) }
             } catch (e: CancellationException) {
@@ -1022,7 +1022,7 @@ class MusicPlayer(
         dispatch(YtEvent.RadioStart)
         scope.launch {
             try {
-                youTube.radioMore(cursor, authState())
+                myTube.radioMore(cursor, authState())
                     .onSuccess { dispatch(YtEvent.RadioPage(it.songs, it.cursor)) }
                     .onFailure { dispatch(YtEvent.RadioFailed) }
             } catch (_: CancellationException) {

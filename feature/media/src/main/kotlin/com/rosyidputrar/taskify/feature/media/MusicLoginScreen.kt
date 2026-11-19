@@ -6,7 +6,7 @@
  */
 
 // Diadaptasi dari ArchiveTune `app/.../ui/screens/LoginScreen.kt`
-// (v15.1.0, c7f0e24) — WebView login Google + `YouTubeLoginWebViewClient` +
+// (v15.1.0, c7f0e24) — WebView login Google + `MyTubeLoginWebViewClient` +
 // `LOGIN_CONTEXT_SCRIPT` (disalin verbatim) + penggabung cookie.
 // Yang diubah: tanpa Hilt/NavController (callback `onBack`/`onLoginComplete`),
 // tanpa Toast sukses, tanpa `resetAuthWebViewSession` terpisah (logika
@@ -70,7 +70,7 @@ private const val DEFAULT_LOGIN_URL = "https://accounts.google.com/ServiceLogin?
 private const val LOGIN_CONTEXT_RETRY_DELAY_MS = 1_000L
 /**
  * Batas atas percobaan ekstraksi login per pemanggilan
- * [YouTubeLoginWebViewClient.scheduleLoginContextExtraction] (PLAN §C.4
+ * [MyTubeLoginWebViewClient.scheduleLoginContextExtraction] (PLAN §C.4
  * butir 2): 60 percobaan @1 detik = jendela tunggu maksimal 60 detik
  * sampai cookie gabungan menjadi SESI PENUH. Counter di-reset tiap
  * `onPageFinished` / `doUpdateVisitedHistory` baru (pemanggilan baru
@@ -104,7 +104,7 @@ fun MusicLoginScreen(
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var loginClient by remember { mutableStateOf<YouTubeLoginWebViewClient?>(null) }
+    var loginClient by remember { mutableStateOf<MyTubeLoginWebViewClient?>(null) }
 
     LaunchedEffect(screenState) {
         if (screenState is MusicLoginScreenState.Success) onLoginComplete()
@@ -123,7 +123,7 @@ fun MusicLoginScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     WebView(context).apply {
-                        val client = YouTubeLoginWebViewClient(
+                        val client = MyTubeLoginWebViewClient(
                             cookieManager = CookieManager.getInstance(),
                             onCookiesCaptured = viewModel::onCookiesCaptured,
                         )
@@ -157,7 +157,7 @@ fun MusicLoginScreen(
                     }
                 },
                 onRelease = { releasedWebView ->
-                    val releasedClient = releasedWebView.webViewClient as? YouTubeLoginWebViewClient
+                    val releasedClient = releasedWebView.webViewClient as? MyTubeLoginWebViewClient
                     releasedClient?.release(releasedWebView)
                     releasedWebView.removeJavascriptInterface("Android")
                     releasedWebView.stopLoading()
@@ -244,7 +244,7 @@ fun MusicLoginStateContent(
     }
 }
 
-private class YouTubeLoginWebViewClient(
+private class MyTubeLoginWebViewClient(
     private val cookieManager: CookieManager,
     private val onCookiesCaptured: (String) -> Unit,
 ) : WebViewClient() {
@@ -343,7 +343,7 @@ private class YouTubeLoginWebViewClient(
      * penuh, duplikat tangkapan terakhir, atau tidak ada cookie.
      */
     private fun captureCookies(currentUrl: String?): Boolean {
-        val mergedCookie = mergeYouTubeCookies(cookieManager, currentUrl) ?: return false
+        val mergedCookie = mergeMyTubeCookies(cookieManager, currentUrl) ?: return false
         if (!captureGate.shouldCapture(mergedCookie)) return false
         onCookiesCaptured(mergedCookie)
         return true
@@ -357,12 +357,12 @@ private class YouTubeLoginWebViewClient(
         return true
     }
 
-    private fun mergeYouTubeCookies(cookieManager: CookieManager, currentUrl: String?): String? {
+    private fun mergeMyTubeCookies(cookieManager: CookieManager, currentUrl: String?): String? {
         val candidateUrls = linkedSetOf<String>()
-        currentUrl.youTubeCookieOrigin()?.let(candidateUrls::add)
-        candidateUrls.addAll(YOUTUBE_COOKIE_URLS)
+        currentUrl.myTubeCookieOrigin()?.let(candidateUrls::add)
+        candidateUrls.addAll(MYTUBE_COOKIE_URLS)
         val cookiesByUrl = candidateUrls.associateWith { cookieManager.getCookie(it).orEmpty() }
-        return mergeYouTubeCookies(cookiesByUrl, currentUrl)
+        return mergeMyTubeCookies(cookiesByUrl, currentUrl)
     }
 }
 

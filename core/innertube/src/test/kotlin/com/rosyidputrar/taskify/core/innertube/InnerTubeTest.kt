@@ -1,7 +1,7 @@
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeLocale
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeLocale
 import com.rosyidputrar.taskify.core.innertube.models.body.PlayerBody
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -56,7 +56,7 @@ class InnerTubeTest {
             it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
             okJson()
         })
-        tube.search(YouTubeClient.WEB_REMIX, query = "tulus", params = "EgWKAQIIAWoKEAkQBRAKEAMQBA==")
+        tube.search(MyTubeClient.WEB_REMIX, query = "tulus", params = "EgWKAQIIAWoKEAkQBRAKEAMQBA==")
 
         assertEquals("https://music.youtube.com/youtubei/v1/search?prettyPrint=false", capturedUrl)
         assertEquals("67", capturedHeaders["X-YouTube-Client-Name"])
@@ -85,12 +85,12 @@ class InnerTubeTest {
             okJson()
         })
         tube.visitorData = "CgttZXN0"
-        tube.search(YouTubeClient.WEB_REMIX, query = "x")
+        tube.search(MyTubeClient.WEB_REMIX, query = "x")
         assertEquals("CgttZXN0", visitorHeader)
     }
 
     @Test
-    fun playerAndroidMemakaiOriginYoutubeDanBodyPlayer() = runTest {
+    fun playerAndroidMemakaiOriginMyTubeDanBodyPlayer() = runTest {
         var capturedUrl = ""
         var capturedBody = ""
         val capturedHeaders = mutableMapOf<String, String>()
@@ -100,7 +100,7 @@ class InnerTubeTest {
             it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
             okJson()
         })
-        tube.player(YouTubeClient.ANDROID, "QqJ-Vp8mvbk")
+        tube.player(MyTubeClient.ANDROID, "QqJ-Vp8mvbk")
 
         assertEquals("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", capturedUrl)
         assertEquals("3", capturedHeaders["X-YouTube-Client-Name"])
@@ -122,9 +122,9 @@ class InnerTubeTest {
             paths += it.url.encodedPath
             okJson()
         })
-        tube.browse(YouTubeClient.WEB_REMIX, browseId = "FEmusic_home")
-        tube.next(YouTubeClient.WEB_REMIX, videoId = "QqJ-Vp8mvbk", playlistId = "RDAMVMQqJ-Vp8mvbk")
-        tube.getSearchSuggestions(YouTubeClient.WEB_REMIX, "tulus")
+        tube.browse(MyTubeClient.WEB_REMIX, browseId = "FEmusic_home")
+        tube.next(MyTubeClient.WEB_REMIX, videoId = "QqJ-Vp8mvbk", playlistId = "RDAMVMQqJ-Vp8mvbk")
+        tube.getSearchSuggestions(MyTubeClient.WEB_REMIX, "tulus")
         assertEquals(
             listOf(
                 "/youtubei/v1/browse",
@@ -143,7 +143,7 @@ class InnerTubeTest {
             if (calls < 3) throw IOException("putus")
             okJson()
         })
-        val result = tube.search(YouTubeClient.WEB_REMIX, query = "x")
+        val result = tube.search(MyTubeClient.WEB_REMIX, query = "x")
         assertEquals("""{"ok":true}""", result)
         assertEquals(3, calls)
     }
@@ -155,7 +155,7 @@ class InnerTubeTest {
             calls++
             throw IOException("putus terus")
         })
-        assertFailsWith<IOException> { tube.search(YouTubeClient.WEB_REMIX, query = "x") }
+        assertFailsWith<IOException> { tube.search(MyTubeClient.WEB_REMIX, query = "x") }
         assertEquals(3, calls)
     }
 
@@ -166,7 +166,7 @@ class InnerTubeTest {
             calls++
             respond("""{"error":"bad"}""", HttpStatusCode.BadRequest, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
         })
-        assertFailsWith<ClientRequestException> { tube.search(YouTubeClient.WEB_REMIX, query = "x") }
+        assertFailsWith<ClientRequestException> { tube.search(MyTubeClient.WEB_REMIX, query = "x") }
         assertEquals(1, calls)
     }
 
@@ -183,7 +183,7 @@ class InnerTubeTest {
         })
         tube.visitorData = "Cgtinternal"
         tube.search(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             query = "x",
             authState = PlaybackAuthState(visitorData = "Cgtexplicit"),
         )
@@ -205,7 +205,7 @@ class InnerTubeTest {
         // PLAN G.3: useLoginForBrowse = true — search berkirim cookie +
         // SAPISIDHASH + X-Goog-PageId bila authState membawa sesi login.
         tube.search(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             query = "x",
             authState = PlaybackAuthState(
                 cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
@@ -229,7 +229,7 @@ class InnerTubeTest {
         // PLAN G.3: browse ikut useLoginForBrowse — tanpa setLogin eksplisit
         // pun cookie terkirim bila ada sesi login.
         tube.browse(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             browseId = "FEmusic_home",
             authState = PlaybackAuthState(cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login"),
         )
@@ -246,8 +246,8 @@ class InnerTubeTest {
             loginHeaders["X-Goog-PageId"] = it.headers["X-Goog-PageId"]
             okJson()
         })
-        tube.search(YouTubeClient.WEB_REMIX, query = "x")
-        tube.accountMenu(YouTubeClient.WEB_REMIX)
+        tube.search(MyTubeClient.WEB_REMIX, query = "x")
+        tube.accountMenu(MyTubeClient.WEB_REMIX)
         assertNull(loginHeaders["cookie"])
         assertNull(loginHeaders["Authorization"])
         assertNull(loginHeaders["X-Goog-PageId"])
@@ -265,7 +265,7 @@ class InnerTubeTest {
             okJson()
         })
         tube.accountMenu(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             authState = PlaybackAuthState(
                 cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
                 visitorData = "CgtDummyVisitor",
@@ -294,7 +294,7 @@ class InnerTubeTest {
             okJson()
         })
         tube.accountChannels(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             authState = PlaybackAuthState(
                 cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
                 dataSyncId = "delegatedDummy||userDummy",
@@ -316,7 +316,7 @@ class InnerTubeTest {
             okJson()
         })
         tube.player(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             "QqJ-Vp8mvbk",
             authState = PlaybackAuthState(
                 cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
@@ -339,7 +339,7 @@ class InnerTubeTest {
         // Aturan "hanya bila login": player (setLogin = true) mengirim
         // cookie + SAPISIDHASH bila cookie login memang ada.
         tube.player(
-            YouTubeClient.WEB_REMIX,
+            MyTubeClient.WEB_REMIX,
             "QqJ-Vp8mvbk",
             authState = PlaybackAuthState(cookie = "SAPISID=abc123; SID=def"),
         )
@@ -360,7 +360,7 @@ class InnerTubeTest {
         })
         assertFailsWith<ClientRequestException> {
             tube.player(
-                YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+                MyTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
                 authState = PlaybackAuthState(
                     cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
                     dataSyncId = "delegatedDummy||userDummy",
@@ -390,7 +390,7 @@ class InnerTubeTest {
             }
         })
         val result = tube.player(
-            YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+            MyTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
             authState = PlaybackAuthState(
                 cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
                 dataSyncId = "delegatedDummy||userDummy",
@@ -420,7 +420,7 @@ class InnerTubeTest {
         })
         assertFailsWith<ClientRequestException> {
             tube.player(
-                YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+                MyTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
                 authState = PlaybackAuthState(
                     cookie = "SAPISID=dummy-sapisid; LOGIN_INFO=dummy-login",
                     dataSyncId = "delegatedDummy||userDummy",
@@ -440,7 +440,7 @@ class InnerTubeTest {
             okJson()
         })
         tube.player(
-            YouTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
+            MyTubeClient.WEB_REMIX, "QqJ-Vp8mvbk",
             authState = PlaybackAuthState(cookie = "__Secure-3PAPISID=xyz789; LOGIN_INFO=abc"),
         )
         assertEquals("__Secure-3PAPISID=xyz789; LOGIN_INFO=abc; SAPISID=xyz789", cookieHeader)
@@ -450,7 +450,7 @@ class InnerTubeTest {
     @Test
     fun playerBodyMembawaContentPlaybackContextLengkap() {
         val body = PlayerBody(
-            context = YouTubeClient.WEB_REMIX.toContext(YouTubeLocale(gl = "ID", hl = "id"), null, null),
+            context = MyTubeClient.WEB_REMIX.toContext(MyTubeLocale(gl = "ID", hl = "id"), null, null),
             videoId = "QqJ-Vp8mvbk",
             playbackContext = PlayerBody.PlaybackContext(
                 PlayerBody.PlaybackContext.ContentPlaybackContext(19283),
@@ -517,7 +517,7 @@ class InnerTubeTest {
     }
 
     @Test
-    fun getSwJsDataMemakaiGetKeMusicYoutube() = runTest {
+    fun getSwJsDataMemakaiGetKeMusicMyTube() = runTest {
         var capturedUrl = ""
         var capturedMethod = ""
         val tube = InnerTube(mockClient {

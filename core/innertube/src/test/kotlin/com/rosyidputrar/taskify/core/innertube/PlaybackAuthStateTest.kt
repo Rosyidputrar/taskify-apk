@@ -1,6 +1,6 @@
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -85,8 +85,8 @@ class PlaybackAuthStateTest {
     @Test
     fun poTokenSelaluNullDiTahap1KarenaFiturMati() {
         val s = PlaybackAuthState(poToken = "tok", poTokenPlayer = "ptok", poTokenPlayerVideoId = "v1")
-        assertNull(s.resolvePlayerPoToken(YouTubeClient.WEB_REMIX, videoId = "v1"))
-        assertNull(s.resolveGvsPoToken(YouTubeClient.WEB_REMIX, videoId = "v1"))
-        assertNull(s.resolveSubsPoToken(YouTubeClient.WEB_REMIX, "v1"))
+        assertNull(s.resolvePlayerPoToken(MyTubeClient.WEB_REMIX, videoId = "v1"))
+        assertNull(s.resolveGvsPoToken(MyTubeClient.WEB_REMIX, videoId = "v1"))
+        assertNull(s.resolveSubsPoToken(MyTubeClient.WEB_REMIX, "v1"))
     }
 }

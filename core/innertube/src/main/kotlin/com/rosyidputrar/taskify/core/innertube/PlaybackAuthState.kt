@@ -13,8 +13,8 @@
 
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
-import com.rosyidputrar.taskify.core.innertube.utils.hasYouTubeLoginCookie
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
+import com.rosyidputrar.taskify.core.innertube.utils.hasMyTubeLoginCookie
 import com.rosyidputrar.taskify.core.innertube.utils.sha1
 import java.util.Locale
 
@@ -33,7 +33,7 @@ data class PlaybackAuthState(
     val webClientPoTokenEnabled: Boolean = false,
 ) {
     val hasLoginCookie: Boolean
-        get() = hasYouTubeLoginCookie(cookie)
+        get() = hasMyTubeLoginCookie(cookie)
 
     val hasPlaybackLoginContext: Boolean
         get() = hasLoginCookie && !dataSyncId.isNullOrBlank()
@@ -86,7 +86,7 @@ data class PlaybackAuthState(
         )
 
     fun resolvePlayerPoToken(
-        client: YouTubeClient,
+        client: MyTubeClient,
         explicitPoToken: String? = null,
         videoId: String? = null,
     ): String? {
@@ -99,7 +99,7 @@ data class PlaybackAuthState(
     }
 
     fun resolveGvsPoToken(
-        client: YouTubeClient? = null,
+        client: MyTubeClient? = null,
         videoId: String? = null,
     ): String? {
         if (client != null && (!client.useWebPoTokens || !supportsWebPoToken(client))) return null
@@ -110,7 +110,7 @@ data class PlaybackAuthState(
     }
 
     fun resolveSubsPoToken(
-        client: YouTubeClient,
+        client: MyTubeClient,
         videoId: String,
     ): String? {
         if (!client.useWebPoTokens || !supportsWebPoToken(client)) return null
@@ -123,11 +123,11 @@ data class PlaybackAuthState(
     companion object {
         val EMPTY = PlaybackAuthState()
 
-        fun supportsGvsPoToken(client: YouTubeClient): Boolean {
+        fun supportsGvsPoToken(client: MyTubeClient): Boolean {
             return supportsWebPoToken(client)
         }
 
-        private fun supportsWebPoToken(client: YouTubeClient): Boolean {
+        private fun supportsWebPoToken(client: MyTubeClient): Boolean {
             val name = client.clientName.uppercase(Locale.US)
             return name == "WEB" ||
                 name == "WEB_REMIX" ||

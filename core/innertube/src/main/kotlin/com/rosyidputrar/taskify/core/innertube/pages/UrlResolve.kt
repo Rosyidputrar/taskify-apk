@@ -12,7 +12,7 @@ import java.net.URLDecoder
  */
 
 /** Host YouTube yang diterima. */
-val YOUTUBE_HOSTS = listOf(
+val MYTUBE_HOSTS = listOf(
     "youtube.com",
     "www.youtube.com",
     "m.youtube.com",
@@ -21,7 +21,7 @@ val YOUTUBE_HOSTS = listOf(
 )
 
 fun isYoutubeHost(host: String): Boolean =
-    YOUTUBE_HOSTS.contains(host.lowercase())
+    MYTUBE_HOSTS.contains(host.lowercase())
 
 private val ID11 = Regex("""^[a-zA-Z0-9_-]{11}$""")
 private val CHANNEL_ID = Regex("""^UC[a-zA-Z0-9_-]{22}$""")

@@ -41,7 +41,7 @@ import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import com.rosyidputrar.taskify.core.media.LocalRadioStations
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginError
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginError
 import com.rosyidputrar.taskify.feature.media.BrowsePage
 import com.rosyidputrar.taskify.feature.media.ExploreState
 import com.rosyidputrar.taskify.feature.media.FocusMusicContent
@@ -152,7 +152,7 @@ class MusicScreenshotTest {
 
     @Config(qualifiers = "w393dp-h1400dp-xxhdpi")
     @Test fun queuePlayingDirect() = shot("music_queue_playing_light", false) {
-        // Antrean sedang memutar via direct-to-YouTube (opus 251, tanpa
+        // Antrean sedang memutar via direct-to-MyTube (opus 251, tanpa
         // konverter/arsip): daftar antrean + bilah mini player dalam konteks.
         val p = base.player.copy(status = YtStatus.Playing,
             streams = mapOf(songs[1].videoId to StreamSource(StreamSource.SOURCE_DIRECT, "audio/webm", 251)))

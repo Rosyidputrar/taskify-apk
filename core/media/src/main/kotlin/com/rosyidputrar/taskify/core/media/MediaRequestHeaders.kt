@@ -8,9 +8,9 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.rosyidputrar.taskify.core.innertube.SharedHttpClient
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
-import com.rosyidputrar.taskify.core.media.youtube.streamRequestHeaders
-import com.rosyidputrar.taskify.core.media.youtube.urlQueryParam
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
+import com.rosyidputrar.taskify.core.media.mytube.streamRequestHeaders
+import com.rosyidputrar.taskify.core.media.mytube.urlQueryParam
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 
@@ -71,7 +71,7 @@ object MediaRequestHeaders {
     val DEFAULT: Map<String, String> = mapOf(
         "Origin" to ORIGIN,
         "Referer" to REFERER,
-        "User-Agent" to YouTubeClient.USER_AGENT_WEB_REMIX,
+        "User-Agent" to MyTubeClient.USER_AGENT_WEB_REMIX,
         "Accept" to "*/*",
     )
 
@@ -89,7 +89,7 @@ object MediaRequestHeaders {
      */
     fun createDataSourceFactory(okHttpClient: OkHttpClient = SharedHttpClient.client): HttpDataSource.Factory =
         OkHttpDataSource.Factory(okHttpClient)
-            .setUserAgent(YouTubeClient.USER_AGENT_WEB_REMIX)
+            .setUserAgent(MyTubeClient.USER_AGENT_WEB_REMIX)
             .setDefaultRequestProperties(DEFAULT)
 
     /**

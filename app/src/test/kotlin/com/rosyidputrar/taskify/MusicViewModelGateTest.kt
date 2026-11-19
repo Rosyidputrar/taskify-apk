@@ -14,14 +14,14 @@ import com.rosyidputrar.taskify.core.domain.media.Song
 import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.Track
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
-import com.rosyidputrar.taskify.core.media.YouTubeMusicException
-import com.rosyidputrar.taskify.core.media.youtube.DirectStream
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicException
+import com.rosyidputrar.taskify.core.media.mytube.DirectStream
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.feature.media.MusicLoginUiState
 import com.rosyidputrar.taskify.feature.media.MusicUiState
 import com.rosyidputrar.taskify.feature.media.MusicViewModel
@@ -51,7 +51,7 @@ import kotlin.test.assertTrue
 class MusicViewModelGateTest {
     private fun song(id: String) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList())
 
-    private class FakeTube : YouTube() {
+    private class FakeTube : MyTube() {
         override suspend fun track(videoId: String, authState: PlaybackAuthState): Result<Track> =
             // lyricsChecked=true supaya loadLyrics tidak memanggil jaringan lirik.
             Result.success(Track(videoId, "", emptyList(), lyricsChecked = true))
@@ -74,7 +74,7 @@ class MusicViewModelGateTest {
         }
     }
 
-    private class FakeClient(tube: YouTube) : YouTubeMusicClient(tube) {
+    private class FakeClient(tube: MyTube) : MyTubeMusicClient(tube) {
         var searchCalls = 0
         var suggestCalls = 0
         var homeCalls = 0
@@ -83,7 +83,7 @@ class MusicViewModelGateTest {
 
         override suspend fun search(query: String, filter: SearchFilter): SearchResults {
             searchCalls++
-            if (throwAuthOnSearch) throw YouTubeMusicException("YouTube menolak permintaan. Coba lagi.", 401)
+            if (throwAuthOnSearch) throw MyTubeMusicException("YouTube menolak permintaan. Coba lagi.", 401)
             return results
         }
 
@@ -106,7 +106,7 @@ class MusicViewModelGateTest {
 
     private inner class Fixture(loggedIn: Boolean) {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val authStore = YouTubeAuthStore(context).also { it.clear() }
+        val authStore = MyTubeAuthStore(context).also { it.clear() }
         val tube = FakeTube()
         val resolver = FakeResolver()
         val client = FakeClient(tube)

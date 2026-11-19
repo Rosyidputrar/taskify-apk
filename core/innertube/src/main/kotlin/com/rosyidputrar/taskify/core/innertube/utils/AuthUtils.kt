@@ -34,17 +34,17 @@ fun parseCookieString(cookie: String): Map<String, String> =
             }
         }.toMap()
 
-fun hasYouTubeLoginCookie(cookie: String?): Boolean = youtubeLoginCookieValue(cookie) != null
+fun hasMyTubeLoginCookie(cookie: String?): Boolean = myTubeLoginCookieValue(cookie) != null
 
-fun hasCompleteYouTubeLoginCookies(cookie: String?): Boolean {
+fun hasCompleteMyTubeLoginCookies(cookie: String?): Boolean {
     val cookieMap = cookie?.let(::parseCookieString).orEmpty()
     return !cookieMap["LOGIN_INFO"].isNullOrBlank() &&
-        YOUTUBE_LOGIN_COOKIE_NAMES.any { cookieName -> !cookieMap[cookieName].isNullOrBlank() }
+        MYTUBE_LOGIN_COOKIE_NAMES.any { cookieName -> !cookieMap[cookieName].isNullOrBlank() }
 }
 
-fun youtubeLoginCookieValue(cookie: String?): String? {
+fun myTubeLoginCookieValue(cookie: String?): String? {
     val cookieMap = cookie?.let(::parseCookieString).orEmpty()
-    return YOUTUBE_LOGIN_COOKIE_NAMES.firstNotNullOfOrNull { cookieName ->
+    return MYTUBE_LOGIN_COOKIE_NAMES.firstNotNullOfOrNull { cookieName ->
         cookieMap[cookieName]?.takeIf(String::isNotBlank)
     }
 }
@@ -75,7 +75,7 @@ fun youtubeiCookie(cookie: String?): String? {
  * `SSID`, dan minimal satu APISID (`APISID` / `SAPISID` /
  * `__Secure-1PAPISID` / `__Secure-3PAPISID`).
  *
- * Gate lama [hasCompleteYouTubeLoginCookies] hanya menuntut `LOGIN_INFO` +
+ * Gate lama [hasCompleteMyTubeLoginCookies] hanya menuntut `LOGIN_INFO` +
  * satu PAPISID, terlalu lemah: tes HP 18 Nov 01:54 membuktikan sesi
  * parsial itu ditolak server (`"logged_in":"0"`, `"yt_li":"0"` di
  * `account_menu`) padahal WebView login berhasil. Gate ini sengaja lebih
@@ -83,7 +83,7 @@ fun youtubeiCookie(cookie: String?): String? {
  * `__Secure-1PSIDTS` / `__Secure-3PSIDTS` (timestamp) tidak dituntut.
  * Nilai kosong/diisi spasi dianggap tidak ada.
  */
-fun hasFullYouTubeLoginSession(cookie: String?): Boolean {
+fun hasFullMyTubeLoginSession(cookie: String?): Boolean {
     val cookieMap = cookie?.let(::parseCookieString).orEmpty()
     return !cookieMap["LOGIN_INFO"].isNullOrBlank() &&
         FULL_SESSION_SID_COOKIE_NAMES.any { cookieName -> !cookieMap[cookieName].isNullOrBlank() } &&
@@ -101,7 +101,7 @@ fun hasFullYouTubeLoginSession(cookie: String?): Boolean {
 fun cookieNames(cookie: String?): List<String> =
     cookie?.let(::parseCookieString)?.keys?.sorted().orEmpty()
 
-private val YOUTUBE_LOGIN_COOKIE_NAMES =
+private val MYTUBE_LOGIN_COOKIE_NAMES =
     listOf(
         "SAPISID",
         "__Secure-3PAPISID",

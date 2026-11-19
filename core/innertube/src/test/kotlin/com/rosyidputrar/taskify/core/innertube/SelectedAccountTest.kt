@@ -15,13 +15,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Fasad `YouTube.selectedAccount()` dan perilaku baru `accountInfo()`:
+ * Fasad `MyTube.selectedAccount()` dan perilaku baru `accountInfo()`:
  * gagal parse → [UnrecognizedAccountResponseException] yang membawa
  * cuplikan mentah yang sudah di-scrub. Fixture JSON minimal inline.
  */
 class SelectedAccountTest {
 
-    private fun youtubeWith(menuJson: String, channelsJson: String): YouTube {
+    private fun myTubeWith(menuJson: String, channelsJson: String): MyTube {
         val engine = MockEngine { request ->
             val body = when {
                 request.url.encodedPath.endsWith("/account/account_menu") -> menuJson
@@ -34,7 +34,7 @@ class SelectedAccountTest {
                 headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )
         }
-        return YouTube(
+        return MyTube(
             InnerTube(
                 HttpClient(engine) {
                     expectSuccess = true
@@ -46,8 +46,8 @@ class SelectedAccountTest {
 
     @Test
     fun `selectedAccount mengembalikan akun terpilih dan dataSyncId`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED)
-        val result = youTube.selectedAccount()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_SELECTED)
+        val result = myTube.selectedAccount()
         assertTrue(result.isSuccess)
         val selected = result.getOrThrow()
         assertEquals("Akun Utama", selected.info.name)
@@ -57,8 +57,8 @@ class SelectedAccountTest {
 
     @Test
     fun `selectedAccount gagal bila tanpa akun terpilih`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_NONE_SELECTED)
-        val result = youTube.selectedAccount()
+        val myTube = myTubeWith(ACCOUNT_MENU_OK, ACCOUNTS_LIST_NONE_SELECTED)
+        val result = myTube.selectedAccount()
         assertTrue(result.isFailure)
         val cause = result.exceptionOrNull()
         assertTrue(cause is IllegalStateException)
@@ -67,8 +67,8 @@ class SelectedAccountTest {
 
     @Test
     fun `accountInfo tanpa akun melempar exception pembawa cuplikan mentah`() = runTest {
-        val youTube = youtubeWith(ACCOUNT_MENU_NO_ACCOUNT, ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountInfo()
+        val myTube = myTubeWith(ACCOUNT_MENU_NO_ACCOUNT, ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountInfo()
         assertTrue(result.isFailure)
         val cause = result.exceptionOrNull()
         assertTrue(cause is UnrecognizedAccountResponseException, cause.toString())
@@ -81,8 +81,8 @@ class SelectedAccountTest {
     @Test
     fun `accountInfo badan bukan JSON melempar exception dengan cuplikan scrub`() = runTest {
         val html = "<html><body>Error SAPISID=rahasia-123; Authorization: Bearer token-rahasia</body></html>"
-        val youTube = youtubeWith(html, ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountInfo()
+        val myTube = myTubeWith(html, ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountInfo()
         assertTrue(result.isFailure)
         val cause = result.exceptionOrNull()
         assertTrue(cause is UnrecognizedAccountResponseException, cause.toString())
@@ -95,8 +95,8 @@ class SelectedAccountTest {
 
     @Test
     fun `accountInfo badan kosong memberi cuplikan respons kosong status 200`() = runTest {
-        val youTube = youtubeWith("", ACCOUNTS_LIST_EMPTY)
-        val result = youTube.accountInfo()
+        val myTube = myTubeWith("", ACCOUNTS_LIST_EMPTY)
+        val result = myTube.accountInfo()
         assertTrue(result.isFailure)
         val cause = result.exceptionOrNull()
         assertTrue(cause is UnrecognizedAccountResponseException, cause.toString())

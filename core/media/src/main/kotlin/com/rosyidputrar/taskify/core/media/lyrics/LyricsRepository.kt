@@ -2,7 +2,7 @@ package com.rosyidputrar.taskify.core.media.lyrics
 
 import com.rosyidputrar.taskify.core.domain.media.Lyrics
 import com.rosyidputrar.taskify.core.domain.media.Song
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -23,9 +23,9 @@ import kotlinx.coroutines.CancellationException
  */
 class LyricsRepository(
     private val lrcLib: LrcLibLyricsProvider = LrcLibLyricsProvider(),
-    private val youTube: YouTube = YouTube(),
-    private val youTubeLyrics: YouTubeLyricsProvider = YouTubeLyricsProvider(youTube),
-    private val transcript: YouTubeTranscriptProvider = YouTubeTranscriptProvider(youTube),
+    private val myTube: MyTube = MyTube(),
+    private val myTubeLyrics: MyTubeLyricsProvider = MyTubeLyricsProvider(myTube),
+    private val transcript: MyTubeTranscriptProvider = MyTubeTranscriptProvider(myTube),
 ) {
 
     /**
@@ -51,19 +51,19 @@ class LyricsRepository(
             }
         // 2. Lirik teks YouTube.
         val textResult = if (!lyricsId.isNullOrBlank()) {
-            youTubeLyrics.getLyricsById(lyricsId)
+            myTubeLyrics.getLyricsById(lyricsId)
         } else {
-            youTubeLyrics.getLyrics(videoId, title, artist, album, duration)
+            myTubeLyrics.getLyrics(videoId, title, artist, album, duration)
         }
         textResult.getOrNull()?.takeIf { it.isNotBlank() }?.let { text ->
-            return Lyrics(null, text, SOURCE_YOUTUBE)
+            return Lyrics(null, text, SOURCE_MYTUBE)
         }
         // 3. Transkrip YouTube -> LRC.
         transcript.getLyrics(videoId, title, artist, album, duration)
             .getOrNull()?.takeIf { it.isNotBlank() }?.let { lrc ->
                 val lines = LrcParser.parseLrc(lrc)
                 if (lines.isNotEmpty()) {
-                    return Lyrics(lines, lines.joinToString("\n") { it.text }, SOURCE_YOUTUBE)
+                    return Lyrics(lines, lines.joinToString("\n") { it.text }, SOURCE_MYTUBE)
                 }
             }
         return null
@@ -83,6 +83,6 @@ class LyricsRepository(
     companion object {
         /** Nilai `Lyrics.source` — sama dengan Worker (`'lrclib' | 'youtube'`). */
         const val SOURCE_LRCLIB = "lrclib"
-        const val SOURCE_YOUTUBE = "youtube"
+        const val SOURCE_MYTUBE = "youtube"
     }
 }

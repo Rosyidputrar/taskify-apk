@@ -3,8 +3,8 @@ package com.rosyidputrar.taskify
 import com.rosyidputrar.taskify.feature.media.isWebViewLoadableUrl
 import com.rosyidputrar.taskify.feature.media.isYouTubeMusicStoreListingUrl
 import com.rosyidputrar.taskify.feature.media.isYouTubeUrl
-import com.rosyidputrar.taskify.feature.media.mergeYouTubeCookies
-import com.rosyidputrar.taskify.feature.media.youTubeCookieOrigin
+import com.rosyidputrar.taskify.feature.media.mergeMyTubeCookies
+import com.rosyidputrar.taskify.feature.media.myTubeCookieOrigin
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 /** Helper URL + cookie layar login (JVM-murni, tanpa WebView). */
 class MusicLoginWebUtilsTest {
     @Test fun mergeDedupPertamaMenang() {
-        val merged = mergeYouTubeCookies(
+        val merged = mergeMyTubeCookies(
             mapOf(
                 "https://music.youtube.com" to "LOGIN_INFO=abc; SAPISID=pertama; lain=1",
                 "https://www.youtube.com" to "SAPISID=keduax; SID=zzz",
@@ -26,7 +26,7 @@ class MusicLoginWebUtilsTest {
     }
 
     @Test fun mergeOriginHalamanDidahulukan() {
-        val merged = mergeYouTubeCookies(
+        val merged = mergeMyTubeCookies(
             mapOf(
                 "https://www.youtube.com" to "SAPISID=dari-www",
                 "https://music.youtube.com" to "SAPISID=dari-music",
@@ -37,10 +37,10 @@ class MusicLoginWebUtilsTest {
     }
 
     @Test fun mergeKosongNullDanBagianTanpaSamaDenganDiabaikan() {
-        assertNull(mergeYouTubeCookies(emptyMap(), "https://music.youtube.com"))
+        assertNull(mergeMyTubeCookies(emptyMap(), "https://music.youtube.com"))
         assertEquals(
             "LOGIN_INFO=abc",
-            mergeYouTubeCookies(mapOf("https://music.youtube.com" to "tanpa-sama-dengan; LOGIN_INFO=abc; =kosong")),
+            mergeMyTubeCookies(mapOf("https://music.youtube.com" to "tanpa-sama-dengan; LOGIN_INFO=abc; =kosong")),
         )
     }
 
@@ -68,11 +68,11 @@ class MusicLoginWebUtilsTest {
         assertFalse("https://music.youtube.com".isYouTubeMusicStoreListingUrl())
     }
 
-    @Test fun youTubeCookieOrigin() {
-        assertEquals("https://music.youtube.com", "https://music.youtube.com/watch?v=1".youTubeCookieOrigin())
+    @Test fun myTubeCookieOrigin() {
+        assertEquals("https://music.youtube.com", "https://music.youtube.com/watch?v=1".myTubeCookieOrigin())
         // Skema dipertahankan seperti ArchiveTune (http tetap http).
-        assertEquals("http://www.youtube.com", "http://www.youtube.com/".youTubeCookieOrigin())
-        assertNull("https://accounts.google.com/".youTubeCookieOrigin())
-        assertNull((null as String?).youTubeCookieOrigin())
+        assertEquals("http://www.youtube.com", "http://www.youtube.com/".myTubeCookieOrigin())
+        assertNull("https://accounts.google.com/".myTubeCookieOrigin())
+        assertNull((null as String?).myTubeCookieOrigin())
     }
 }

@@ -7,16 +7,16 @@ import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
 import com.rosyidputrar.taskify.core.media.MediaSaver
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
 import com.rosyidputrar.taskify.core.media.TikTokClient
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
 import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
-import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.VisitorDataBootstrap
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.core.auth.NetworkMonitor
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import com.rosyidputrar.taskify.feature.media.TikTokConfig
 import com.rosyidputrar.taskify.feature.media.mediaFeatureModule
@@ -37,7 +37,7 @@ import org.robolectric.annotation.Config
 /**
  * Tahap 9 rewrite musik: graf DI Koin untuk musik harus bisa di-resolve.
  *
- * Gap Tahap 7 yang ditutup tes ini: binding `YouTubeMusicClient` (pengganti
+ * Gap Tahap 7 yang ditutup tes ini: binding `MyTubeMusicClient` (pengganti
  * `MusicClient` Worker) belum pernah diverifikasi runtime — tidak ada tes
  * `checkModules` di repo. `checkModules` membuat satu instance tiap
  * definisi, jadi kegagalan di sini berarti layar Musik akan crash saat
@@ -95,9 +95,9 @@ class KoinGraphTest {
             single { NetworkMonitor(androidContext()) }
             single { DirectStreamResolver() }
             single { SponsorBlockRepository() }
-            single { LyricsRepository(youTube = get()) }
+            single { LyricsRepository(myTube = get()) }
             single {
-                YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
+                MyTubeMusicClient(get(), get(), get()) { get<MyTubeAuthStore>().loadAuthState() }
             }
             single {
                 MusicPlayer(androidContext(), get(), loginEvents = get<MusicLoginRepository>()).also { player ->
@@ -108,9 +108,9 @@ class KoinGraphTest {
             }
             // Cermin wiring Tahap 5 (AppModule.kt): repo login (dipakai
             // MusicPlayer sebagai loginEvents + MusicViewModel param ke-5).
-            single { MusicLoginRepository(get<YouTube>(), get<YouTubeAuthStore>()) }
-            single { YouTube() }
-            single { YouTubeAuthStore(androidContext()) }
+            single { MusicLoginRepository(get<MyTube>(), get<MyTubeAuthStore>()) }
+            single { MyTube() }
+            single { MyTubeAuthStore(androidContext()) }
             single { VisitorDataBootstrap(get(), get()) }
             single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }
             single { TikTokConfig(AppConfig.publicWebOrigin) }
