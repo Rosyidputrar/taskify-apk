@@ -12,7 +12,7 @@
 package com.rosyidputrar.taskify.core.media
 
 import android.net.Uri
-import com.rosyidputrar.taskify.core.media.youtube.urlQueryParam
+import com.rosyidputrar.taskify.core.media.mytube.urlQueryParam
 
 /**
  * Panjang chunk berikutnya untuk [ChunkedDataSource]: yang terkecil dari

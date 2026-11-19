@@ -6,7 +6,7 @@ import androidx.media3.datasource.HttpDataSource
 import com.rosyidputrar.taskify.core.domain.media.StreamSource
 import com.rosyidputrar.taskify.core.domain.media.buildRawDetail
 import com.rosyidputrar.taskify.core.domain.media.causeChainText
-import com.rosyidputrar.taskify.core.media.youtube.streamUrlParamPresence
+import com.rosyidputrar.taskify.core.media.mytube.streamUrlParamPresence
 
 /**
  * Detail mentah error pemutar ExoPlayer untuk ditampilkan di layar musik

@@ -1,8 +1,8 @@
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
 import com.rosyidputrar.taskify.core.innertube.utils.sha1
-import com.rosyidputrar.taskify.core.innertube.utils.youtubeLoginCookieValue
+import com.rosyidputrar.taskify.core.innertube.utils.myTubeLoginCookieValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -177,7 +177,7 @@ class WireHeaderCaptureTest {
             )
             val body = runBlocking {
                 withTimeout(30_000) {
-                    tube.accountMenu(YouTubeClient.WEB_REMIX, auth)
+                    tube.accountMenu(MyTubeClient.WEB_REMIX, auth)
                 }
             }
             assertEquals("""{"ok":true}""", body)
@@ -243,12 +243,12 @@ class WireHeaderCaptureTest {
     }
 
     @Test
-    fun youtubeLoginCookieValueMemakaiSapisidBilaAdaDan3papisid() {
+    fun myTubeLoginCookieValueMemakaiSapisidBilaAdaDan3papisid() {
         // Bila merged cookie berisi SAPISID DAN __Secure-3PAPISID dengan
         // nilai berbeda, hash harus dihitung dari SAPISID (urutan pertama).
         val cookie = "__Secure-3PAPISID=DUMMY_3PAPISID; SAPISID=DUMMY_SAPISID; " +
             "__Secure-1PAPISID=DUMMY_1PAPISID"
-        assertEquals("DUMMY_SAPISID", youtubeLoginCookieValue(cookie))
+        assertEquals("DUMMY_SAPISID", myTubeLoginCookieValue(cookie))
     }
 
     companion object {

@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 /**
  * Regresi jebakan retry login (PLAN §B.2 / §D.1): `lastCapturedCookie` di
- * `YouTubeLoginWebViewClient` dulu TIDAK PERNAH di-reset, jadi cookie yang
+ * `MyTubeLoginWebViewClient` dulu TIDAK PERNAH di-reset, jadi cookie yang
  * sama sesudah "Coba lagi" didiamkan dan `onCookiesCaptured` tidak pernah
  * dipanggil kedua kalinya. Gate ini diekstrak supaya perilakunya bisa
  * dites tanpa WebView (Robolectric + WebView asli tidak deterministik).

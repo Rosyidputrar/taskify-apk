@@ -12,16 +12,16 @@ import com.rosyidputrar.taskify.core.domain.media.Track
 import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
-import com.rosyidputrar.taskify.core.media.youtube.DirectStream
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.FailedStreamClients
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginEvents
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailureException
-import com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.mytube.DirectStream
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginEvents
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailure
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailureException
+import com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -47,12 +47,12 @@ import kotlin.test.assertTrue
  * Regresi item 5 (lompat ke lagu yang sedang di-prefetch tidak boleh resolve ganda)
  * dan item 9 (poll prefetch dibatalkan saat lagu berubah), kini atas API direct.
  *
- * `YouTube` + `DirectStreamResolver` dipalsukan (subclass, pola lama `FakeMusicClient`):
+ * `MyTube` + `DirectStreamResolver` dipalsukan (subclass, pola lama `FakeMusicClient`):
  * tiap resolve menahan di gate sampai tes melepasnya, jadi jumlah panggilan bisa
  * dihitung persis. `track()`/`resolve()` memakai `withTimeoutOrNull` yang tidak
  * jalan di bawah `runTest` (pelajaran Tahap 2/3) — fake bergate adalah cara
  * deterministik menguji orkestrasi efek pemutar. Integrasi HTTP-nya sendiri
- * sudah diuji di `YouTubeFacadeTest` + `DirectStreamResolverTest` (MockEngine).
+ * sudah diuji di `MyTubeFacadeTest` + `DirectStreamResolverTest` (MockEngine).
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -60,7 +60,7 @@ class MusicPlayerTest {
     private fun song(id: String) = Song(id.padEnd(11, 'x'), "Lagu $id", "Artis", "3.05", emptyList())
     private val a = song("a"); private val b = song("b"); private val c = song("c")
 
-    private class FakeYouTube : YouTube() {
+    private class FakeMyTube : MyTube() {
         val trackCalls = mutableListOf<String>()
         var trackResult: (String) -> Result<Track> = { Result.success(Track(it, "", emptyList())) }
         /** Gate per lagu: bila ada, `track()` menahan di sini (untuk mengamati state sebelum keterangan datang). */
@@ -165,9 +165,9 @@ class MusicPlayerTest {
     )
 
     private fun player(
-        tube: FakeYouTube,
+        tube: FakeMyTube,
         fake: FakeResolver,
-        authStore: YouTubeAuthStore? = null,
+        authStore: MyTubeAuthStore? = null,
         loginEvents: MusicLoginEvents? = null,
         youtubei: YoutubeiStreamResolver? = null,
         failedStreamClients: FailedStreamClients? = null,
@@ -179,7 +179,7 @@ class MusicPlayerTest {
     ): MusicPlayer {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         return MusicPlayer(
-            context, tube, fake, sponsorEmpty(), authStore ?: YouTubeAuthStore(context),
+            context, tube, fake, sponsorEmpty(), authStore ?: MyTubeAuthStore(context),
             loginEvents = loginEvents, youtubeiResolver = youtubei,
             failedStreamClients = failedStreamClients ?: FailedStreamClients(),
             refreshVisitorData = refreshVisitorData,
@@ -191,7 +191,7 @@ class MusicPlayerTest {
     }
 
     /** Cookie login dummy + dataSyncId + akun, supaya state terhitung login (PLAN C.6). */
-    private fun seedLogin(authStore: YouTubeAuthStore) {
+    private fun seedLogin(authStore: MyTubeAuthStore) {
         authStore.saveAuthState(PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", dataSyncId = "delegated||user"))
         authStore.saveAccount(AccountInfo("Tes Akun", "tes@example.com"))
     }
@@ -225,7 +225,7 @@ class MusicPlayerTest {
     @Test fun jumpToPrefetchingSongDoesNotResolveTwice() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.playQueue(listOf(a, b), 0)
@@ -262,7 +262,7 @@ class MusicPlayerTest {
     @Test fun prefetchIsCancelledWhenSongChanges() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.playQueue(listOf(a, b, c), 0)
@@ -290,7 +290,7 @@ class MusicPlayerTest {
         // harus memakai cache, bukan resolve jaringan lagi (0 panggilan baru).
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.playQueue(listOf(a, b), 0)
@@ -329,7 +329,7 @@ class MusicPlayerTest {
         // tes ini menegaskan urutan itu, bukan menunggu Playing.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.tryResolveFails = { it == b.videoId }
             val youtubei = FakeYoutubei(ApplicationProvider.getApplicationContext<android.content.Context>())
@@ -369,7 +369,7 @@ class MusicPlayerTest {
         // lama, bukan bagian dari optimasi ini).
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.tryResolveFails = { it == b.videoId }
             val youtubei = FakeYoutubei(ApplicationProvider.getApplicationContext<android.content.Context>())
@@ -397,7 +397,7 @@ class MusicPlayerTest {
     @Test fun nextFailureStillPlaysFromPlayerMetadata() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             // `next` gagal (403) → track() jatuh ke metadata player: upNext kosong,
@@ -426,7 +426,7 @@ class MusicPlayerTest {
     @Test fun allClientsFailShowsAClearError() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             tube.trackResult = { Result.failure(NoSuchElementException("track tidak ditemukan")) }
             val fake = FakeResolver()
             // Semua klien InnerTube menolak: tidak ada metadata, tidak ada stream.
@@ -446,7 +446,7 @@ class MusicPlayerTest {
     @Test fun qualitySettingReachesTheResolverAndPersists() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.updateSettings { it.copy(quality = MusicQuality.Low) }
@@ -465,7 +465,7 @@ class MusicPlayerTest {
         // Tahap 8 (C2-25): jaringan metered + kualitas Auto → resolver menerima High.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake, isNetworkMetered = { true })
             player.playQueue(listOf(a), 0)
@@ -481,7 +481,7 @@ class MusicPlayerTest {
         // Jaringan biasa + kualitas Auto → resolver menerima Auto, metered false.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake, isNetworkMetered = { false })
             player.playQueue(listOf(a), 0)
@@ -497,7 +497,7 @@ class MusicPlayerTest {
         // Metered hanya menurunkan Auto; Highest tetap Highest.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake, isNetworkMetered = { true })
             player.updateSettings { it.copy(quality = MusicQuality.Highest) }
@@ -514,7 +514,7 @@ class MusicPlayerTest {
         // per lagu; panggilan kedua untuk lagu yang sama tidak mengulang.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { id, _ -> stream(id, trackingUrl = "https://tracking.test/$id") }
             val registered = mutableListOf<Pair<String, String>>()
@@ -546,7 +546,7 @@ class MusicPlayerTest {
         // memberi URL baru) mencoba lagi, bukan diam selamanya.
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { id, _ -> stream(id, trackingUrl = "https://tracking.test/$id") }
             var calls = 0
@@ -571,7 +571,7 @@ class MusicPlayerTest {
     @Test fun preferMp4aSettingReachesTheResolverAndPersists() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.updateSettings { it.copy(preferMp4a = true) }
@@ -590,10 +590,10 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-            val authStore = YouTubeAuthStore(context)
+            val authStore = MyTubeAuthStore(context)
             authStore.clear()
             authStore.saveVisitorData("CgthYXV0aC10ZXN0")
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = MusicPlayer(context, tube, fake, sponsorEmpty(), authStore)
             player.playQueue(listOf(a), 0)
@@ -611,12 +611,12 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-            val authStore = YouTubeAuthStore(context)
+            val authStore = MyTubeAuthStore(context)
             authStore.clear()
             // Gate login (PLAN C.6): antrean hanya dipulihkan bila login,
             // jadi tes pemulihan ini memakai sesi login dummy.
             seedLogin(authStore)
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake, authStore)
             player.playQueue(listOf(a, b, c), 1)
@@ -639,7 +639,7 @@ class MusicPlayerTest {
     @Test fun queueIsNotRestoredWithoutLogin() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val player = player(tube, fake)
             player.playQueue(listOf(a, b, c), 1)
@@ -657,11 +657,11 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-            val authStore = YouTubeAuthStore(context)
+            val authStore = MyTubeAuthStore(context)
             authStore.clear()
             seedLogin(authStore)
             var expiredCalls = 0
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.LoginRequired() }
             val player = player(tube, fake, authStore, loginEvents = MusicLoginEvents { expiredCalls++ })
@@ -679,7 +679,7 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             var expiredCalls = 0
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.LoginRequired() }
             val player = player(tube, fake, loginEvents = MusicLoginEvents { expiredCalls++ })
@@ -698,7 +698,7 @@ class MusicPlayerTest {
         try {
             val d = song("d")
             val cursors = mutableListOf<String>()
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             tube.radioResult = { cursor ->
                 cursors += cursor
                 Result.success(RadioPageResult(listOf(c, d), "RDAMVMa", a.videoId, null))
@@ -719,7 +719,7 @@ class MusicPlayerTest {
     @Test fun playback403ReResolvesOnceThenPlaysAgainWithFreshUrl() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val url1 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S1"
             val url2 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S2"
@@ -745,7 +745,7 @@ class MusicPlayerTest {
     @Test fun secondPlayback403ShowsRawErrorWithoutLoop() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val url1 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S1"
             val url2 = "https://rr.test/${a.videoId}?expire=1793000000&ip=203.0.113.7&sig=S2"
@@ -781,7 +781,7 @@ class MusicPlayerTest {
     @Test fun nonRetryablePlaybackErrorDoesNotReResolve() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
             val player = player(tube, fake)
@@ -809,7 +809,7 @@ class MusicPlayerTest {
     @Test fun http404ReResolvesOnceLike403() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
             val player = player(tube, fake)
@@ -837,7 +837,7 @@ class MusicPlayerTest {
     @Test fun http403BlacklistsFailedClient() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val blacklist = FailedStreamClients()
             val fingerprint = PlaybackAuthState().streamCacheFingerprint
@@ -865,7 +865,7 @@ class MusicPlayerTest {
     @Test fun http403DoesNotBlacklistNearExpiredUrl() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val blacklist = FailedStreamClients()
             val fingerprint = PlaybackAuthState().streamCacheFingerprint
@@ -891,7 +891,7 @@ class MusicPlayerTest {
     @Test fun recoveryKeepsPositionOnNextPlay() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val url1 = "https://rr.test/${a.videoId}?expire=1893000000&sig=S1"
             val url2 = "https://rr.test/${a.videoId}?expire=1893000000&sig=S2"
@@ -919,7 +919,7 @@ class MusicPlayerTest {
     @Test fun transientNetworkFailureReResolvesOnce() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
             val player = player(tube, fake)
@@ -948,7 +948,7 @@ class MusicPlayerTest {
     @Test fun parserFailureReResolvesOnce() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
             val player = player(tube, fake)
@@ -973,7 +973,7 @@ class MusicPlayerTest {
     @Test fun botDetectionReResolvesOnce() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
             val player = player(tube, fake)
@@ -998,7 +998,7 @@ class MusicPlayerTest {
     @Test fun allClientsFailedRefreshesSessionAndRetriesOnce() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             var refreshCalls = 0
             fake.streamSupplier = { _, _ -> stream(a.videoId, "https://rr.test/${a.videoId}", "ANDROID") }
@@ -1026,7 +1026,7 @@ class MusicPlayerTest {
     @Test fun initialAllClientsFailedShowsTaxonomyMessage() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.AllClientsFailed(setOf("ANDROID@21.26.364", "WEB_CREATOR@1.0")) }
             val player = player(tube, fake)
@@ -1055,7 +1055,7 @@ class MusicPlayerTest {
     @Test fun playback403RetryAllowanceResetsOnNewPlayAttempt() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, "https://rr.test/${a.videoId}?expire=1793000000&sig=S$call", "ANDROID")
@@ -1089,7 +1089,7 @@ class MusicPlayerTest {
     @Test fun youtubeiSuksesDipakaiDirectTidakDipanggil() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
             val youtubei = FakeYoutubei(context)
@@ -1119,7 +1119,7 @@ class MusicPlayerTest {
     @Test fun youtubeiGagalJatuhKeDirect() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { id, _ -> stream(id, "https://rr.test/$id", "ANDROID") }
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -1140,7 +1140,7 @@ class MusicPlayerTest {
     @Test fun resolveCacheDipakaiSaatUrlKedaluwarsa() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             // URL berumur 400 detik: masuk cache (TTL 100 detik), tapi
             // Expire(now+200 detik) menganggapnya kedaluwarsa (margin 5 menit).
@@ -1167,11 +1167,11 @@ class MusicPlayerTest {
     @Test fun gantiSesiMembuatCacheMissDenganPinnedItag() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { id, _ -> stream(id, "https://rr.test/$id", "ANDROID") }
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-            val authStore = YouTubeAuthStore(context)
+            val authStore = MyTubeAuthStore(context)
             val player = player(tube, fake, authStore = authStore)
             player.playQueue(listOf(a), 0)
             advanceUntilIdle()
@@ -1196,7 +1196,7 @@ class MusicPlayerTest {
     @Test fun playback403ReResolveFailureShowsOriginalRawError() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             var calls = 0
             fake.streamSupplier = { _, _ ->
@@ -1228,7 +1228,7 @@ class MusicPlayerTest {
     @Test fun galatPutarKeduaSetelahStateDibersihkanTetapMembawaDiagnostik() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             var calls = 0
             val url1 = "https://rr.test/${a.videoId}?c=WEB_CREATOR&cver=1.0&n=abc&pot=tok&sig=S1&expire=1893000000&ip=203.0.113.7"
@@ -1273,7 +1273,7 @@ class MusicPlayerTest {
     @Test fun gagalResolveSetelahGalatPutarTetapMembawaDiagnostik() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             val url1 = "https://rr.test/${a.videoId}?c=WEB_CREATOR&cver=1.0&n=abc&pot=tok&sig=S1&expire=1893000000&ip=203.0.113.7"
             fake.streamSupplier = { _, _ -> stream(a.videoId, url1, "WEB_CREATOR") }
@@ -1313,7 +1313,7 @@ class MusicPlayerTest {
     @Test fun recoveryAutoResumesAfterTransientInterruption() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")
@@ -1340,7 +1340,7 @@ class MusicPlayerTest {
     @Test fun recoveryDoesNotAutoResumeAfterUserPaused() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")
@@ -1371,7 +1371,7 @@ class MusicPlayerTest {
     @Test fun firstFailuresSkipToNextSong() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { if (it == a.videoId) StreamFailure.NoFormat else null }
             fake.streamSupplier = { id, _ -> stream(id) }
@@ -1391,7 +1391,7 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val d = song("d"); val e = song("e"); val f = song("f")
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.NoFormat }
             val player = player(tube, fake)
@@ -1411,7 +1411,7 @@ class MusicPlayerTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val d = song("d"); val e = song("e"); val f = song("f"); val g = song("g")
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             // Semua gagal kecuali lagu kedua: rantai galat harus putus
             // saat lagu kedua berbunyi, jadi galat tampil di lagu ketujuh
@@ -1437,7 +1437,7 @@ class MusicPlayerTest {
     @Test fun loginFailureDoesNotSkip() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.LoginRequired() }
             val player = player(tube, fake)
@@ -1457,7 +1457,7 @@ class MusicPlayerTest {
     @Test fun offlineWaitsForNetworkThenResolves() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { id, _ -> stream(id) }
             val online = MutableStateFlow(false)
@@ -1483,7 +1483,7 @@ class MusicPlayerTest {
     @Test fun offlineWithoutObserverFailsAsBefore() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.resolveFailure = { StreamFailure.Network("putus") }
             val player = player(tube, fake, isOnline = { false })
@@ -1500,7 +1500,7 @@ class MusicPlayerTest {
     @Test fun reResolveWaitsForNetworkWhenOffline() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val tube = FakeYouTube()
+            val tube = FakeMyTube()
             val fake = FakeResolver()
             fake.streamSupplier = { _, call ->
                 stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")

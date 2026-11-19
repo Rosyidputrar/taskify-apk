@@ -125,7 +125,7 @@ class MediaRequestHeadersTest {
     @Test fun `user-agent sama dengan konstanta profil WEB_REMIX`() {
         assertTrue(
             MediaRequestHeaders.DEFAULT["User-Agent"] ==
-                com.rosyidputrar.taskify.core.innertube.models.YouTubeClient.USER_AGENT_WEB_REMIX,
+                com.rosyidputrar.taskify.core.innertube.models.MyTubeClient.USER_AGENT_WEB_REMIX,
             "satu sumber kebenaran, bukan salinan string lepas",
         )
     }

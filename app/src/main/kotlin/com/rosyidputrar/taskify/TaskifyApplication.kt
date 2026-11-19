@@ -8,7 +8,7 @@ import android.app.Application
 import android.util.Log
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
-import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
+import com.rosyidputrar.taskify.core.media.mytube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.ui.shell.userMessageFor
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.rosyidputrar.taskify.core.auth.LockManager
@@ -84,15 +84,15 @@ class TaskifyApplication : Application() {
         // pertama jalan tanpa token (fallback yang sudah ditangani).
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
             try {
-                get<com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver>().preWarm()
+                get<com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver>().preWarm()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w("Taskify", "Musik: pre-warm youtubei gagal (non-fatal)", e)
             }
             try {
-                val auth = get<com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore>().loadAuthState()
-                get<com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer>().preWarm(auth)
+                val auth = get<com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore>().loadAuthState()
+                get<com.rosyidputrar.taskify.core.media.mytube.PoTokenEnsurer>().preWarm(auth)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

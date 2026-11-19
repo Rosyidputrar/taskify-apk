@@ -1,6 +1,6 @@
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeLocale
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeLocale
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
  * Ditulis baru untuk rewrite ini. ArchiveTune punya interface bernama sama
  * (`MusicBackend.kt`, 247 baris) yang juga mendeklarasikan SELURUH API
  * katalog/player; separuh itu sengaja TIDAK dibawa ke sini: di clone
- * ArchiveTune tidak ditemukan implementornya (PLAN A.7), dan fasad `YouTube`
+ * ArchiveTune tidak ditemukan implementornya (PLAN A.7), dan fasad `MyTube`
  * Tahap 2 adalah kelas biasa yang menerima `InnerTube` lewat konstruktor,
  * bukan implementasi interface ini. Bila Tahap 6-7 butuh seam yang bisa
  * diganti (mis. untuk tes ViewModel/Player), interface ini yang diperluas —
@@ -24,7 +24,7 @@ interface MusicBackend {
     val authStateFlow: StateFlow<PlaybackAuthState>
 
     var authState: PlaybackAuthState
-    var locale: YouTubeLocale
+    var locale: MyTubeLocale
     var visitorData: String?
     var dataSyncId: String?
     var cookie: String?

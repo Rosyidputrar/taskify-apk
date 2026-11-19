@@ -11,13 +11,13 @@ import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.Track
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
-import com.rosyidputrar.taskify.core.innertube.YouTube
+import com.rosyidputrar.taskify.core.innertube.MyTube
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
-import com.rosyidputrar.taskify.core.media.youtube.DirectStream
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
+import com.rosyidputrar.taskify.core.media.mytube.DirectStream
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.feature.media.MusicViewModel
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import kotlinx.coroutines.CompletableDeferred
@@ -35,7 +35,7 @@ class MusicQueueFromSearchTest {
     private val episode = song("ep")
 
     /** Cari + keterangan lewat fasad direct palsu (Tahap 7); pemutar sudah direct. */
-    private inner class FakeTube : YouTube() {
+    private inner class FakeTube : MyTube() {
         val pending = CompletableDeferred<Unit>()
 
         override suspend fun search(query: String, filter: SearchFilter, authState: PlaybackAuthState): Result<SearchResults> =
@@ -64,14 +64,14 @@ class MusicQueueFromSearchTest {
 
     private fun setUp(): Pair<MusicViewModel, MusicPlayer> {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val authStore = YouTubeAuthStore(context).also { it.clear() }
+        val authStore = MyTubeAuthStore(context).also { it.clear() }
         // Gate login (Tahap 5): cari/putar hanya jalan bila login — tes ini
         // memakai sesi login dummy supaya perilaku antreannya tetap teruji.
         authStore.saveAuthState(PlaybackAuthState(cookie = "SAPISID=dummy; LOGIN_INFO=dummy", dataSyncId = "delegated||user"))
         authStore.saveAccount(AccountInfo("Tes Akun", "tes@example.com"))
         val tube = FakeTube()
         val player = MusicPlayer(context, tube, FakeResolver(), authStore = authStore)
-        val vm = MusicViewModel(player, YouTubeMusicClient(tube), OnlineFlow { flowOf(true) }, null, MusicLoginRepository(tube, authStore))
+        val vm = MusicViewModel(player, MyTubeMusicClient(tube), OnlineFlow { flowOf(true) }, null, MusicLoginRepository(tube, authStore))
         vm.setQuery("lagu")
         vm.search()
         shadowOf(Looper.getMainLooper()).idle()

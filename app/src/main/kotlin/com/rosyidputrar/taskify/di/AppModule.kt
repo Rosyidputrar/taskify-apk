@@ -44,19 +44,19 @@ import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.share.ShareInbox
 import com.rosyidputrar.taskify.core.media.MediaSaver
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
 import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
-import com.rosyidputrar.taskify.core.media.youtube.DirectStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.FailedStreamClients
-import com.rosyidputrar.taskify.core.media.youtube.PoTokenEnsurer
-import com.rosyidputrar.taskify.core.media.youtube.YoutubeiStreamResolver
-import com.rosyidputrar.taskify.core.media.youtube.potoken.BotGuardTokenGenerator
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
-import com.rosyidputrar.taskify.core.media.youtube.SignatureTimestampProvider
-import com.rosyidputrar.taskify.core.innertube.YouTube
-import com.rosyidputrar.taskify.core.media.youtube.VisitorDataBootstrap
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.mytube.PoTokenEnsurer
+import com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.potoken.BotGuardTokenGenerator
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.SignatureTimestampProvider
+import com.rosyidputrar.taskify.core.innertube.MyTube
+import com.rosyidputrar.taskify.core.media.mytube.VisitorDataBootstrap
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.core.media.TikTokClient
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import com.rosyidputrar.taskify.feature.media.TikTokConfig
@@ -187,7 +187,7 @@ private val deviceModule = module {
         )
     }
     // Musik direct (Tahap 7): tidak ada lagi klien Worker — katalog/lirik/
-    // SponsorBlock lewat fasad YouTubeMusicClient. MUSIC_API_URL tidak lagi
+    // SponsorBlock lewat fasad MyTubeMusicClient. MUSIC_API_URL tidak lagi
     // dipakai musik (secret GitHub-nya dipertahankan untuk rollback, lihat
     // AppConfig); Supabase tetap dipakai auth/database, bukan musik.
     // Porting ArchiveTune Tahap 2 (C1-8, C2-13): resolver memakai penyedia
@@ -214,9 +214,9 @@ private val deviceModule = module {
         )
     }
     single { SponsorBlockRepository() }
-    single { LyricsRepository(youTube = get()) }
+    single { LyricsRepository(myTube = get()) }
     single {
-        YouTubeMusicClient(get(), get(), get()) { get<YouTubeAuthStore>().loadAuthState() }
+        MyTubeMusicClient(get(), get(), get()) { get<MyTubeAuthStore>().loadAuthState() }
     }
     // Porting ArchiveTune Tahap 3 (C1-6): resolver youtubei.js (QuickJS).
     // Malas dibuat — QuickJS baru dibuat saat pertama resolve, bukan saat
@@ -230,7 +230,7 @@ private val deviceModule = module {
             poTokenEnsurer = get(),
             refreshVisitorData = { get<VisitorDataBootstrap>().refreshVisitorData() },
             // Tahap 9 (C2-21): telemetri putar best-effort saat lagu mulai berbunyi.
-            registerPlayback = { _, trackingUrl, auth -> get<YouTube>().registerPlayback(trackingUrl, authState = auth).isSuccess },
+            registerPlayback = { _, trackingUrl, auth -> get<MyTube>().registerPlayback(trackingUrl, authState = auth).isSuccess },
             // Agen B (tunggu-jaringan): observer koneksi yang sama dengan
             // OnlineFlow di bawah (NetworkMonitor).
             onlineFlow = get<NetworkMonitor>().online,
@@ -244,8 +244,8 @@ private val deviceModule = module {
     // Musik direct (Tahap 5): auth anonim — visitorData tersimpan di
     // SharedPreferences "youtube_auth", di-bootstrap sekali saat start dari
     // TaskifyApplication. Login/PoToken belum ada (follow-up, PLAN G.10).
-    single { YouTube() }
-    single { YouTubeAuthStore(androidContext()) }
+    single { MyTube() }
+    single { MyTubeAuthStore(androidContext()) }
     single { VisitorDataBootstrap(get(), get()) }
     // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
     single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }

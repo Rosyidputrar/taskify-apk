@@ -1,12 +1,12 @@
 package com.rosyidputrar.taskify.core.media.lyrics
 
 import com.rosyidputrar.taskify.core.innertube.InnerTube
-import com.rosyidputrar.taskify.core.innertube.YouTube
-import com.rosyidputrar.taskify.core.media.lyrics.YouTubeFixtures.BROWSE_JSON
-import com.rosyidputrar.taskify.core.media.lyrics.YouTubeFixtures.LYRICS_ID
-import com.rosyidputrar.taskify.core.media.lyrics.YouTubeFixtures.LYRICS_TEXT
-import com.rosyidputrar.taskify.core.media.lyrics.YouTubeFixtures.NEXT_JSON
-import com.rosyidputrar.taskify.core.media.lyrics.YouTubeFixtures.TRANSCRIPT_JSON
+import com.rosyidputrar.taskify.core.innertube.MyTube
+import com.rosyidputrar.taskify.core.media.lyrics.MyTubeFixtures.BROWSE_JSON
+import com.rosyidputrar.taskify.core.media.lyrics.MyTubeFixtures.LYRICS_ID
+import com.rosyidputrar.taskify.core.media.lyrics.MyTubeFixtures.LYRICS_TEXT
+import com.rosyidputrar.taskify.core.media.lyrics.MyTubeFixtures.NEXT_JSON
+import com.rosyidputrar.taskify.core.media.lyrics.MyTubeFixtures.TRANSCRIPT_JSON
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -61,12 +61,12 @@ class LyricsRepositoryTest {
                 respond(body, status, json)
             }
             val lrcLib = LrcLibLyricsProvider(HttpClient(lrcLibEngine) { expectSuccess = false })
-            val youTube = YouTube(InnerTube(HttpClient(tubeEngine) { expectSuccess = true }))
-            return LyricsRepository(lrcLib, youTube)
+            val myTube = MyTube(InnerTube(HttpClient(tubeEngine) { expectSuccess = true }))
+            return LyricsRepository(lrcLib, myTube)
         }
     }
 
-    @Test fun `lrclib sukses maka youtube tidak dipanggil`() = runTest {
+    @Test fun `lrclib sukses maka mytube tidak dipanggil`() = runTest {
         val scenario = Scenario(
             getStatus = HttpStatusCode.OK,
             getBody = """{"trackName":"Yellow","artistName":"Coldplay","duration":266,"instrumental":false,"plainLyrics":"Look at the stars","syncedLyrics":"[00:00.00]Look at the stars\n[00:05.00]Look how they shine"}""",
@@ -78,7 +78,7 @@ class LyricsRepositoryTest {
         assertTrue(scenario.requested.none { it.contains("/browse") || it.contains("/get_transcript") })
     }
 
-    @Test fun `lrclib gagal maka teks youtube dipakai`() = runTest {
+    @Test fun `lrclib gagal maka teks mytube dipakai`() = runTest {
         val scenario = Scenario(getStatus = HttpStatusCode.InternalServerError)
         val lyrics = scenario.repository().getLyrics("dQw4w9WgXcQ", "Yellow", "Coldplay", null, 266, LYRICS_ID)
         assertTrue(lyrics != null)

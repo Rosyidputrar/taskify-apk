@@ -2,7 +2,7 @@ package com.rosyidputrar.taskify.core.media
 
 import com.rosyidputrar.taskify.core.domain.media.buildRawDetail
 import com.rosyidputrar.taskify.core.domain.media.causeChainText
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailure
 
 /**
  * Detail mentah kegagalan resolve stream + kegagalan muat (search, browse,
@@ -62,14 +62,14 @@ fun streamFailureRawDetail(failure: StreamFailure?, cause: Throwable?): String? 
 /**
  * Detail mentah kegagalan muat dari exception apa pun (search, browse,
  * daftar, lirik, resolve non-[StreamFailure]): nama jenis exception +
- * status HTTP bila [YouTubeMusicException] + pesan (URL disembunyikan) +
+ * status HTTP bila [MyTubeMusicException] + pesan (URL disembunyikan) +
  * rantai penyebab. `null` bila exception null.
  */
 fun musicErrorRawDetail(error: Throwable?): String? {
     if (error == null) return null
     val detail = buildRawDetail(
         "jenis" to (error::class.simpleName?.takeIf { it.isNotBlank() } ?: "Throwable"),
-        "status" to (error as? YouTubeMusicException)?.status?.takeIf { it != 0 }?.toString(),
+        "status" to (error as? MyTubeMusicException)?.status?.takeIf { it != 0 }?.toString(),
         "pesan" to error.message?.let(::scrubUrls),
         "penyebab" to causeChainText(error.cause)?.let(::scrubUrls),
     )

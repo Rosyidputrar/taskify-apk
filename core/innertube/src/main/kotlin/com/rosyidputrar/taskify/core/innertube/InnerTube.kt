@@ -38,8 +38,8 @@
 
 package com.rosyidputrar.taskify.core.innertube
 
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeClient
-import com.rosyidputrar.taskify.core.innertube.models.YouTubeLocale
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
+import com.rosyidputrar.taskify.core.innertube.models.MyTubeLocale
 import com.rosyidputrar.taskify.core.innertube.models.body.AccountMenuBody
 import com.rosyidputrar.taskify.core.innertube.models.body.AccountsListBody
 import com.rosyidputrar.taskify.core.innertube.models.body.BrowseBody
@@ -49,7 +49,7 @@ import com.rosyidputrar.taskify.core.innertube.models.body.NextBody
 import com.rosyidputrar.taskify.core.innertube.models.body.PlayerBody
 import com.rosyidputrar.taskify.core.innertube.models.body.SearchBody
 import com.rosyidputrar.taskify.core.innertube.utils.sha1
-import com.rosyidputrar.taskify.core.innertube.utils.youtubeLoginCookieValue
+import com.rosyidputrar.taskify.core.innertube.utils.myTubeLoginCookieValue
 import com.rosyidputrar.taskify.core.innertube.utils.youtubeiCookie
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -86,7 +86,7 @@ internal val InnertubeJson = Json {
 
 /**
  * Akses ke endpoint InnerTube — HANYA membuat permintaan HTTP, tidak
- * mem-parsing respons. Parsing ada di `YouTube` + `pages` (Tahap 2).
+ * mem-parsing respons. Parsing ada di `MyTube` + `pages` (Tahap 2).
  *
  * [httpClient] bisa diinjeksi (tes memakai `MockEngine`); bawaan memakai
  * OkHttp dengan timeout 15/10/15 detik.
@@ -94,7 +94,7 @@ internal val InnertubeJson = Json {
 class InnerTube(
     private val httpClient: HttpClient = createDefaultClient(),
 ) {
-    var locale = YouTubeLocale(gl = "ID", hl = "id")
+    var locale = MyTubeLocale(gl = "ID", hl = "id")
 
     @Volatile
     private var authState: PlaybackAuthState = PlaybackAuthState.EMPTY
@@ -131,7 +131,7 @@ class InnerTube(
     }
 
     private fun HttpRequestBuilder.ytClient(
-        client: YouTubeClient,
+        client: MyTubeClient,
         setLogin: Boolean = false,
         authState: PlaybackAuthState = currentAuthState(),
         includeVisitorData: Boolean = true,
@@ -170,7 +170,7 @@ class InnerTube(
             val effectiveCookie = authState.cookie?.let(::youtubeiCookie)
             effectiveCookie?.let { cookie ->
                 header("cookie", cookie)
-                val loginCookieValue = youtubeLoginCookieValue(cookie) ?: return@let
+                val loginCookieValue = myTubeLoginCookieValue(cookie) ?: return@let
                 val currentTime = System.currentTimeMillis() / 1000
                 val sapisidHash = sha1("$currentTime $loginCookieValue $requestOrigin")
                 header("Authorization", "SAPISIDHASH ${currentTime}_$sapisidHash")
@@ -222,11 +222,11 @@ class InnerTube(
      * Semua pemanggil menerima `authState` sebagai parameter (A.8.3):
      * jangan membaca state internal diam-diam. Bawaan
      * `currentAuthState()` menjaga kompatibilitas pemanggil lama (termasuk
-     * fasad `YouTube` Tahap 2) — state internal itu sendiri diisi lewat
-     * [applyAuthState] (mis. dari `YouTubeAuthStore`, Tahap 5).
+     * fasad `MyTube` Tahap 2) — state internal itu sendiri diisi lewat
+     * [applyAuthState] (mis. dari `MyTubeAuthStore`, Tahap 5).
      */
     suspend fun search(
-        client: YouTubeClient,
+        client: MyTubeClient,
         query: String? = null,
         params: String? = null,
         continuation: String? = null,
@@ -256,7 +256,7 @@ class InnerTube(
     }
 
     suspend fun browse(
-        client: YouTubeClient,
+        client: MyTubeClient,
         browseId: String? = null,
         params: String? = null,
         continuation: String? = null,
@@ -290,7 +290,7 @@ class InnerTube(
     }
 
     suspend fun next(
-        client: YouTubeClient,
+        client: MyTubeClient,
         videoId: String? = null,
         playlistId: String? = null,
         playlistSetVideoId: String? = null,
@@ -316,7 +316,7 @@ class InnerTube(
     }
 
     suspend fun player(
-        client: YouTubeClient,
+        client: MyTubeClient,
         videoId: String,
         playlistId: String? = null,
         signatureTimestamp: Int? = null,
@@ -341,7 +341,7 @@ class InnerTube(
     }
 
     private suspend fun playerCall(
-        client: YouTubeClient,
+        client: MyTubeClient,
         videoId: String,
         playlistId: String?,
         signatureTimestamp: Int?,
@@ -375,7 +375,7 @@ class InnerTube(
     }
 
     suspend fun getSearchSuggestions(
-        client: YouTubeClient,
+        client: MyTubeClient,
         input: String,
         authState: PlaybackAuthState = currentAuthState(),
     ): String = withRetry {
@@ -402,7 +402,7 @@ class InnerTube(
         url: String,
         cpn: String,
         playlistId: String? = null,
-        client: YouTubeClient = YouTubeClient.WEB_REMIX,
+        client: MyTubeClient = MyTubeClient.WEB_REMIX,
         authState: PlaybackAuthState = currentAuthState(),
     ) = withRetry {
         httpClient.get(url) {
@@ -424,12 +424,12 @@ class InnerTube(
 
     /**
      * Menu akun (`account/account_menu`, PLAN C.2) — dipakai fasad
-     * `YouTube.accountInfo()` untuk verifikasi login. Selalu `setLogin=true`:
+     * `MyTube.accountInfo()` untuk verifikasi login. Selalu `setLogin=true`:
      * tanpa cookie responsnya tidak berisi akun aktif. Mengembalikan JSON
      * mentah; parsing ada di `pages/AccountMenuParser`.
      */
     suspend fun accountMenu(
-        client: YouTubeClient,
+        client: MyTubeClient,
         authState: PlaybackAuthState = currentAuthState(),
     ): String = withRetry {
         httpClient.post("account/account_menu") {
@@ -444,12 +444,12 @@ class InnerTube(
 
     /**
      * Daftar akun (`account/accounts_list`, PLAN C.2) — dipakai fasad
-     * `YouTube.accountDataSyncId()` untuk mengambil `dataSyncId` akun yang
+     * `MyTube.accountDataSyncId()` untuk mengambil `dataSyncId` akun yang
      * dipilih. Selalu `setLogin=true`. Mengembalikan JSON mentah; parsing
      * ada di `pages/AccountMenuParser`.
      */
     suspend fun accountChannels(
-        client: YouTubeClient,
+        client: MyTubeClient,
         authState: PlaybackAuthState = currentAuthState(),
     ): String = withRetry {
         httpClient.post(client.requestApiUrl("account/accounts_list")) {
@@ -484,7 +484,7 @@ class InnerTube(
      * `pages/parseTranscript`.
      */
     suspend fun getTranscript(
-        client: YouTubeClient,
+        client: MyTubeClient,
         videoId: String,
         poToken: String? = null,
         authState: PlaybackAuthState = currentAuthState(),
@@ -551,7 +551,7 @@ class InnerTube(
                 }
 
                 defaultRequest {
-                    url(YouTubeClient.API_URL_YOUTUBE_MUSIC)
+                    url(MyTubeClient.API_URL_MYTUBE_MUSIC)
                 }
             }
     }

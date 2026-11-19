@@ -48,7 +48,7 @@ import com.rosyidputrar.taskify.core.domain.media.RadioStation
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
-import com.rosyidputrar.taskify.core.media.YouTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -121,7 +121,7 @@ interface FocusMusicActions {
 }
 
 /** Pilihan "Musik fokus" di Mode Fokus: stasiun radio langsung tanpa vokal didahulukan. */
-class FocusMusicViewModel(private val player: MusicPlayer, private val client: YouTubeMusicClient) : ViewModel(), FocusMusicActions {
+class FocusMusicViewModel(private val player: MusicPlayer, private val client: MyTubeMusicClient) : ViewModel(), FocusMusicActions {
     private val stations = MutableStateFlow(LocalRadioStations.FALLBACK)
 
     val state: StateFlow<FocusMusicState> = combine(stations, player.state) { st, p ->

@@ -119,7 +119,7 @@ class SponsorBlockRepository(
         val response = client.get("$apiUrl/api/skipSegments/$hashPrefix") {
             parameter("categories", json.encodeToString(categoryValues))
             parameter("actionTypes", SKIP_ACTION_TYPES_JSON)
-            parameter("service", YOUTUBE_SERVICE)
+            parameter("service", MYTUBE_SERVICE)
             header(HttpHeaders.UserAgent, USER_AGENT)
         }
         val segments = when {
@@ -176,7 +176,7 @@ class SponsorBlockRepository(
          * segmen bisu — jalur Worker lama juga mengembalikannya.
          */
         const val SKIP_ACTION_TYPES_JSON = "[\"skip\",\"mute\"]"
-        const val YOUTUBE_SERVICE = "YouTube"
+        const val MYTUBE_SERVICE = "YouTube"
         const val USER_AGENT = "Taskify/1.0"
         const val HEX_DIGITS = "0123456789abcdef"
     }

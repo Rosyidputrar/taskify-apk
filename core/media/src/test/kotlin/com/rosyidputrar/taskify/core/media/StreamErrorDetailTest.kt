@@ -1,6 +1,6 @@
 package com.rosyidputrar.taskify.core.media
 
-import com.rosyidputrar.taskify.core.media.youtube.StreamFailure
+import com.rosyidputrar.taskify.core.media.mytube.StreamFailure
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,13 +58,13 @@ class StreamErrorDetailTest {
     }
 
     @Test fun musicExceptionCarriesTypeStatusAndMessage() {
-        val detail = musicErrorRawDetail(YouTubeMusicException("YouTube membatasi permintaan.", 429))
-        assertEquals("jenis: YouTubeMusicException\nstatus: 429\npesan: YouTube membatasi permintaan.", detail)
+        val detail = musicErrorRawDetail(MyTubeMusicException("YouTube membatasi permintaan.", 429))
+        assertEquals("jenis: MyTubeMusicException\nstatus: 429\npesan: YouTube membatasi permintaan.", detail)
     }
 
     @Test fun musicExceptionWithoutStatusOmitsStatusLine() {
-        val detail = musicErrorRawDetail(YouTubeMusicException("Tidak bisa menghubungi YouTube Music."))
-        assertEquals("jenis: YouTubeMusicException\npesan: Tidak bisa menghubungi YouTube Music.", detail)
+        val detail = musicErrorRawDetail(MyTubeMusicException("Tidak bisa menghubungi YouTube Music."))
+        assertEquals("jenis: MyTubeMusicException\npesan: Tidak bisa menghubungi YouTube Music.", detail)
     }
 
     @Test fun genericExceptionMessageHasNoFullUrl() {

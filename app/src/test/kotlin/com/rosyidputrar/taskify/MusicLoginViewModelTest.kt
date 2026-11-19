@@ -4,11 +4,11 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
-import com.rosyidputrar.taskify.core.innertube.YouTube
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginError
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginException
-import com.rosyidputrar.taskify.core.media.youtube.MusicLoginRepository
-import com.rosyidputrar.taskify.core.media.youtube.YouTubeAuthStore
+import com.rosyidputrar.taskify.core.innertube.MyTube
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginError
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginException
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.feature.media.MusicLoginScreenState
 import com.rosyidputrar.taskify.feature.media.MusicLoginViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -31,7 +31,7 @@ class MusicLoginViewModelTest {
     private inner class FakeRepo(
         var result: Result<AccountInfo> = Result.success(account),
         var gate: CompletableDeferred<Unit>? = null,
-    ) : MusicLoginRepository(YouTube(), YouTubeAuthStore(ApplicationProvider.getApplicationContext())) {
+    ) : MusicLoginRepository(MyTube(), MyTubeAuthStore(ApplicationProvider.getApplicationContext())) {
         var calls = 0
         var lastVisitorData: String? = null
         var lastDataSyncId: String? = null
