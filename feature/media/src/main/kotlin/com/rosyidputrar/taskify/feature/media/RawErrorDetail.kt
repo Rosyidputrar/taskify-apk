@@ -29,10 +29,17 @@ import androidx.compose.ui.unit.dp
  * Blok detail mentah error bersama (dipakai semua layar musik).
  *
  * Polanya sama dengan blok error login ([MusicLoginStateContent]):
- * judul "Detail mentah:", blok monospace maks 200.dp yang bisa di-scroll.
+ * judul "Detail mentah:", blok monospace yang bisa di-scroll.
  * Bedanya: teks bisa diseleksi ([SelectionContainer]) dan — hanya di build
  * debug — ada tombol "Salin detail" yang menyalin SELURUH teks mentah ke
  * clipboard (lihat [copyRawDetailToClipboard]).
+ *
+ * Tinggi maks 240.dp: blok diagnostik 403 pemutar yang lengkap (13 baris:
+ * videoId, format, host, errorCodeName, errorCode, message, klien,
+ * paramUrl, jedaResolveKePutarMs, expiresInSeconds, …) tampil seluruhnya
+ * tanpa gulir di dalam kotak; blok yang lebih panjang tetap bisa di-scroll.
+ * Blok error lain (login/cari/Jelajah/lirik) lebih pendek dari batas ini,
+ * jadi tampilannya tidak berubah.
  *
  * [rawDetail] diasumsikan sudah dibersihkan dari nilai sensitif oleh
  * penyusunnya (mis. `PlaybackException.toRawDetail`): komponen ini
@@ -61,7 +68,7 @@ fun RawErrorDetail(
             androidx.compose.foundation.layout.Box(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 200.dp)
+                    .heightIn(max = 240.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .verticalScroll(rememberScrollState())

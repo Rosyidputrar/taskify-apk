@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -38,6 +39,19 @@ class MusicService : MediaSessionService(), KoinComponent {
             override fun seekToNextMediaItem() = music.next()
             override fun seekToPrevious() = music.prev()
             override fun seekToPreviousMediaItem() = music.prev()
+            /**
+             * Jeda/putar dari notifikasi & layar kunci lewat `togglePlay`
+             * (Agen B, auto-resume): jeda pengguna mematikan niat putar
+             * (pemulihan galat tidak boleh lanjut otomatis sesudahnya),
+             * putar memakai jalur kedaluwarsa-URL yang sama dengan UI.
+             * Penjaga status mencegah perintah ganda membalik putar/jeda.
+             */
+            override fun play() {
+                if (music.state.value.status != YtStatus.Playing) music.togglePlay()
+            }
+            override fun pause() {
+                if (music.state.value.status == YtStatus.Playing) music.togglePlay()
+            }
         }
         val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
             PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

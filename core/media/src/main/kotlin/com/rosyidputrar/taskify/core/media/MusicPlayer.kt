@@ -2,6 +2,8 @@ package com.rosyidputrar.taskify.core.media
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.AudioAttributes
@@ -57,9 +59,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** Posisi putar (ms) untuk bilah progres. */
@@ -136,6 +140,25 @@ class MusicPlayer(
      * hasil resolve lagu itu; gagal apa pun ditelan (best-effort).
      */
     private val registerPlayback: (suspend (videoId: String, trackingUrl: String, auth: PlaybackAuthState) -> Boolean)? = null,
+    /**
+     * Apakah perangkat sedang online (Agen B, tunggu-jaringan): bawaan
+     * memakai `ConnectivityManager` aktif (tanpa izin tambahan), sama
+     * seperti `NetworkMonitor` di `:core:auth`. Dipakai jalan cepat
+     * sebelum menunggu [onlineFlow].
+     */
+    private val isOnline: () -> Boolean = {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val caps = manager?.getNetworkCapabilities(manager.activeNetwork)
+        caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    },
+    /**
+     * Aliran status online (Agen B, tunggu-jaringan): produksi di-wire di
+     * `AppModule` ke `NetworkMonitor.online` (observer
+     * `ConnectivityManager.NetworkCallback` yang sudah ada — tidak dibuat
+     * observer baru di pemutar); `null` = tanpa observer (tes lama) —
+     * offline langsung resolve seperti sebelumnya.
+     */
+    private val onlineFlow: Flow<Boolean>? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(YtState())
@@ -150,6 +173,10 @@ class MusicPlayer(
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
+    /** Niat putar untuk auto-resume setelah gangguan sesaat (Agen B). */
+    private val autoResumeTracker = PlaybackAutoResumeTracker()
+    /** Penghitung galat beruntun untuk auto-skip maks 5 (Agen B). */
+    private val consecutiveErrorTracker = ConsecutivePlaybackErrorTracker()
     private var resolveJob: Job? = null
     private var resolving: String? = null
     private var tickJob: Job? = null
@@ -357,6 +384,10 @@ class MusicPlayer(
             dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
             return
         }
+        // Gangguan saat lagu sedang berbunyi (Agen B): catat supaya
+        // pemulihan yang berhasil bisa lanjut otomatis; bila pengguna
+        // sudah menjeda, pemulihan tetap jalan tanpa lanjut otomatis.
+        autoResumeTracker.onInterrupted(song.videoId)
         if (retryableHttp) {
             // Kunci klien dari param `c` URL (paling akurat), jatuh ke
             // nama klien hasil resolve bila URL tanpa `c` (tes/URL aneh).
@@ -432,6 +463,9 @@ class MusicPlayer(
     private fun reResolveAfterFailure(song: Song, rawDetail: String, positionMs: Long, invalidatePoToken: Boolean = false) {
         recoveryJob?.cancel()
         recoveryJob = scope.launch {
+            // Offline (Agen B): tunggu jaringan kembali bila ada
+            // observer; tanpa observer langsung resolve seperti dulu.
+            awaitNetwork()
             if (invalidatePoToken) poTokenEnsurer?.invalidateAll()
             val auth = authState()
             val quality = _settings.value.quality
@@ -469,6 +503,13 @@ class MusicPlayer(
                 Log.i(TAG, "re-resolve galat putar ${song.videoId} OK klien=${stream.resolvedClient ?: "?"} itag=${stream.itag} lanjutMs=$positionMs param=${streamUrlParamPresence(stream.url)}")
                 dispatch(YtEvent.StreamInfo(song.videoId, stream.toStreamSource()))
                 dispatch(YtEvent.Ready(song.videoId, stream.url))
+                // Pemulihan berhasil setelah gangguan sesaat (Agen B):
+                // lanjut otomatis dari posisi terakhir bila lagu ini
+                // memang sedang berbunyi saat terputus.
+                if (autoResumeTracker.shouldAutoResume(song.videoId)) {
+                    autoResumeTracker.onResumed(song.videoId)
+                    dispatch(YtEvent.Preparing)
+                }
             } else {
                 Log.w(TAG, "re-resolve galat putar ${song.videoId} gagal: tampilkan galat mentah asal")
                 dispatch(YtEvent.PlaybackFailed(song.videoId, "Audio gagal diputar. Coba lagi.", rawDetail))
@@ -515,7 +556,59 @@ class MusicPlayer(
 
     fun dispatch(event: YtEvent) {
         _state.value = MusicQueue.settle(MusicQueue.reduce(_state.value, event))
+        // Lagu berbunyi (juga lewat settle Preparing→Playing): rantai
+        // galat putus + niat putar hidup (Agen B).
+        if (_state.value.status == YtStatus.Playing) {
+            _state.value.current?.videoId?.let { autoResumeTracker.onPlaybackStarted(it) }
+            consecutiveErrorTracker.onPlaybackStarted()
+        }
         effects()
+        // Galat akhir lagu ini (Agen B): lewati ke lagu berikut bila
+        // masih di bawah 5 galat beruntun, selain itu biarkan galat
+        // tampil seperti sebelumnya.
+        if (event is YtEvent.PlaybackFailed || event is YtEvent.Error) maybeSkipAfterError(event)
+    }
+
+    /**
+     * Auto-skip setelah galat akhir (Agen B): lagu yang gagal dilewati
+     * ke lagu berikut supaya antrean tidak macet, maks 5 galat beruntun.
+     * Galat ke-5, galat sesi login, lagu terakhir, atau antrean satu
+     * lagu TIDAK di-skip — galat tampil seperti sebelumnya (pesan +
+     * detail mentah tidak berubah).
+     */
+    private fun maybeSkipAfterError(event: YtEvent) {
+        val s = _state.value
+        if (s.status != YtStatus.Error) return
+        val skippable = when (event) {
+            is YtEvent.PlaybackFailed -> event.videoId == s.current?.videoId
+            is YtEvent.Error -> event.skippable
+            else -> false
+        }
+        if (!skippable) return
+        if (!consecutiveErrorTracker.onTerminalError()) return
+        val next = MusicQueue.nextPosition(s, manual = true)
+        if (next == null || next == s.position) return
+        Log.i(TAG, "galat beruntun ${consecutiveErrorTracker.count}: lewati ${s.current?.videoId} ke lagu berikut")
+        showNotice("Melewati lagu yang gagal diputar")
+        dispatch(YtEvent.Next)
+    }
+
+    /**
+     * Tunggu jaringan bila offline (Agen B, tunggu-jaringan).
+     * Kembalikan `true` bila sempat menunggu (status sempat menampilkan
+     * "Menunggu jaringan…"), `false` bila langsung lanjut. Bila online,
+     * langsung kembali; bila offline dan ada [onlineFlow], tampilkan
+     * status menunggu lalu tangguhkan sampai koneksi kembali (bisa
+     * dibatalkan: ganti lagu / berhenti). Tanpa observer, langsung
+     * kembali — resolve dicoba dan galat jaringan tampil seperti
+     * sebelumnya.
+     */
+    private suspend fun awaitNetwork(): Boolean {
+        if (isOnline()) return false
+        val flow = onlineFlow ?: return false
+        dispatch(YtEvent.Progress(0, WAITING_FOR_NETWORK_LABEL))
+        flow.first { it }
+        return true
     }
 
     // ------------------------------------------------------------------ perintah UI
@@ -565,7 +658,11 @@ class MusicPlayer(
     fun togglePlay() {
         val s = _state.value
         when (s.status) {
-            YtStatus.Playing -> player.pause()
+            YtStatus.Playing -> {
+                // Jeda oleh pengguna (Agen B): auto-resume dimatikan.
+                autoResumeTracker.onUserPaused()
+                player.pause()
+            }
             YtStatus.Paused -> {
                 val expiresAt = s.currentStream?.expiresAt
                 if (expiresAt != null && expiresAt <= now() + MusicQueue.EXPIRY_MARGIN_MS) {
@@ -573,7 +670,12 @@ class MusicPlayer(
                     loadedId = null
                     _state.value = MusicQueue.reduce(s, YtEvent.Expire(now()))
                     dispatch(YtEvent.Preparing)
-                } else if (loadedId == s.current?.videoId && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE) player.play()
+                } else if (loadedId == s.current?.videoId && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE) {
+                    // Lanjut langsung dari ExoPlayer (tanpa lewat listener):
+                    // niat putar dicatat eksplisit di sini.
+                    s.current?.videoId?.let { autoResumeTracker.onPlaybackStarted(it) }
+                    player.play()
+                }
                 else { loadedId = null; dispatch(YtEvent.Preparing) }
             }
             YtStatus.Error -> dispatch(YtEvent.Preparing)
@@ -586,6 +688,8 @@ class MusicPlayer(
         resolving = null
         recoveryJob?.cancel()
         recoveryTracker.reset()
+        autoResumeTracker.reset()
+        consecutiveErrorTracker.reset()
         cancelPrefetchExcept(null)
         if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
@@ -773,6 +877,11 @@ class MusicPlayer(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             var detailsDone = !withTrack
             try {
+                // Offline (Agen B): tunggu jaringan kembali bila ada
+                // observer; tanpa observer langsung resolve seperti dulu
+                // (galat jaringan tampil seperti sebelumnya). Bila sempat
+                // menunggu, bersihkan label tunggu sebelum resolve jalan.
+                if (awaitNetwork()) dispatch(YtEvent.Progress(0, ""))
                 val auth = authState()
                 // Komposisi direct (pola Worker `loadTrack` + `tryDirectStream`):
                 // `track()` (next + loudness player, paralel di dalam) dan
@@ -802,7 +911,10 @@ class MusicPlayer(
                     // Detail mentah ikut dikirim apa pun pesannya (Agen B):
                     // jenis StreamFailure + status HTTP + pesan exception,
                     // tanpa URL lengkap / cookie / token.
-                    val message = if ((failure is StreamFailure.LoginRequired || failure is StreamFailure.InvalidLoginContext) && authState().hasLoginCookie) {
+                    // Galat sesi login tidak boleh auto-skip (Agen B):
+                    // pengguna harus masuk lagi, bukan melewati lagu.
+                    val isLoginFailure = failure is StreamFailure.LoginRequired || failure is StreamFailure.InvalidLoginContext
+                    val message = if (isLoginFailure && authState().hasLoginCookie) {
                         loginEvents?.onSessionExpired()
                         if (failure is StreamFailure.InvalidLoginContext) "Sesi login YouTube tidak lengkap. Masuk lagi."
                         else "Sesi login YouTube berakhir. Masuk lagi."
@@ -812,7 +924,7 @@ class MusicPlayer(
                         else musicErrorRawDetail(exception),
                         id,
                     )
-                    if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message, rawDetail))
+                    if (_state.value.current?.videoId == id) dispatch(YtEvent.Error(message, rawDetail, skippable = !isLoginFailure))
                     return@launch
                 }
                 dispatch(YtEvent.StreamInfo(id, stream.toStreamSource()))
@@ -846,6 +958,19 @@ class MusicPlayer(
             // gagal apa pun → null, bukan galat — lagu itu akan di-resolve
             // ulang saat gilirannya tiba). Hasil sukses dicatat di cache
             // resolve (Tahap 6) supaya gilirannya nanti tidak resolve ulang.
+            //
+            // Optimasi Agen A (A1/A2):
+            // 1) Cache dulu — lagu yang sama sudah di-resolve dalam sesi ini
+            //    (mis. setelah stop() + putar ulang antrean: `urls` state
+            //    kosong tapi cache masih segar) tidak perlu resolve jaringan
+            //    lagi; PrefetchDone langsung dari cache.
+            // 2) Direct dulu (paling murah, tanpa QuickJS), gagal → youtubei
+            //    (cerminan `resolveStream` yang youtubei-first — asimetri ini
+            //    sengaja: prefetch direct yang sukses menutup sebagian besar
+            //    kasus tanpa biaya JS, youtubei hanya menutup sisa saat direct
+            //    gagal, supaya pergantian lagu tidak membayar resolve penuh
+            //    di saat giliran). Gagal keduanya → PrefetchFailed, lagu itu
+            //    di-resolve ulang saat gilirannya tiba seperti sebelumnya.
             val auth = authState()
             val quality = _settings.value.quality
             val preferMp4a = _settings.value.preferMp4a
@@ -853,9 +978,16 @@ class MusicPlayer(
             // supaya prefetch metered tidak disajikan saat tidak metered.
             val metered = isNetworkMetered()
             val effective = effectiveQuality(quality, metered)
-            val stream = streamResolver.tryResolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
+            val key = ResolveCacheKey(videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered)
+            var stream = resolveCache.get(key)
+            if (stream == null) {
+                stream = streamResolver.tryResolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
+                    ?: runCatching {
+                        youtubeiResolver?.resolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
+                    }.getOrNull()?.getOrNull()
+            }
             if (stream != null) {
-                resolveCache.put(ResolveCacheKey(videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered), stream)
+                resolveCache.put(key, stream)
                 rememberTracking(videoId, stream)
                 dispatch(YtEvent.StreamInfo(videoId, stream.toStreamSource()))
                 dispatch(YtEvent.PrefetchDone(videoId, stream.url))
@@ -938,7 +1070,14 @@ class MusicPlayer(
         // Daftarkan contentLength hasil resolve supaya ResolvingDataSource
         // mengisi length DataSpec (request pertama membawa `Range` berbatas,
         // porting ArchiveTune Tahap 1); tanpa ini ExoPlayer GET penuh.
-        _state.value.streams[song.videoId]?.contentLength?.let { ResolvedStreamRegistry.put(url, it) }
+        // Optimasi Agen A (A3): daftarkan juga identitas isi stabil
+        // `videoId:itag` supaya SimpleCache dipakai ulang walau URL sudah
+        // di-resolve ulang (URL baru tiap resolve); tanpa itag (siaran
+        // langsung) kunci cache tetap URL seperti sebelumnya.
+        _state.value.streams[song.videoId]?.let { stream ->
+            stream.contentLength?.let { ResolvedStreamRegistry.put(url, it) }
+            ResolvedStreamRegistry.putIdentity(url, song.videoId, stream.itag)
+        }
         val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist)
             .apply { song.cover.takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build()
         player.setMediaItem(MediaItem.Builder().setMediaId(song.videoId).setUri(url).setMediaMetadata(meta).build(), startMs)
@@ -985,13 +1124,14 @@ class MusicPlayer(
             }
             applyVolume()
         }
-        _sleep.value?.endsAt?.let { if (now() >= it) { _sleep.value = null; player.pause(); showNotice("Pewaktu tidur: musik dijeda") } }
+        _sleep.value?.endsAt?.let { if (now() >= it) { _sleep.value = null; autoResumeTracker.onUserPaused(); player.pause(); showNotice("Pewaktu tidur: musik dijeda") } }
         savePosition()
     }
 
     /** Pewaktu "akhir lagu": geser ke lagu berikut tapi jangan diputar. */
     private fun stopAtEndOfSong() {
         _sleep.value = null
+        autoResumeTracker.reset()
         val s = _state.value
         val next = MusicQueue.nextPosition(s, manual = true)
         _state.value = if (next != null && next != s.position) s.copy(position = next, status = YtStatus.Paused, percent = 0, label = "")
@@ -1028,6 +1168,8 @@ class MusicPlayer(
     /** Logout: hentikan musik, lupakan antrean & pengaturan. */
     fun wipe() {
         if (_state.value.status != YtStatus.Idle || loadedId != null) stop()
+        autoResumeTracker.reset()
+        consecutiveErrorTracker.reset()
         sponsor.clear()
         ResolvedStreamRegistry.clear()
         resolveCache.clear()
@@ -1041,6 +1183,9 @@ class MusicPlayer(
 
     companion object {
         const val TAG = "MusicPlayer"
+
+        /** Label status saat antrean putar menunggu jaringan kembali (Agen B). */
+        const val WAITING_FOR_NETWORK_LABEL = "Menunggu jaringan…"
 
         /** Batas cache byte media di disk (Tahap 6, C2-22): 100 MB, LRU. */
         const val MEDIA_CACHE_MAX_BYTES = 100L * 1024L * 1024L

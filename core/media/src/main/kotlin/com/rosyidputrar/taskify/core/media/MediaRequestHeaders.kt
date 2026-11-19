@@ -123,6 +123,12 @@ object MediaRequestHeaders {
      * [createResolvingDataSourceFactory]) — `CacheDataSource` → Resolving →
      * Chunked → OkHttp. Dipisah dari `MusicPlayer` supaya wire test memakai
      * wiring produksi yang sama persis, bukan salinan yang bisa melenceng.
+     *
+     * Kunci cache media = identitas isi stabil `"videoId:itag"` bila dikenal
+     * (optimasi Agen A, A3 — [ResolvedStreamRegistry.cacheKeyFor]), bukan URL:
+     * URL baru tiap resolve membuat kunci URL selalu miss, sehingga lagu yang
+     * sama diputar lagi setelah resolve ulang mengunduh ulang semua byte.
+     * URL yang tidak dikenal (siaran langsung) tetap dikunci URL-nya.
      */
     fun createPlayerDataSourceFactory(
         cache: Cache,
@@ -130,6 +136,7 @@ object MediaRequestHeaders {
     ): DataSource.Factory =
         CacheDataSource.Factory()
             .setCache(cache)
+            .setCacheKeyFactory { dataSpec -> ResolvedStreamRegistry.cacheKeyFor(dataSpec.uri.toString()) }
             .setUpstreamDataSourceFactory(createResolvingDataSourceFactory(okHttpClient))
 
     /**
@@ -175,10 +182,37 @@ object MediaRequestHeaders {
 object ResolvedStreamRegistry {
     private val lengths = ConcurrentHashMap<String, Long>()
     private val headers = ConcurrentHashMap<String, Map<String, String>>()
+    /**
+     * Identitas isi stabil per URL stream: `"videoId:itag"` (optimasi Agen A,
+     * A3). URL baru tiap resolve (`expire`/`sig` baru) membuat kunci cache
+     * berbasis URL selalu miss — lagu yang sama diputar lagi setelah resolve
+     * ulang mengunduh ulang semua byte. Itag yang sama untuk video yang sama
+     * = berkas yang sama, jadi identitas ini dipakai kunci cache media
+     * ([cacheKeyFor]) supaya byte yang sudah diunduh dipakai ulang walau
+     * URL-nya sudah berganti. Kualitas berbeda → itag berbeda → kunci
+     * berbeda; video berbeda → videoId berbeda. Risiko yang diterima:
+     * bila YouTube meng-encode ulang itag yang sama untuk video yang sama
+     * (tidak pernah teramati untuk video terbit), span cache lama tetap
+     * disajikan sampai LRU 100 MB mengusirnya.
+     */
+    private val identities = ConcurrentHashMap<String, String>()
 
     fun put(url: String, contentLength: Long) {
         if (url.isNotBlank() && contentLength > 0) lengths[url] = contentLength
     }
+
+    /** Daftarkan identitas isi stabil untuk satu URL (lihat [identities]). */
+    fun putIdentity(url: String, videoId: String, itag: Int?) {
+        if (url.isNotBlank() && videoId.isNotBlank() && itag != null) identities[url] = "$videoId:$itag"
+    }
+
+    /**
+     * Kunci cache media untuk satu URL: identitas stabil bila dikenal,
+     * URL itu sendiri bila tidak (mis. siaran langsung / URL yang tidak
+     * lewat `setMedia`). Dipakai `CacheKeyFactory` di
+     * [MediaRequestHeaders.createPlayerDataSourceFactory].
+     */
+    fun cacheKeyFor(url: String): String = identities[url] ?: url
 
     /**
      * Daftarkan contentLength + header media dari resolver (Tahap 3):
@@ -198,5 +232,6 @@ object ResolvedStreamRegistry {
     fun clear() {
         lengths.clear()
         headers.clear()
+        identities.clear()
     }
 }

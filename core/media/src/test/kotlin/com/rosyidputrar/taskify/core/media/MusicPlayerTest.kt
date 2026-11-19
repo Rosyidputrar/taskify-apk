@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify.core.media
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
+import com.rosyidputrar.taskify.core.domain.media.MusicQueue
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.RadioPageResult
 import com.rosyidputrar.taskify.core.domain.media.RadioSource
@@ -29,6 +30,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -94,6 +96,8 @@ class MusicPlayerTest {
         fun gate(id: String) = gates.getOrPut(id) { CompletableDeferred() }
         /** Bila diisi, `resolve()` gagal langsung dengan kegagalan ini (tanpa menunggu gate). */
         var resolveFailure: ((String) -> StreamFailure?)? = null
+        /** Bila mengembalikan true, `tryResolve()` mengembalikan null (direct gagal — untuk tes fallback prefetch). */
+        var tryResolveFails: ((String) -> Boolean)? = null
         /** Bila diisi, `resolve()`/`tryResolve()` mengembalikan stream ini (per panggilan ke-n) tanpa gate. */
         var streamSupplier: ((String, Int) -> DirectStream)? = null
         var lastAuthState: PlaybackAuthState? = null
@@ -122,7 +126,11 @@ class MusicPlayerTest {
             pinnedItags[videoId] = pinnedItag
             networkMeteredFlags[videoId] = networkMetered
             lastAuthState = authState
+            // Prefetch gagal seperti resolve (tanpa gate gantung): lagu itu
+            // akan di-resolve ulang saat gilirannya tiba.
+            resolveFailure?.invoke(videoId)?.let { return null }
             streamSupplier?.invoke(videoId, calls[videoId] ?: 0)?.let { return it }
+            if (tryResolveFails?.invoke(videoId) == true) return null
             return try {
                 gate(videoId).await()
             } catch (e: CancellationException) {
@@ -166,6 +174,8 @@ class MusicPlayerTest {
         refreshVisitorData: (suspend () -> String?)? = null,
         isNetworkMetered: () -> Boolean = { false },
         registerPlayback: (suspend (String, String, PlaybackAuthState) -> Boolean)? = null,
+        isOnline: () -> Boolean = { true },
+        onlineFlow: kotlinx.coroutines.flow.Flow<Boolean>? = null,
     ): MusicPlayer {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         return MusicPlayer(
@@ -175,6 +185,8 @@ class MusicPlayerTest {
             refreshVisitorData = refreshVisitorData,
             isNetworkMetered = isNetworkMetered,
             registerPlayback = registerPlayback,
+            isOnline = isOnline,
+            onlineFlow = onlineFlow,
         )
     }
 
@@ -267,6 +279,116 @@ class MusicPlayerTest {
             assertEquals(1, fake.calls[b.videoId], "prefetch lama tidak diulang")
             assertEquals(1, fake.calls[c.videoId], "lagu baru di-resolve sekali")
             assertTrue(b.videoId !in player.state.value.prefetching)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun prefetchMemakaiCacheResolveTanpaPanggilanJaringan() = runTest {
+        // Optimasi Agen A (A1): setelah stop() + putar ulang antrean, `urls`
+        // state kosong tapi cache resolve masih segar — prefetch lagu berikut
+        // harus memakai cache, bukan resolve jaringan lagi (0 panggilan baru).
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            fake.gate(a.videoId).complete(stream(a.videoId))
+            advanceUntilIdle()
+            player.dispatch(YtEvent.Playing)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[b.videoId], "prefetch lagu berikut jalan sekali")
+            fake.gate(b.videoId).complete(stream(b.videoId))
+            advanceUntilIdle()
+            assertEquals("https://rr.test/${b.videoId}", player.state.value.urls[b.videoId])
+
+            // stop() membersihkan state (urls ikut hilang) tapi TIDAK cache resolve.
+            player.stop()
+            advanceUntilIdle()
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId], "lagu pertama dari cache resolve, tanpa resolve ulang")
+            player.dispatch(YtEvent.Playing)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[b.videoId], "prefetch dari cache resolve, tanpa panggilan jaringan")
+            assertEquals("https://rr.test/${b.videoId}", player.state.value.urls[b.videoId], "URL prefetch dari cache dipakai")
+            assertTrue(player.state.value.prefetching.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun prefetchJatuhKeYoutubeiBilaDirectGagal() = runTest {
+        // Optimasi Agen A (A2): direct gagal untuk lagu berikut → prefetch
+        // jatuh ke youtubei; giliran tiba memakai URL prefetch tanpa resolve
+        // tambahan (sebelum perbaikan, giliran tiba membayar resolve youtubei penuh).
+        // Catatan: `settle()` mengubah Preparing → Playing begitu URL lagu
+        // pertama ada, jadi prefetch sudah jalan SEBELUM Playing manual —
+        // tes ini menegaskan urutan itu, bukan menunggu Playing.
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.tryResolveFails = { it == b.videoId }
+            val youtubei = FakeYoutubei(ApplicationProvider.getApplicationContext<android.content.Context>())
+            youtubei.result = { id ->
+                if (id == b.videoId) Result.success(stream(id))
+                else Result.failure(StreamFailureException(StreamFailure.NoFormat))
+            }
+            val player = player(tube, fake, youtubei = youtubei)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            fake.gate(a.videoId).complete(stream(a.videoId))
+            advanceUntilIdle()
+            // Lagu pertama: youtubei gagal (NoFormat) → jatuh ke direct;
+            // prefetch lagu berikut sudah jalan via settle → Playing:
+            // direct gagal → youtubei berhasil → PrefetchDone.
+            assertEquals(1, fake.calls[a.videoId])
+            assertEquals(1, fake.calls[b.videoId], "prefetch direct dicoba sekali lalu gagal")
+            assertEquals(listOf(a.videoId, b.videoId), youtubei.calls, "prefetch jatuh ke youtubei")
+            assertEquals("https://rr.test/${b.videoId}", player.state.value.urls[b.videoId])
+            assertTrue(player.state.value.prefetching.isEmpty())
+            // Lompat ke lagu berikut: URL prefetch dipakai, tanpa resolve tambahan.
+            player.jump(1)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[b.videoId], "tidak ada resolve ulang saat giliran tiba")
+            assertEquals(listOf(a.videoId, b.videoId), youtubei.calls)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun prefetchGagalKeduanyaLaguTetapBisaDiputarSaatGiliran() = runTest {
+        // Pengaman A2: prefetch gagal di kedua jalur (direct + youtubei) →
+        // PrefetchFailed, bukan galat; lagu tetap di-resolve saat gilirannya tiba.
+        // Prefetch sudah dicoba sekali via settle → Playing setelah Ready(a);
+        // TIDAK ada Playing manual di sini: dispatch apa pun memicu percobaan
+        // prefetch ulang untuk lagu berikut yang belum punya URL (perilaku
+        // lama, bukan bagian dari optimasi ini).
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.tryResolveFails = { it == b.videoId }
+            val youtubei = FakeYoutubei(ApplicationProvider.getApplicationContext<android.content.Context>())
+            youtubei.result = { Result.failure(StreamFailureException(StreamFailure.NoFormat)) }
+            val player = player(tube, fake, youtubei = youtubei)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            fake.gate(a.videoId).complete(stream(a.videoId))
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[b.videoId], "prefetch dicoba sekali, gagal di kedua jalur")
+            assertEquals(listOf(a.videoId, b.videoId), youtubei.calls)
+            assertTrue(b.videoId !in player.state.value.prefetching)
+            assertEquals(null, player.state.value.urls[b.videoId])
+            player.jump(1)
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[b.videoId], "giliran tiba: resolve ulang sekali lewat direct")
+            fake.gate(b.videoId).complete(stream(b.videoId))
+            advanceUntilIdle()
+            assertEquals("https://rr.test/${b.videoId}", player.state.value.urls[b.videoId])
         } finally {
             Dispatchers.resetMain()
         }
@@ -1181,6 +1303,236 @@ class MusicPlayerTest {
             assertTrue(detail.contains("host: rr.test"), detail)
             assertFalse(detail.contains("S1"), "nilai signature tidak boleh bocor ke detail")
             assertFalse(detail.contains("203.0.113.7"), "nilai IP tidak boleh bocor ke detail")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // ------------------------------------------------- Agen B: auto-resume
+
+    @Test fun recoveryAutoResumesAfterTransientInterruption() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Playing, player.state.value.status, "lagu berbunyi sebelum gangguan")
+            // Galat ExoPlayer menjeda pemutar (listener): simulasikan.
+            player.dispatch(YtEvent.Paused)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Paused, player.state.value.status)
+
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId], "resolve awal + satu re-resolve 403")
+            assertEquals("https://rr.test/${a.videoId}?expire=1893000000&sig=S2", player.state.value.urls[a.videoId])
+            assertEquals(YtStatus.Playing, player.state.value.status, "pemulihan berhasil → lanjut otomatis, tanpa tekan putar")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun recoveryDoesNotAutoResumeAfterUserPaused() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")
+            }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Playing, player.state.value.status)
+            // Pengguna menjeda sendiri, lalu galat datang (mis. buffer gagal).
+            player.togglePlay()
+            advanceUntilIdle()
+            player.dispatch(YtEvent.Paused)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Paused, player.state.value.status)
+
+            player.handlePlayerError(http403())
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId], "pemulihan tetap jalan")
+            assertEquals("https://rr.test/${a.videoId}?expire=1893000000&sig=S2", player.state.value.urls[a.videoId], "URL segar tetap di-stage")
+            assertEquals(YtStatus.Paused, player.state.value.status, "sudah dijeda pengguna: jangan lanjut otomatis")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // -------------------------------------------------- Agen B: auto-skip
+
+    @Test fun firstFailuresSkipToNextSong() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { if (it == a.videoId) StreamFailure.NoFormat else null }
+            fake.streamSupplier = { id, _ -> stream(id) }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            assertEquals(b, player.state.value.current, "lagu gagal dilewati ke lagu berikut")
+            assertEquals(YtStatus.Playing, player.state.value.status, "lagu berikut berbunyi, bukan galat")
+            assertEquals(1, fake.calls[b.videoId])
+            assertEquals("", player.state.value.error, "galat pertama tidak tampil sebagai layar galat")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun fifthConsecutiveFailureShowsError() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val d = song("d"); val e = song("e"); val f = song("f")
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { StreamFailure.NoFormat }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b, c, d, e, f), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "galat ke-5 → berhenti dan tampilkan galat")
+            assertEquals(e, player.state.value.current, "empat lagu dilewati, galat tampil di lagu kelima")
+            assertEquals("Audio tidak bisa dimuat dari YouTube (format tidak tersedia).", player.state.value.error)
+            assertEquals(null, fake.calls[f.videoId], "lagu keenam tidak pernah dicoba")
+            assertEquals(1, fake.calls[e.videoId])
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun skipCounterResetsAfterSongPlays() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val d = song("d"); val e = song("e"); val f = song("f"); val g = song("g")
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            // Semua gagal kecuali lagu kedua: rantai galat harus putus
+            // saat lagu kedua berbunyi, jadi galat tampil di lagu ketujuh
+            // (bukan keenam — tanpa reset, rantai a + c + d + e + f = 5).
+            fake.resolveFailure = { if (it == b.videoId) null else StreamFailure.NoFormat }
+            fake.streamSupplier = { id, _ -> stream(id) }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b, c, d, e, f, g), 0)
+            advanceUntilIdle()
+            assertEquals(b, player.state.value.current, "lagu pertama gagal → lewati ke lagu kedua")
+            assertEquals(YtStatus.Playing, player.state.value.status, "lagu kedua berbunyi → rantai galat putus")
+
+            player.next()
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status, "lima galat beruntun sesudah reset → berhenti")
+            assertEquals(g, player.state.value.current, "galat tampil di lagu ketujuh, bukan keenam")
+            assertEquals(1, fake.calls[g.videoId])
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun loginFailureDoesNotSkip() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { StreamFailure.LoginRequired() }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals(a, player.state.value.current, "galat login tidak melewati lagu")
+            assertEquals("Audio tidak bisa dimuat dari YouTube (login diperlukan).", player.state.value.error)
+            assertEquals(null, fake.calls[b.videoId], "lagu berikut tidak dicoba")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // --------------------------------------------- Agen B: tunggu-jaringan
+
+    @Test fun offlineWaitsForNetworkThenResolves() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { id, _ -> stream(id) }
+            val online = MutableStateFlow(false)
+            val player = player(tube, fake, isOnline = { false }, onlineFlow = online)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(null, fake.calls[a.videoId], "offline: resolve belum dicoba")
+            assertEquals(YtStatus.Preparing, player.state.value.status)
+            assertEquals("Menunggu jaringan…", player.state.value.label, "status menunggu terlihat")
+            assertEquals("Menunggu jaringan…", MusicQueue.barStatus(player.state.value, online = false))
+
+            online.value = true
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId], "online kembali → resolve jalan")
+            assertEquals("https://rr.test/${a.videoId}", player.state.value.urls[a.videoId])
+            assertEquals(YtStatus.Playing, player.state.value.status)
+            assertEquals("", player.state.value.label, "label tunggu dibersihkan setelah resolve jalan")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun offlineWithoutObserverFailsAsBefore() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.resolveFailure = { StreamFailure.Network("putus") }
+            val player = player(tube, fake, isOnline = { false })
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId], "tanpa observer: resolve tetap dicoba")
+            assertEquals(YtStatus.Error, player.state.value.status)
+            assertEquals("Gagal memuat audio. Periksa koneksi.", player.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun reResolveWaitsForNetworkWhenOffline() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeYouTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { _, call ->
+                stream(a.videoId, "https://rr.test/${a.videoId}?expire=1893000000&sig=S$call", "ANDROID")
+            }
+            var online = true
+            val onlineFlow = MutableStateFlow(true)
+            val player = player(tube, fake, isOnline = { online }, onlineFlow = onlineFlow)
+            player.playQueue(listOf(a), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Playing, player.state.value.status)
+            player.dispatch(YtEvent.Paused)
+            advanceUntilIdle()
+
+            // Jaringan putus sesaat setelah itu.
+            online = false
+            onlineFlow.value = false
+            val networkError = androidx.media3.common.PlaybackException(
+                "Unable to connect.",
+                java.net.ConnectException("gagal tersambung"),
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            )
+            player.handlePlayerError(networkError)
+            advanceUntilIdle()
+            assertEquals(1, fake.calls[a.videoId], "offline: re-resolve menunggu, belum dicoba")
+            assertEquals(YtStatus.Paused, player.state.value.status)
+
+            online = true
+            onlineFlow.value = true
+            advanceUntilIdle()
+            assertEquals(2, fake.calls[a.videoId], "online kembali → re-resolve jalan")
+            assertEquals("https://rr.test/${a.videoId}?expire=1893000000&sig=S2", player.state.value.urls[a.videoId])
+            assertEquals(YtStatus.Playing, player.state.value.status, "re-resolve berhasil setelah tunggu → lanjut otomatis")
         } finally {
             Dispatchers.resetMain()
         }

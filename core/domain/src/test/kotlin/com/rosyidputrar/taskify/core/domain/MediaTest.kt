@@ -77,6 +77,10 @@ class MediaTest {
         assertEquals("Menyiapkan audio… 40%", MusicQueue.progressLabel(40))
         assertEquals("Hampir siap…", MusicQueue.progressLabel(95))
         assertEquals("Tidak ada koneksi", MusicQueue.barStatus(YtState(status = YtStatus.Preparing), online = false))
+        // Agen B (tunggu-jaringan): offline tapi label terisi = antrean
+        // sedang menunggu jaringan kembali, tampilkan labelnya.
+        assertEquals("Menunggu jaringan…", MusicQueue.barStatus(YtState(status = YtStatus.Preparing, label = "Menunggu jaringan…"), online = false))
+        assertEquals("Menunggu jaringan…", MusicQueue.barStatus(YtState(status = YtStatus.Preparing, label = "Menunggu jaringan…"), online = true))
         assertEquals("Artis · 2/3", MusicQueue.barStatus(YtState(queue = listOf(a, b, c), order = listOf(0, 1, 2), position = 1, status = YtStatus.Playing), true))
         assertEquals(listOf(a, b, c), MusicQueue.mergePages(listOf(a, b), listOf(b, c)))
     }

@@ -231,6 +231,9 @@ private val deviceModule = module {
             refreshVisitorData = { get<VisitorDataBootstrap>().refreshVisitorData() },
             // Tahap 9 (C2-21): telemetri putar best-effort saat lagu mulai berbunyi.
             registerPlayback = { _, trackingUrl, auth -> get<YouTube>().registerPlayback(trackingUrl, authState = auth).isSuccess },
+            // Agen B (tunggu-jaringan): observer koneksi yang sama dengan
+            // OnlineFlow di bawah (NetworkMonitor).
+            onlineFlow = get<NetworkMonitor>().online,
         ).also { player ->
             // Pesan pemutar (lewati sponsor, pewaktu tidur) tampil sebagai snackbar aplikasi, sekali saja.
             get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }

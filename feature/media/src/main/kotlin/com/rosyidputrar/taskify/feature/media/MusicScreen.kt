@@ -185,7 +185,27 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
     ) { frame ->
         val page = frame.page
         val listState = listStates.getOrPut(page?.target?.key ?: ROOT_KEY) { LazyListState() }
-        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), state = listState, contentPadding = contentPadding) {
+        // Dok mengambang menutupi pemutar (bug HP 17 Nov 2026): baris bawah
+        // kartu pemutar ("Hentikan & kosongkan antrean") tergambar setengah
+        // di bawah dok — dok mencegat sentuhan, dan scroll-to tidak
+        // menggesernya karena scroller menganggap baris itu sudah terlihat
+        // (viewport daftar memanjang sampai bawah layar, ke bawah dok).
+        // Karena itu, saat pemutar aktif, padding bawah konten dipakai
+        // sebagai padding VIEWPORT (daftar diukur lebih pendek, berakhir di
+        // atas dok), bukan sebagai padding gulir di akhir daftar: tidak ada
+        // konten yang tergambar di bawah dok, dan baris mana pun bisa
+        // digulir sampai sepenuhnya di atas dok. Tanpa pemutar aktif,
+        // perilaku lama persis (golden tanpa pemutar tak berubah).
+        // Diukur dari `contentPadding` supaya layar kecil/ponsel lain ikut
+        // dapat ruang yang sama seperti yang dicadangkan shell untuk dok.
+        val playerActive = state.player.status != YtStatus.Idle
+        val dockClearance = if (playerActive) contentPadding.calculateBottomPadding() else 0.dp
+        val listPadding = if (playerActive) {
+            // Semua pemanggil (shell + tes) hanya mengisi atas/bawah
+            // contentPadding; kiri/kanan selalu 0 — jadi cukup salin atas.
+            PaddingValues(top = contentPadding.calculateTopPadding(), bottom = 0.dp)
+        } else contentPadding
+        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(bottom = dockClearance), state = listState, contentPadding = listPadding) {
             item(key = "header") {
                 ModuleHeader(
                     // Judul koleksi tampil besar di kepala halaman; header cukup menyebut jenisnya.
