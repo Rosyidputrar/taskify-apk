@@ -67,6 +67,12 @@ data class SandiUiState(
     val migration: GoogleAuthPlan? = null,
     /** Berkas ekspor siap disimpan: UI membuka pemilih lokasi, lalu memanggil [SandiActions.finishExport]. */
     val pendingExport: PendingExport? = null,
+    /** Pemilih berkas impor diminta (dibuka sekali oleh UI). */
+    val importPicking: SandiImporter.Picking? = null,
+    /** Ringkasan impor menunggu konfirmasi (hanya angka & judul contoh). */
+    val importPreview: ImportPreview? = null,
+    /** Impor selesai: tampilkan hasil + tawaran hapus berkas CSV. */
+    val importDone: ImportDone? = null,
 ) {
     /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
     val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
@@ -115,6 +121,17 @@ interface SandiActions {
     fun finishExport(uri: String?) {}
     /** Tutup QR Google Authenticator dan buang isinya. */
     fun closeMigration() {}
+
+    // impor CSV
+    /** Buka pemilih berkas CSV. */
+    fun startImport() {}
+    fun importLaunched() {}
+    /** Berkas dipilih ([uri] null = batal): baca & tampilkan ringkasan. */
+    fun importPicked(uri: String?) {}
+    fun confirmImport() {}
+    fun cancelImport() {}
+    fun deleteImportSource() {}
+    fun dismissImportDone() {}
 }
 
 
@@ -125,6 +142,7 @@ class SandiViewModel(
     private val messenger: Messenger,
     private val email: AccountEmail,
     private val writer: SandiFileWriter,
+    private val documents: SandiDocuments,
 ) : ViewModel(), SandiActions {
     private val local = MutableStateFlow(
         SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get(), now = service.totpNow()),
@@ -138,20 +156,26 @@ class SandiViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), service.totpNow())
 
     private val exporter = SandiExporter(viewModelScope, service::verifyMaster, writer, messenger::show)
+    private val importer = SandiImporter(viewModelScope, documents, service::importItems, messenger::show)
 
     val state: StateFlow<SandiUiState> = combine(
         local,
         service.status,
         combine(service.items, service.totpLog) { i, l -> i to l },
         combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
-        exporter.state,
-    ) { l, status, (items, log), (rk, rr, sw), export ->
+        combine(exporter.state, importer.state) { e, i -> e to i },
+    ) { l, status, (items, log), (rk, rr, sw), (export, import) ->
+        val open = status is VaultStatus.Unlocked
         l.copy(
             status = status, items = items, log = log, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
             clockOffsetMs = service.clockOffsetMs,
             // QR rahasia tidak pernah tampil di atas brankas yang terkunci.
-            migration = export.migration.takeIf { status is VaultStatus.Unlocked },
+            migration = export.migration.takeIf { open },
             pendingExport = export.pending,
+            importPicking = import.picking,
+            // Judul item tidak tampil di atas brankas terkunci; muncul lagi setelah dibuka.
+            importPreview = if (open && import.pending != null && items.ready) importer.preview(items.items.map { it.payload }) else null,
+            importDone = import.done.takeIf { open },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
@@ -319,8 +343,25 @@ class SandiViewModel(
     override fun finishExport(uri: String?) = exporter.finish(uri)
     override fun closeMigration() = exporter.closeMigration()
 
+    // ---------------------------------------------------------------- impor
+
+    override fun startImport() = importer.pick()
+    override fun importLaunched() = importer.launched()
+    override fun importPicked(uri: String?) = run("Membaca berkas…") { importer.open(uri) }
+
+    override fun confirmImport() = run("Mengimpor…") {
+        val ready = state.value.items
+        if (!ready.ready) throw SandiUserException("Brankas masih dibuka. Coba lagi sebentar.")
+        importer.confirm(ready.items.map { it.payload })
+    }
+
+    override fun cancelImport() = importer.cancel()
+    override fun deleteImportSource() { launchSafe { importer.deleteSource() } }
+    override fun dismissImportDone() = importer.dismissDone()
+
     override fun onCleared() {
         exporter.clear()
+        importer.clear()
         super.onCleared()
     }
 

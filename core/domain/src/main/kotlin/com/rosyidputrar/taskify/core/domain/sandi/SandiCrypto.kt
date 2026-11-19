@@ -33,6 +33,9 @@ import javax.crypto.spec.SecretKeySpec
 object SandiCrypto {
     const val KEY_RECORD_VERSION = 1
     const val ITEM_VERSION = 1
+
+    /** Batas server: `pw_items.enc` CHECK char_length ≤ 8192. Lebih dari itu ditolak saat diunggah. */
+    const val MAX_ITEM_ENC = 8192
     const val DEFAULT_ITERATIONS = 600_000
     const val MIN_ITERATIONS = 100_000
     const val MAX_ITERATIONS = 10_000_000

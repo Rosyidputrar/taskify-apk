@@ -219,7 +219,7 @@ internal fun SettingsSheet(state: SandiUiState, actions: SandiActions, onDismiss
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         SettingsBody(state, actions, onChangePassword = { dialog = "password" }, onRotate = { dialog = "recovery" },
-            onExport = { actions.clearError(); dialog = "export:" + it.name })
+            onExport = { actions.clearError(); dialog = "export:" + it.name }, onImport = { actions.clearError(); actions.startImport() })
     }
     when (val d = dialog) {
         "password" -> ChangePasswordDialog(state, actions, onDismiss = { dialog = null; actions.clearError() })
@@ -236,7 +236,7 @@ internal fun SettingsSheet(state: SandiUiState, actions: SandiActions, onDismiss
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: () -> Unit, onRotate: () -> Unit, onExport: (ExportKind) -> Unit = {}) {
+fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: () -> Unit, onRotate: () -> Unit, onExport: (ExportKind) -> Unit = {}, onImport: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Pengaturan brankas", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
@@ -262,6 +262,8 @@ fun SettingsBody(state: SandiUiState, actions: SandiActions, onChangePassword: (
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FilledTonalButton(onClick = onChangePassword, modifier = Modifier.fillMaxWidth()) { Text("Ganti master password") }
         OutlinedButton(onClick = onRotate, modifier = Modifier.fillMaxWidth()) { Text("Buat kunci pemulihan baru") }
+        HorizontalDivider()
+        ImportSection(onImport)
         HorizontalDivider()
         ExportSection(onExport)
     }

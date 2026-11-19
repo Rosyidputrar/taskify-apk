@@ -298,6 +298,26 @@ class SandiService(
         return itemId
     }
 
+    /** Hasil impor: jumlah yang ditambahkan + judul item yang terlalu besar untuk server. */
+    data class ImportResult(val added: Int, val tooLarge: List<String>)
+
+    /**
+     * Impor: semua item dienkripsi dulu, lalu ditulis dalam SATU transaksi (tidak ada impor
+     * setengah jadi). Item yang hasil enkripsinya melebihi batas server ([SandiCrypto.MAX_ITEM_ENC],
+     * mis. catatan sangat panjang) dilewati — kalau ditulis, server akan menolaknya.
+     */
+    suspend fun importItems(payloads: List<ItemPayload>): ImportResult {
+        val open = session.require()
+        val userId = users.require()
+        val encrypted = withContext(Dispatchers.Default) {
+            payloads.map { p -> val id = repo.newId(); Triple(id, SandiCrypto.encryptItem(open.dek, userId, id, p, open.ref), p.title) }
+        }
+        val (fit, tooLarge) = encrypted.partition { it.second.length <= SandiCrypto.MAX_ITEM_ENC }
+        session.require(open.dek) // kunci tidak berganti / terkunci selama enkripsi
+        repo.insertItems(fit.map { it.first to it.second })
+        return ImportResult(fit.size, tooLarge.map { it.third })
+    }
+
     suspend fun removeItem(id: String) = repo.removeItem(id)
     suspend fun restoreItem(id: String) = repo.restoreItem(id)
 

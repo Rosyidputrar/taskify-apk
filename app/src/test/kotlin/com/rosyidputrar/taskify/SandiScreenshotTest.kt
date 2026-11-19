@@ -146,6 +146,11 @@ object SampleSandi {
         emptyList(), true,
     )
     val v2Text = v2
+
+    val importPreview = com.rosyidputrar.taskify.feature.sandi.ImportPreview(
+        format = com.rosyidputrar.taskify.core.domain.sandi.ImportFormat.Google, add = 42, withTotp = 3, identical = 5, duplicateInFile = 1,
+        differentPassword = 2, noSecret = 1, malformed = 0, badTotp = 1, sample = listOf("GitHub", "Bank Jago", "Tokopedia", "Steam", "Shopee"),
+    )
 }
 
 @RunWith(AndroidJUnit4::class)
@@ -177,7 +182,7 @@ class SandiScreenshotTest {
     @Test fun settingsDark() = shot("sandi_settings_dark", true) { SettingsBody(SampleSandi.state(), SampleSandi.Actions, {}, {}) }
 
     /** Seksi Ekspor di bawah Pengaturan brankas (layar tinggi supaya ikut terlihat). */
-    @Config(qualifiers = "w393dp-h1600dp-xxhdpi")
+    @Config(qualifiers = "w393dp-h2000dp-xxhdpi")
     @Test fun settingsExport() = shot("sandi_settings_export_light", false) { SettingsBody(SampleSandi.state(), SampleSandi.Actions, {}, {}) }
 
     private fun dialogShot(name: String, dark: Boolean, content: @Composable () -> Unit) {
@@ -194,6 +199,14 @@ class SandiScreenshotTest {
 
     @Test fun exportGoogleQr() = dialogShot("sandi_export_qr_dark", true) {
         MigrationDialog(SandiExport.googleMigration(SampleSandi.items.map { it.payload }, batchId = 7), SampleSandi.Actions)
+    }
+
+    @Test fun importPreview() = dialogShot("sandi_import_preview_light", false) {
+        com.rosyidputrar.taskify.feature.sandi.ImportDialog(SampleSandi.importPreview, SampleSandi.state(), SampleSandi.Actions)
+    }
+
+    @Test fun importDoneDark() = dialogShot("sandi_import_done_dark", true) {
+        com.rosyidputrar.taskify.feature.sandi.ImportDoneDialog(com.rosyidputrar.taskify.feature.sandi.ImportDone(41, listOf("Catatan server")), SampleSandi.Actions)
     }
 
     @Test fun recoveryKey() = shot("sandi_recovery_key_light", false) {

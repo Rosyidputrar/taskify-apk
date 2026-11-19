@@ -35,6 +35,18 @@ class SandiRepositoryTest {
         scope.cancel()
     }
 
+    @Test fun insertItemsWritesAllRowsInOneTransaction() = runBlocking {
+        val vault = SandiCrypto.createVault("frasa yang cukup panjang", user, iterations = 100_000)
+        sandi.createKey(vault.record)
+        val ref = SandiCrypto.keyRef(vault.record.wrappedKey)
+        val rows = (1..3).map { n -> sandi.newId().let { id -> id to SandiCrypto.encryptItem(vault.dek, user, id, ItemPayload(title = "Akun $n", password = "p$n"), ref) } }
+        sandi.insertItems(rows)
+        sandi.insertItems(emptyList())
+        val stored = sandi.watchItemRows().first()
+        assertEquals(rows.map { it.first }.toSet(), stored.map { it.id }.toSet())
+        assertEquals(listOf("Akun 1", "Akun 2", "Akun 3"), stored.map { SandiCrypto.decryptItem(vault.dek, user, it.id, it.enc).title }.sorted())
+    }
+
     @Test fun createUnlockSaveAndRotateEverything() = runBlocking {
         val vault = SandiCrypto.createVault("frasa lama yang panjang", user, iterations = 100_000)
         val keyId = sandi.createKey(vault.record)
