@@ -45,6 +45,7 @@ class TaskifySchemaTest {
         "usage_sessions" to mapOf("day" to "TEXT", "package" to "TEXT", "start_ms" to "INTEGER", "end_ms" to "INTEGER"),
         "usage_daily" to mapOf("day" to "TEXT", "package" to "TEXT", "app_label" to "TEXT", "foreground_ms" to "INTEGER", "opens" to "INTEGER", "longest_ms" to "INTEGER"),
         "device_daily" to mapOf("day" to "TEXT", "screen_ms" to "INTEGER", "unlocks" to "INTEGER", "first_pickup_ms" to "INTEGER"),
+        "tx_sources" to mapOf("package" to "TEXT", "app_label" to "TEXT"),
         "focus_sessions" to mapOf("task_id" to "TEXT", "task_title" to "TEXT", "day" to "TEXT", "started_at" to "TEXT", "ended_at" to "TEXT", "minutes" to "INTEGER"),
     )
 
@@ -59,7 +60,7 @@ class TaskifySchemaTest {
     @Test fun uploadErrorsIsLocalOnlyAndVaultTablesTrackOldEnc() {
         assertTrue(TaskifySchema.uploadErrors.options.localOnly)
         assertTrue(TaskifySchema.focusSessions.options.localOnly)
-        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily)
+        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily, TaskifySchema.txSources)
             .forEach { assertTrue(it.options.localOnly, it.name) }
         listOf(TaskifySchema.pwItems, TaskifySchema.pwTotpLog, TaskifySchema.configVersions).forEach {
             assertEquals(listOf("enc"), it.options.trackPreviousValues?.columnFilter, it.name)

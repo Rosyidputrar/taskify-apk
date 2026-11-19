@@ -318,6 +318,8 @@ class NotificationsViewModel(
                 title = edit.title.ifBlank { null },
                 note = "Dari notifikasi ${entry.money?.source ?: entry.appLabel}",
             ),
+            // Ikon aplikasi asal dipakai di daftar Keuangan (disimpan di HP ini saja).
+            source = entry.pkg to entry.appLabel,
         )
         repo.setDraft(entry.id, DraftState.Saved)
         repo.markHandled(entry.id, NotifAction.Transaction)

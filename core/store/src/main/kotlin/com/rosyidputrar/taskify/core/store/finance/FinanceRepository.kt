@@ -79,18 +79,19 @@ data class DebtInput(
 private const val TX_SELECT = """
   SELECT t.id, t.kind, t.amount, t.wallet_id, t.to_wallet_id, t.category_id, t.occurred_on, t.occurred_time,
          t.title, t.note, t.task_id, t.recurring_id, t.debt_id, t.created_at,
-         c.name, c.color, c.icon, w.name, tw.name
+         c.name, c.color, c.icon, w.name, tw.name, s.package, s.app_label
     FROM transactions t
     LEFT JOIN categories c ON c.id = t.category_id
     LEFT JOIN wallets w ON w.id = t.wallet_id
-    LEFT JOIN wallets tw ON tw.id = t.to_wallet_id"""
+    LEFT JOIN wallets tw ON tw.id = t.to_wallet_id
+    LEFT JOIN tx_sources s ON s.id = t.id"""
 
 private fun SqlCursor.toTx() = Transaction(
     id = getString(0)!!, kind = TxKind.from(getString(1)), amount = getLong(2) ?: 0, walletId = getString(3) ?: "",
     toWalletId = getString(4), categoryId = getString(5), occurredOn = getString(6) ?: "", occurredTime = getString(7),
     title = getString(8), note = getString(9), taskId = getString(10), recurringId = getString(11), debtId = getString(12),
     createdAt = getString(13) ?: "", categoryName = getString(14), categoryColor = getString(15), categoryIcon = getString(16),
-    walletName = getString(17), toWalletName = getString(18),
+    walletName = getString(17), toWalletName = getString(18), sourcePackage = getString(19)?.takeIf { it.isNotBlank() }, sourceLabel = getString(20),
 )
 
 private const val RECURRING_SELECT = """
@@ -236,12 +237,42 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
 
     // ================================================================== transaksi
 
-    suspend fun createTx(input: TxInput): String {
+    /** [source] = aplikasi asal (paket, nama) bila dicatat dari notifikasi; disimpan di HP ini saja. */
+    suspend fun createTx(input: TxInput, source: Pair<String, String>? = null): String {
         val id = Ids.newId()
         val values = normalizeTx(input)
         val userId = users.require()
-        db.writeTransactionAsync { tx -> tx.insertTx(id, userId, values) }
+        db.writeTransactionAsync { tx ->
+            tx.insertTx(id, userId, values)
+            if (source != null) tx.executeAsync("INSERT INTO tx_sources (id, package, app_label) VALUES (?, ?, ?)", listOf(id, source.first, source.second))
+        }
         return id
+    }
+
+    /**
+     * Transaksi dari notifikasi yang dicatat sebelum asal aplikasinya disimpan: cocokkan dengan log
+     * notifikasi (draf disetujui, nominal & tanggal sama, catatan "Dari notifikasi X" sama). Hanya
+     * yang cocok dengan TEPAT SATU aplikasi yang diisi — tidak menebak. Mengembalikan jumlah terisi.
+     */
+    suspend fun backfillNotificationSources(): Int {
+        // Asal milik transaksi yang sudah dihapus permanen tidak berguna lagi.
+        db.execute("DELETE FROM tx_sources WHERE id NOT IN (SELECT id FROM transactions)")
+        val rows = db.getAll(
+            """SELECT t.id, MIN(n.package), MIN(n.app_label)
+                 FROM transactions t
+                 JOIN notif_log n ON n.draft = 'saved' AND n.money_amount = t.amount AND n.day = t.occurred_on
+                      AND t.note = 'Dari notifikasi ' || COALESCE(n.money_source, n.app_label)
+                WHERE t.deleted_at IS NULL AND t.note LIKE 'Dari notifikasi %'
+                  AND NOT EXISTS (SELECT 1 FROM tx_sources s WHERE s.id = t.id)
+                GROUP BY t.id
+               HAVING COUNT(DISTINCT n.package) = 1""",
+            emptyList(),
+        ) { Triple(it.getString(0)!!, it.getString(1) ?: "", it.getString(2) ?: "") }
+        if (rows.isEmpty()) return 0
+        db.writeTransactionAsync { tx ->
+            for ((id, pkg, label) in rows) if (pkg.isNotBlank()) tx.executeAsync("INSERT INTO tx_sources (id, package, app_label) VALUES (?, ?, ?)", listOf(id, pkg, label))
+        }
+        return rows.count { it.second.isNotBlank() }
     }
 
     suspend fun updateTx(id: String, input: TxInput) {

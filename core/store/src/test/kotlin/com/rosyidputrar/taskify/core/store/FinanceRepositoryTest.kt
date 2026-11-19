@@ -52,6 +52,64 @@ class FinanceRepositoryTest {
         return Triple(cash, bank, food)
     }
 
+    /** Transaksi dari notifikasi menyimpan aplikasi asalnya (lokal) supaya daftar memakai ikon aplikasi itu. */
+    @Test fun notificationSourceTravelsWithTheTransaction() = runBlocking {
+        val (cash, _, food) = setup()
+        val fromBca = finance.createTx(
+            TxInput(TxKind.Expense, 50_000, cash, categoryId = food, occurredOn = today, note = "Dari notifikasi BCA"),
+            source = "com.bca" to "BCA mobile",
+        )
+        val manual = finance.createTx(TxInput(TxKind.Expense, 10_000, cash, occurredOn = today))
+        val tx = finance.getTransaction(fromBca)!!
+        assertEquals("com.bca", tx.sourcePackage)
+        assertEquals("BCA mobile", tx.sourceLabel)
+        assertEquals("Makan", tx.categoryName) // kategori tetap ada
+        assertNull(finance.getTransaction(manual)!!.sourcePackage)
+        val listed = finance.watchTransactions(TxFilter(from = today, to = today)).first().associateBy { it.id }
+        assertEquals("com.bca", listed.getValue(fromBca).sourcePackage)
+        // Asal tetap setelah transaksi diubah, dihapus ke Sampah, lalu dipulihkan.
+        finance.updateTx(fromBca, TxInput(TxKind.Expense, 55_000, cash, categoryId = food, occurredOn = today, title = "Makan malam"))
+        finance.removeTx(fromBca)
+        finance.restoreTx(fromBca)
+        assertEquals("com.bca", finance.getTransaction(fromBca)!!.sourcePackage)
+    }
+
+    @Test fun olderNotificationTransactionsAreMatchedOnlyWhenUnambiguous() = runBlocking {
+        val (cash, _, _) = setup()
+        suspend fun notif(id: String, pkg: String, label: String, amount: Long, source: String?, draft: String = "saved") = db.execute(
+            "INSERT INTO notif_log (id, package, app_label, money_amount, money_kind, money_source, draft, day, posted_ms) VALUES (?, ?, ?, ?, 'out', ?, ?, ?, 0)",
+            listOf(id, pkg, label, amount, source, draft, today),
+        )
+        // Cocok tepat satu: BCA 50.000 hari ini, catatan "Dari notifikasi BCA".
+        notif("n1", "com.bca", "BCA mobile", 50_000, "BCA")
+        val bca = finance.createTx(TxInput(TxKind.Expense, 50_000, cash, occurredOn = today, note = "Dari notifikasi BCA"))
+        // Tanpa sumber bank → catatan memakai nama aplikasi.
+        notif("n2", "id.dana", "DANA", 12_000, null)
+        val dana = finance.createTx(TxInput(TxKind.Expense, 12_000, cash, occurredOn = today, note = "Dari notifikasi DANA"))
+        // Ambigu: dua aplikasi berbeda dengan nominal & label sama → tidak ditebak.
+        notif("n3", "com.gojek.app", "Gojek", 30_000, "GoPay")
+        notif("n4", "com.gojek.gopay", "GoPay", 30_000, "GoPay")
+        val ambiguous = finance.createTx(TxInput(TxKind.Expense, 30_000, cash, occurredOn = today, note = "Dari notifikasi GoPay"))
+        // Draf yang belum disetujui tidak dihitung.
+        notif("n5", "com.jago", "Jago", 7_000, "Jago", draft = "pending")
+        val pending = finance.createTx(TxInput(TxKind.Expense, 7_000, cash, occurredOn = today, note = "Dari notifikasi Jago"))
+        // Transaksi manual dengan nominal sama tanpa catatan notifikasi tidak disentuh.
+        val manual = finance.createTx(TxInput(TxKind.Expense, 50_000, cash, occurredOn = today))
+        // Asal yatim (transaksinya sudah tidak ada) dibersihkan.
+        db.execute("INSERT INTO tx_sources (id, package, app_label) VALUES ('hilang', 'x', 'X')")
+
+        assertEquals(2, finance.backfillNotificationSources())
+        assertEquals("com.bca", finance.getTransaction(bca)!!.sourcePackage)
+        assertEquals("id.dana", finance.getTransaction(dana)!!.sourcePackage)
+        assertNull(finance.getTransaction(ambiguous)!!.sourcePackage)
+        assertNull(finance.getTransaction(pending)!!.sourcePackage)
+        assertNull(finance.getTransaction(manual)!!.sourcePackage)
+        assertEquals(0L, db.get("SELECT COUNT(*) FROM tx_sources WHERE id = 'hilang'") { it.getLong(0)!! })
+        // Dijalankan lagi: tidak ada yang berubah / dobel.
+        assertEquals(0, finance.backfillNotificationSources())
+        assertEquals(2L, db.get("SELECT COUNT(*) FROM tx_sources") { it.getLong(0)!! })
+    }
+
     @Test fun balancesTotalsAndBreakdownFollowWebappRules() = runBlocking {
         val (cash, bank, food) = setup()
         finance.createTx(TxInput(TxKind.Expense, 25_000, cash, categoryId = food, occurredOn = today, occurredTime = "12:15", title = "Makan siang"))

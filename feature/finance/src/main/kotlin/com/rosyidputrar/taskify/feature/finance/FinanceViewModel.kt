@@ -152,6 +152,11 @@ class FinanceViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState(today = today.value, month = month.value))
 
+    init {
+        // Transaksi dari notifikasi yang dicatat sebelum asal aplikasinya disimpan → pakai ikon aplikasinya juga.
+        launchSafe { runCatching { repo.backfillNotificationSources() } }
+    }
+
     override fun setTab(tab: FinanceTab) { this.tab.value = tab }
     override fun shiftMonth(amount: Long) { month.value = shiftMonth(month.value, amount) }
     override fun setWallet(id: String?) {

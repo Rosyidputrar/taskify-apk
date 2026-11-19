@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.finance.component
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.Dp
+import com.rosyidputrar.taskify.core.device.ui.AppIcon
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.BorderStroke
@@ -62,6 +66,30 @@ fun amountColor(kind: TxKind): Color = when (kind) {
     TxKind.Transfer -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
+/**
+ * Ikon depan transaksi: ikon aplikasi asal bila dicatat dari notifikasi (kategori tetap terlihat
+ * sebagai lencana kecil di pojok), selain itu ikon kategori.
+ */
+@Composable
+fun TxLeading(tx: Transaction, size: Dp = 40.dp) {
+    val pkg = tx.sourcePackage
+    if (pkg == null) {
+        CategoryBadge(tx.categoryIcon, tx.categoryColor, size = size, transfer = tx.kind == TxKind.Transfer)
+        return
+    }
+    Box(Modifier.size(size)) {
+        AppIcon(pkg, tx.sourceLabel ?: "", size = size)
+        if (tx.categoryId != null || tx.kind == TxKind.Transfer) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(size * 0.5f)
+                    .background(MaterialTheme.colorScheme.background, CircleShape).padding(2.dp),
+            ) {
+                CategoryBadge(tx.categoryIcon, tx.categoryColor, size = size * 0.5f - 4.dp, transfer = tx.kind == TxKind.Transfer)
+            }
+        }
+    }
+}
+
 /** Baris transaksi; geser ke kiri untuk menghapus (dengan Urungkan). */
 @Composable
 fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier: Modifier = Modifier) {
@@ -73,7 +101,7 @@ fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier
         }
         if (tx.debtId != null) add("hutang")
     }.joinToString(" · ")
-    val description = "${tx.displayTitle}, ${signedLabel(tx.kind, tx.amount)}, $meta"
+    val description = "${tx.displayTitle}, ${signedLabel(tx.kind, tx.amount)}, $meta" + (tx.sourceLabel?.let { ", dari $it" } ?: "")
     val content: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).clickable(onClickLabel = "Ubah transaksi", onClick = onOpen)
@@ -84,7 +112,7 @@ fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier
                 },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CategoryBadge(tx.categoryIcon, tx.categoryColor, transfer = tx.kind == TxKind.Transfer)
+            TxLeading(tx)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
