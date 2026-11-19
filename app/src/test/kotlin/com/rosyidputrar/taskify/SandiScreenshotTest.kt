@@ -151,6 +151,11 @@ object SampleSandi {
         format = com.rosyidputrar.taskify.core.domain.sandi.ImportFormat.Google, add = 42, withTotp = 3, identical = 5, duplicateInFile = 1,
         differentPassword = 2, noSecret = 1, malformed = 0, badTotp = 1, sample = listOf("GitHub", "Bank Jago", "Tokopedia", "Steam", "Shopee"),
     )
+
+    val authImport = com.rosyidputrar.taskify.feature.sandi.AuthImportUi(
+        scanned = 2, missing = listOf(2), batchSize = 3, add = 13, attach = listOf("GitHub · rosyid@example.com", "Bank Jago · rosyidputra"),
+        identical = 1, duplicates = 0, unsupported = listOf("Lama (hotp-user)" to "HOTP (berbasis penghitung) belum didukung"), attachEnabled = true, attachOn = true,
+    )
 }
 
 @RunWith(AndroidJUnit4::class)
@@ -207,6 +212,15 @@ class SandiScreenshotTest {
 
     @Test fun importDoneDark() = dialogShot("sandi_import_done_dark", true) {
         com.rosyidputrar.taskify.feature.sandi.ImportDoneDialog(com.rosyidputrar.taskify.feature.sandi.ImportDone(41, listOf("Catatan server")), SampleSandi.Actions)
+    }
+
+    @Test fun authImportEmpty() = shot("sandi_auth_import_light", false) {
+        com.rosyidputrar.taskify.feature.sandi.AuthImportContent(com.rosyidputrar.taskify.feature.sandi.AuthImportUi(), SampleSandi.state(), SampleSandi.Actions, {}, {}, {})
+    }
+
+    @Config(qualifiers = "w393dp-h1100dp-xxhdpi")
+    @Test fun authImportProgressDark() = shot("sandi_auth_import_progress_dark", true) {
+        com.rosyidputrar.taskify.feature.sandi.AuthImportContent(SampleSandi.authImport, SampleSandi.state(), SampleSandi.Actions, {}, {}, {})
     }
 
     @Test fun recoveryKey() = shot("sandi_recovery_key_light", false) {

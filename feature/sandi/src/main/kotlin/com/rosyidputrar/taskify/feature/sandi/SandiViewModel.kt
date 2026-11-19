@@ -73,6 +73,8 @@ data class SandiUiState(
     val importPreview: ImportPreview? = null,
     /** Impor selesai: tampilkan hasil + tawaran hapus berkas CSV. */
     val importDone: ImportDone? = null,
+    /** Lembar impor 2FA terbuka (ringkasan tanpa kunci rahasia); null = tertutup. */
+    val authImport: AuthImportUi? = null,
 ) {
     /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
     val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
@@ -132,6 +134,18 @@ interface SandiActions {
     fun cancelImport() {}
     fun deleteImportSource() {}
     fun dismissImportDone() {}
+
+    // impor 2FA (Google Authenticator)
+    fun startAuthImport() {}
+    /** Teks hasil pindai / tempelan (otpauth-migration:// atau otpauth://). */
+    fun addAuthText(text: String) {}
+    /** Gambar berisi QR dipilih ([uri] null = batal). */
+    fun addAuthImage(uri: String?) {}
+    fun setAuthAttach(on: Boolean) {}
+    fun confirmAuthImport() {}
+    fun closeAuthImport() {}
+    /** Pemindai / papan klip gagal: tampilkan alasannya. */
+    fun authImportProblem(message: String) {}
 }
 
 
@@ -143,6 +157,7 @@ class SandiViewModel(
     private val email: AccountEmail,
     private val writer: SandiFileWriter,
     private val documents: SandiDocuments,
+    private val qr: QrImageReader,
 ) : ViewModel(), SandiActions {
     private val local = MutableStateFlow(
         SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get(), now = service.totpNow()),
@@ -156,15 +171,16 @@ class SandiViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), service.totpNow())
 
     private val exporter = SandiExporter(viewModelScope, service::verifyMaster, writer, messenger::show)
-    private val importer = SandiImporter(viewModelScope, documents, service::importItems, messenger::show)
+    private val importer = SandiImporter(viewModelScope, documents, { service.importItems(it) }, messenger::show)
+    private val authImporter = AuthenticatorImporter(viewModelScope, { add, attach -> service.importItems(add, attach) }, messenger::show)
 
     val state: StateFlow<SandiUiState> = combine(
         local,
         service.status,
         combine(service.items, service.totpLog) { i, l -> i to l },
         combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
-        combine(exporter.state, importer.state) { e, i -> e to i },
-    ) { l, status, (items, log), (rk, rr, sw), (export, import) ->
+        combine(exporter.state, importer.state, authImporter.state) { e, i, a -> Triple(e, i, a) },
+    ) { l, status, (items, log), (rk, rr, sw), (export, import, auth) ->
         val open = status is VaultStatus.Unlocked
         l.copy(
             status = status, items = items, log = log, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
@@ -176,6 +192,7 @@ class SandiViewModel(
             // Judul item tidak tampil di atas brankas terkunci; muncul lagi setelah dibuka.
             importPreview = if (open && import.pending != null && items.ready) importer.preview(items.items.map { it.payload }) else null,
             importDone = import.done.takeIf { open },
+            authImport = if (open && auth.open && items.ready) authImporter.summary(items.items.map { it.payload }) else null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
@@ -359,9 +376,39 @@ class SandiViewModel(
     override fun deleteImportSource() { launchSafe { importer.deleteSource() } }
     override fun dismissImportDone() = importer.dismissDone()
 
+    // ---------------------------------------------------------------- impor 2FA
+
+    override fun startAuthImport() = authImporter.open()
+    override fun addAuthText(text: String) { authImporter.add(text) }
+
+    override fun addAuthImage(uri: String?) {
+        if (uri == null) return
+        run("Membaca QR dari gambar…") {
+            val texts = try {
+                qr.readQr(uri)
+            } catch (e: com.rosyidputrar.taskify.core.domain.sandi.ImportException) {
+                throw SandiUserException(e.message ?: "Gambar tidak bisa dibaca.")
+            }
+            if (texts.isEmpty()) messenger.show("Tidak ada QR di gambar itu. Foto layar \"Transfer akun\" lebih dekat dan tidak buram.")
+            texts.forEach { authImporter.add(it) }
+        }
+    }
+
+    override fun setAuthAttach(on: Boolean) = authImporter.setAttach(on)
+
+    override fun confirmAuthImport() = run("Mengimpor 2FA…") {
+        val current = state.value.items
+        if (!current.ready) throw SandiUserException("Brankas masih dibuka. Coba lagi sebentar.")
+        authImporter.confirm(current.items)
+    }
+
+    override fun closeAuthImport() = authImporter.close()
+    override fun authImportProblem(message: String) = messenger.show(message)
+
     override fun onCleared() {
         exporter.clear()
         importer.clear()
+        authImporter.close()
         super.onCleared()
     }
 

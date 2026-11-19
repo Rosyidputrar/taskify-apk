@@ -298,24 +298,29 @@ class SandiService(
         return itemId
     }
 
-    /** Hasil impor: jumlah yang ditambahkan + judul item yang terlalu besar untuk server. */
-    data class ImportResult(val added: Int, val tooLarge: List<String>)
+    /** Hasil impor: jumlah yang ditambahkan / diperbarui + judul item yang terlalu besar untuk server. */
+    data class ImportResult(val added: Int, val tooLarge: List<String>, val updated: Int = 0)
 
     /**
      * Impor: semua item dienkripsi dulu, lalu ditulis dalam SATU transaksi (tidak ada impor
-     * setengah jadi). Item yang hasil enkripsinya melebihi batas server ([SandiCrypto.MAX_ITEM_ENC],
-     * mis. catatan sangat panjang) dilewati — kalau ditulis, server akan menolaknya.
+     * setengah jadi). [attach] = item lama (id → isi baru, mis. dipasangi kunci 2FA). Item yang hasil
+     * enkripsinya melebihi batas server ([SandiCrypto.MAX_ITEM_ENC], mis. catatan sangat panjang)
+     * dilewati — kalau ditulis, server akan menolaknya.
      */
-    suspend fun importItems(payloads: List<ItemPayload>): ImportResult {
+    suspend fun importItems(payloads: List<ItemPayload>, attach: List<Pair<String, ItemPayload>> = emptyList()): ImportResult {
         val open = session.require()
         val userId = users.require()
-        val encrypted = withContext(Dispatchers.Default) {
-            payloads.map { p -> val id = repo.newId(); Triple(id, SandiCrypto.encryptItem(open.dek, userId, id, p, open.ref), p.title) }
+        val (inserts, updates) = withContext(Dispatchers.Default) {
+            val ins = payloads.map { p -> val id = repo.newId(); Triple(id, SandiCrypto.encryptItem(open.dek, userId, id, p, open.ref), p.title) }
+            val upd = attach.map { (id, p) -> Triple(id, SandiCrypto.encryptItem(open.dek, userId, id, p, open.ref), p.title) }
+            ins to upd
         }
-        val (fit, tooLarge) = encrypted.partition { it.second.length <= SandiCrypto.MAX_ITEM_ENC }
+        val fits = { t: Triple<String, String, String> -> t.second.length <= SandiCrypto.MAX_ITEM_ENC }
+        val (insOk, insBig) = inserts.partition(fits)
+        val (updOk, updBig) = updates.partition(fits)
         session.require(open.dek) // kunci tidak berganti / terkunci selama enkripsi
-        repo.insertItems(fit.map { it.first to it.second })
-        return ImportResult(fit.size, tooLarge.map { it.third })
+        repo.applyImport(insOk.map { it.first to it.second }, updOk.map { it.first to it.second })
+        return ImportResult(insOk.size, (insBig + updBig).map { it.third }, updOk.size)
     }
 
     suspend fun removeItem(id: String) = repo.removeItem(id)

@@ -45,6 +45,17 @@ class SandiRepositoryTest {
         val stored = sandi.watchItemRows().first()
         assertEquals(rows.map { it.first }.toSet(), stored.map { it.id }.toSet())
         assertEquals(listOf("Akun 1", "Akun 2", "Akun 3"), stored.map { SandiCrypto.decryptItem(vault.dek, user, it.id, it.enc).title }.sorted())
+
+        // Impor 2FA: satu item baru + satu item lama dipasangi kunci, dalam satu transaksi.
+        val target = rows[0].first
+        val updated = SandiCrypto.encryptItem(vault.dek, user, target, ItemPayload(title = "Akun 1", password = "p1", totp = com.rosyidputrar.taskify.core.domain.sandi.TotpConfig("JBSWY3DPEHPK3PXP")), ref)
+        val newId = sandi.newId()
+        sandi.applyImport(listOf(newId to SandiCrypto.encryptItem(vault.dek, user, newId, ItemPayload(title = "Steam"), ref)), listOf(target to updated))
+        val after = sandi.watchItemRows().first().associate { it.id to SandiCrypto.decryptItem(vault.dek, user, it.id, it.enc) }
+        assertEquals(4, after.size)
+        assertEquals("JBSWY3DPEHPK3PXP", after.getValue(target).totp!!.secret)
+        assertEquals("p1", after.getValue(target).password)
+        assertEquals("Steam", after.getValue(newId).title)
     }
 
     @Test fun createUnlockSaveAndRotateEverything() = runBlocking {

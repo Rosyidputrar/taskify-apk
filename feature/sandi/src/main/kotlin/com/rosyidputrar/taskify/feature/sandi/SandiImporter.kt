@@ -25,6 +25,12 @@ interface SandiDocuments {
     suspend fun delete(uri: String): Boolean
 }
 
+/** Membaca QR dari gambar yang dipilih (foto layar "Transfer akun" dari HP lain). */
+fun interface QrImageReader {
+    /** Isi semua QR di gambar; kosong = tidak ada QR. @throws ImportException bila bukan gambar. */
+    suspend fun readQr(uri: String): List<String>
+}
+
 /** Ringkasan sebelum impor — hanya angka & judul contoh, tanpa sandi. */
 data class ImportPreview(
     val format: ImportFormat,

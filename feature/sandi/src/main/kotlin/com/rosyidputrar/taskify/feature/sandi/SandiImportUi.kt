@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -33,10 +34,10 @@ import androidx.compose.ui.window.SecureFlagPolicy
 
 /** Seksi "Impor" di Pengaturan brankas. */
 @Composable
-fun ImportSection(onImport: () -> Unit) {
+fun ImportSection(onImport: () -> Unit, onImportAuth: () -> Unit = {}) {
     Text("Impor", style = MaterialTheme.typography.labelLarge)
     Text(
-        "Masukkan sandi dari berkas CSV ekspor Pengelola Sandi Google (juga Chrome atau Bitwarden). Item yang sudah ada tidak diubah.",
+        "Masukkan sandi dan kode 2FA dari aplikasi lain. Item yang sudah ada tidak ditimpa.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -46,6 +47,14 @@ fun ImportSection(onImport: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("Impor dari CSV", style = MaterialTheme.typography.labelLarge)
             Text("Pengelola Sandi Google · Chrome · Bitwarden", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    OutlinedButton(onClick = onImportAuth, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Outlined.QrCodeScanner, null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("2FA dari Google Authenticator", style = MaterialTheme.typography.labelLarge)
+            Text("Pindai QR \"Transfer akun\"", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -141,4 +150,5 @@ internal fun ImportHost(state: SandiUiState, actions: SandiActions) {
     }
     state.importPreview?.let { ImportDialog(it, state, actions) }
     state.importDone?.let { ImportDoneDialog(it, actions) }
+    AuthImportHost(state, actions)
 }

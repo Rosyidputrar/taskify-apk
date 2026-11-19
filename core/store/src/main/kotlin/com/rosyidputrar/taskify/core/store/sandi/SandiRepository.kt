@@ -75,16 +75,25 @@ class SandiRepository(private val db: PowerSyncDatabase, private val users: User
     }
 
     /** Tambah banyak item sekaligus (impor) dalam SATU transaksi: semua masuk atau tidak sama sekali. */
-    suspend fun insertItems(rows: List<Pair<String, String>>) {
-        if (rows.isEmpty()) return
+    suspend fun insertItems(rows: List<Pair<String, String>>) = applyImport(rows, emptyList())
+
+    /**
+     * Impor dalam SATU transaksi: [inserts] item baru, [updates] item lama yang diperbarui (mis. dipasangi
+     * kunci 2FA). Item di Sampah tidak disentuh. Semua masuk atau tidak sama sekali.
+     */
+    suspend fun applyImport(inserts: List<Pair<String, String>>, updates: List<Pair<String, String>>) {
+        if (inserts.isEmpty() && updates.isEmpty()) return
         val user = users.require()
         val now = Timestamps.nowIso()
         db.writeTransactionAsync { tx ->
-            for ((id, enc) in rows) {
+            for ((id, enc) in inserts) {
                 tx.executeAsync(
                     "INSERT INTO pw_items (id, user_id, created_at, updated_at, enc, v) VALUES (?, ?, ?, ?, ?, ?)",
                     listOf(id, user, now, now, enc, SandiCrypto.ITEM_VERSION),
                 )
+            }
+            for ((id, enc) in updates) {
+                tx.executeAsync("UPDATE pw_items SET enc = ?, v = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL", listOf(enc, SandiCrypto.ITEM_VERSION, now, id))
             }
         }
     }
