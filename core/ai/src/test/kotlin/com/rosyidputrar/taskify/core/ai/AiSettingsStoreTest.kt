@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 import java.util.Base64
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -25,7 +24,8 @@ class AiSettingsStoreTest {
         override fun destroy() { destroyed = true }
     }
 
-    private fun prefsXml(): String = File(context.applicationInfo.dataDir, "shared_prefs/taskify_ai.xml").takeIf { it.exists() }?.readText().orEmpty()
+    /** Semua yang tersimpan di prefs (kunci + nilai) — dibaca langsung, tidak menunggu tulis berkas asinkron. */
+    private fun prefsXml(): String = context.getSharedPreferences("taskify_ai", Context.MODE_PRIVATE).all.toString()
 
     @Test fun settingsArePerProviderAndKeyIsNeverPlainText() {
         val box = FakeBox()

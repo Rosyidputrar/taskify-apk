@@ -1,5 +1,38 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import android.os.Build
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.domain.notes.NoteExport
+import com.rosyidputrar.taskify.core.domain.notes.NoteFormat
 import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.feature.links.LinksSection
@@ -86,6 +119,7 @@ fun NoteEditorScreen(args: NoteEditorArgs, onBack: () -> Unit) {
             override fun restore() = vm.restore()
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
+            override fun share(format: NoteFormat?) = vm.share(format)
         },
         links = { id -> LinksSection(EntityType.Note, id) },
     )
@@ -102,6 +136,8 @@ interface NoteEditorActions {
     fun restore()
     fun addTag(name: String)
     fun removeTag(tag: TagRef)
+    /** Bagikan catatan: [format] null = kirim sebagai teks. */
+    fun share(format: NoteFormat?) {}
 }
 
 @Composable
@@ -111,7 +147,8 @@ fun NoteEditorContent(
     tags: List<TagRef>,
     allTags: List<TagRef>,
     actions: NoteEditorActions,
-    initialPreview: Boolean = false,
+    /** null = otomatis: catatan yang sudah ada & berisi dibuka di mode Baca, catatan baru di Tulis. */
+    initialPreview: Boolean? = null,
     today: String = Dates.today(),
     links: @Composable (noteId: String) -> Unit = {},
 ) {
@@ -126,11 +163,23 @@ fun NoteEditorContent(
         }
         return
     }
-    var preview by rememberSaveable { mutableStateOf(initialPreview) }
+    var preview by rememberSaveable { mutableStateOf(initialPreview ?: (ui.id != null && ui.body.text.isNotBlank())) }
     var picking by rememberSaveable { mutableStateOf(false) }
     var menu by rememberSaveable { mutableStateOf(false) }
+    var sharing by rememberSaveable { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val haptics = rememberHaptics()
+    val copy = { text: String, what: String ->
+        clipboard.setText(AnnotatedString(text))
+        haptics.tick()
+        // Android 13+ sudah menampilkan konfirmasi salin sendiri.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) Toast.makeText(context, "$what disalin", Toast.LENGTH_SHORT).show()
+    }
+    val empty = ui.title.isBlank() && ui.body.text.isBlank()
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
 
+    Box(Modifier.fillMaxSize()) {
     PaperEditor(
         module = TaskifyModule.Notes,
         title = ui.title,
@@ -159,16 +208,30 @@ fun NoteEditorContent(
                     }
                 },
                 actions = {
-                    IconButton(onClick = actions::togglePin) {
-                        Icon(
-                            if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin,
-                            contentDescription = if (ui.pinned) "Lepas sematan" else "Sematkan",
-                            tint = if (ui.pinned) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    IconButton(onClick = { sharing = true }, enabled = !empty) {
+                        Icon(Icons.Outlined.Share, contentDescription = "Bagikan")
                     }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (ui.pinned) "Lepas sematan" else "Sematkan") },
+                                leadingIcon = { Icon(if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (ui.pinned) accent else LocalContentColor.current) },
+                                onClick = { menu = false; actions.togglePin() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin teks") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(NoteExport.plainText(ui.title, ui.body.text).trimEnd(), "Teks catatan") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin sebagai Markdown") },
+                                leadingIcon = { Icon(Icons.Outlined.Code, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(NoteExport.markdown(ui.title, ui.body.text).trimEnd(), "Markdown") },
+                            )
+                            HorizontalDivider()
                             if (ui.date != null) {
                                 DropdownMenuItem(
                                     text = { Text("Lepas dari tanggal") },
@@ -221,7 +284,75 @@ fun NoteEditorContent(
         },
     )
 
+    // Mode Baca: tombol Ubah selalu terjangkau walau isi sudah digulir jauh.
+    AnimatedVisibility(
+        visible = preview && !ui.trashed,
+        enter = scaleIn(initialScale = 0.8f) + fadeIn(),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(),
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
+    ) {
+        ExtendedFloatingActionButton(
+            onClick = { preview = false },
+            icon = { Icon(Icons.Outlined.Edit, null) },
+            text = { Text("Ubah") },
+            containerColor = TaskifyTheme.modules.tint(TaskifyModule.Notes, MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    }
+
+    if (sharing) {
+        ShareNoteSheet(onPick = { format -> sharing = false; actions.share(format) }, onDismiss = { sharing = false })
+    }
     if (picking) {
         DatePickerSheet(ui.date, today, onPick = { picked -> actions.date(picked); picking = false }, onDismiss = { picking = false })
     }
+}
+
+/** Lembar pilihan bagikan: teks langsung, atau berkas Markdown / teks / HTML / PDF. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun ShareNoteSheet(onPick: (NoteFormat?) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        ShareNoteOptions(onPick, Modifier.navigationBarsPadding().padding(bottom = 12.dp))
+    }
+}
+
+@Composable
+fun ShareNoteOptions(onPick: (NoteFormat?) -> Unit, modifier: Modifier = Modifier) {
+    val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
+    Column(modifier.fillMaxWidth()) {
+        Text("Bagikan catatan", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
+        ShareRow(Icons.AutoMirrored.Outlined.Chat, "Kirim sebagai teks", "Langsung ke chat atau surel, tanpa berkas", accent) { onPick(null) }
+        Text(
+            "SEBAGAI BERKAS",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 24.dp, top = 12.dp, bottom = 4.dp),
+        )
+        NoteFormat.entries.forEach { f ->
+            val icon = when (f) {
+                NoteFormat.Markdown -> Icons.Outlined.Code
+                NoteFormat.Text -> Icons.Outlined.Description
+                NoteFormat.Html -> Icons.Outlined.Language
+                NoteFormat.Pdf -> Icons.Outlined.PictureAsPdf
+            }
+            ShareRow(icon, "${f.label} (.${f.extension})", f.hint, accent) { onPick(f) }
+        }
+    }
+}
+
+@Composable
+private fun ShareRow(icon: ImageVector, title: String, hint: String, accent: Color, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(hint) },
+        leadingContent = {
+            Box(Modifier.size(40.dp).background(accent.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp),
+    )
 }

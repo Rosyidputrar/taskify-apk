@@ -1,10 +1,14 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.feature.notes.share.AndroidNoteSharer
+import com.rosyidputrar.taskify.feature.notes.share.NoteSharer
+import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 val notesFeatureModule = module {
     viewModel { NotesViewModel(get(), get()) }
-    viewModel { params -> NoteEditorViewModel(params.get(), get(), get(), get(), get(named("appScope"))) }
+    single<NoteSharer> { AndroidNoteSharer(androidContext()) }
+    viewModel { params -> NoteEditorViewModel(params.get(), get(), get(), get(), get(named("appScope")), get()) }
 }

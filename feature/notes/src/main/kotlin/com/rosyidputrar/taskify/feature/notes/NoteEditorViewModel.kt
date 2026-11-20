@@ -8,7 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.domain.editor.Autosaver
 import com.rosyidputrar.taskify.core.domain.editor.SaveState
+import com.rosyidputrar.taskify.core.domain.notes.NoteFormat
+import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.store.notes.NoteRepository
+import com.rosyidputrar.taskify.feature.notes.share.NoteShareContent
+import com.rosyidputrar.taskify.feature.notes.share.NoteSharer
 import com.rosyidputrar.taskify.core.store.tasks.TagRef
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +43,13 @@ data class NoteDraftUi(
 
 const val NOTE_ENTITY = "note"
 
+/** Isi catatan untuk dibagikan / disalin; tanggal tempel jadi keterangan di bawah judul. */
+fun NoteDraftUi.toShare() = NoteShareContent(
+    title = title.trim().ifEmpty { null },
+    content = body.text,
+    subtitle = date?.let { "Ditempel ke " + Dates.format(it, "EEEE, d MMMM yyyy") },
+)
+
 /** Editor catatan — perilaku simpan otomatis sama dengan Jurnal (lihat [Autosaver]). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NoteEditorViewModel(
@@ -47,6 +58,7 @@ class NoteEditorViewModel(
     private val tags: TagRepository,
     private val messenger: Messenger,
     private val appScope: CoroutineScope,
+    private val sharer: NoteSharer,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(NoteDraftUi())
     val ui: StateFlow<NoteDraftUi> = _ui
@@ -130,6 +142,13 @@ class NoteEditorViewModel(
             repo.restore(id)
             _ui.update { it.copy(trashed = false) }
         }
+    }
+
+    /** Bagikan isi saat ini: [format] null = sebagai teks (tanpa berkas). */
+    fun share(format: NoteFormat?) {
+        val note = _ui.value.toShare()
+        if (note.content.isBlank() && note.title.isNullOrBlank()) { messenger.show("Catatan masih kosong"); return }
+        if (format == null) sharer.shareText(note) else launchSafe { sharer.shareFile(note, format) }
     }
 
     fun addTag(name: String) { savedId.value?.let { id -> launchSafe { tags.addByName(NOTE_ENTITY, id, listOf(name)) } } }
