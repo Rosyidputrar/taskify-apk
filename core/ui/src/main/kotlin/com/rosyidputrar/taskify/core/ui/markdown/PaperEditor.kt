@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -124,6 +125,8 @@ fun PaperEditor(
                 value = title,
                 onValueChange = { if (it.length <= titleMaxLength) onTitleChange(it) },
                 textStyle = titleStyle,
+                // Mode Baca: judul tidak bisa diketik (tidak memunculkan keyboard tanpa sengaja).
+                readOnly = preview,
                 cursorBrush = SolidColor(accent),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
                 singleLine = false,
@@ -153,7 +156,8 @@ fun PaperEditor(
             if (preview) {
                 if (body.text.isBlank()) {
                     Text("Belum ada isi.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-                } else {
+                } else SelectionContainer {
+                    // Teks bisa diblok & disalin sebagian di mode Baca.
                     MarkdownText(
                         body.text,
                         accent = accent,
@@ -168,7 +172,8 @@ fun PaperEditor(
                 RuledMarkdownField(body, onBodyChange, bodyPlaceholder, accent, label = "Isi")
             }
             afterBody()
-            Spacer(Modifier.height(24.dp))
+            // Mode Baca: ruang untuk tombol mengambang (mis. "Ubah") agar tidak menutupi isi terakhir.
+            Spacer(Modifier.height(if (preview) 88.dp else 24.dp))
         }
         if (!preview) {
             Surface(color = colors.surfaceContainer, modifier = Modifier.fillMaxWidth().imePadding()) {

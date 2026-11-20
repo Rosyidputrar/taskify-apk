@@ -70,7 +70,7 @@ class LockViewModel(
     private val auth: AuthRepository,
     private val network: NetworkMonitor,
 ) : ViewModel() {
-    val pinLength: Int = lock.state.value.config?.length ?: 4
+    val pinLength: Int = lock.state.value.config?.length ?: LockPolicy.MIN_PIN_LENGTH
     private val _state = MutableStateFlow(LockUiState(cooldownUntil = lock.state.value.attempts.cooldownUntil))
     val state: StateFlow<LockUiState> = _state.asStateFlow()
 
@@ -91,6 +91,7 @@ class LockViewModel(
                 UnlockResult.Success -> _state.value = LockUiState()
                 is UnlockResult.Wrong -> _state.value = LockUiState(message = "PIN salah. Sisa ${result.remaining} percobaan.")
                 is UnlockResult.CoolingDown -> _state.value = LockUiState(cooldownUntil = result.untilMillis)
+                UnlockResult.Corrupt -> _state.value = LockUiState(message = "Data PIN di perangkat ini rusak. Pakai \"Lupa PIN\" di bawah untuk mematikan PIN dengan password akun.")
             }
         }
     }
@@ -244,8 +245,8 @@ fun PinSetupContent(onDone: (pin: String, autoLockMinutes: Int) -> Unit, onCance
     val confirming = first != null
 
     Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(if (confirming) "Ulangi PIN" else "Buat PIN 4–8 angka", style = MaterialTheme.typography.headlineSmall)
-        PinDots(filled = entered.length, total = maxOf(4, entered.length.coerceAtMost(8)))
+        Text(if (confirming) "Ulangi PIN" else "Buat PIN 6–8 angka", style = MaterialTheme.typography.headlineSmall)
+        PinDots(filled = entered.length, total = maxOf(LockPolicy.MIN_PIN_LENGTH, entered.length.coerceAtMost(LockPolicy.MAX_PIN_LENGTH)))
         ErrorText(error)
         PinPad(
             onDigit = { if (entered.length < 8) entered += it; error = null },

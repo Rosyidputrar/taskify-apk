@@ -54,8 +54,13 @@ fun trustValid(trust: DeviceTrust?, userId: String, now: Long): Boolean =
 /**
  * Status gerbang, MURNI. [launchUser] = user yang sudah lolos gerbang sejak aplikasi dibuka:
  * sekali lolos tidak dikunci lagi di tengah pemakaian walau masa 30 hari habis saat itu.
- * Konfirmasi ulang hanya kunci sisi aplikasi (server sudah menerima sesi aal2), jadi saat
- * offline tidak memblokir — kode tidak bisa diperiksa tanpa internet.
+ *
+ * Offline: reverify TIDAK boleh dilewati begitu saja. HP yang dicuri/ditemukan dalam keadaan
+ * offline + sesi tersimpan tidak boleh masuk tanpa kode. Pengecualian berbatas: bila perangkat
+ * ini pernah lolos verifikasi dalam [OFFLINE_GRACE_MILLIS] terakhir ([lastVerifiedMillis]),
+ * pembukaan offline diizinkan — penyerang tetap butuh perangkat yang baru saja diverifikasi
+ * pemiliknya. Tanpa jejak lolos sama sekali (atau sudah lewat tenggang), gerbang tetap
+ * [GateStatus.Reverify] sampai online; kode tidak bisa diperiksa tanpa internet.
  */
 fun gateStatus(
     mfa: MfaStatus,
@@ -64,14 +69,19 @@ fun gateStatus(
     online: Boolean,
     trust: DeviceTrust?,
     launchUser: String?,
+    lastVerifiedMillis: Long? = null,
 ): GateStatus = when {
     mfa == MfaStatus.Challenge -> GateStatus.Challenge
     mfa == MfaStatus.Enroll -> GateStatus.Enroll
     launchUser == userId -> GateStatus.Ok
     trustValid(trust, userId, now) -> GateStatus.Ok
     online -> GateStatus.Reverify
-    else -> GateStatus.Ok
+    lastVerifiedMillis != null && lastVerifiedMillis <= now && now - lastVerifiedMillis < OFFLINE_GRACE_MILLIS -> GateStatus.Ok
+    else -> GateStatus.Reverify
 }
+
+/** Masa tenggang offline untuk reverify: 24 jam sejak verifikasi terakhir yang terbukti. */
+const val OFFLINE_GRACE_MILLIS = 24 * 60 * 60 * 1000L
 
 /** Pesan error MFA/login yang bisa dimengerti. */
 object AuthMessages {

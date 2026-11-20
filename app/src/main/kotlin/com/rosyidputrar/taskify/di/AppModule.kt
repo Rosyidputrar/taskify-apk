@@ -43,13 +43,24 @@ import com.rosyidputrar.taskify.ui.shell.AppEvent
 import com.rosyidputrar.taskify.ui.shell.AppEvents
 import com.rosyidputrar.taskify.ui.share.ShareInbox
 import com.rosyidputrar.taskify.core.media.MediaSaver
-import com.rosyidputrar.taskify.core.media.MusicClient
 import com.rosyidputrar.taskify.core.media.MusicPlayer
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
+import com.rosyidputrar.taskify.core.media.lyrics.LyricsRepository
+import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
+import com.rosyidputrar.taskify.core.media.mytube.DirectStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.FailedStreamClients
+import com.rosyidputrar.taskify.core.media.mytube.PoTokenEnsurer
+import com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.media.mytube.potoken.BotGuardTokenGenerator
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
+import com.rosyidputrar.taskify.core.media.mytube.SignatureTimestampProvider
+import com.rosyidputrar.taskify.core.innertube.MyTube
+import com.rosyidputrar.taskify.core.media.mytube.VisitorDataBootstrap
+import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.core.media.TikTokClient
 import com.rosyidputrar.taskify.feature.media.OnlineFlow
 import com.rosyidputrar.taskify.feature.media.TikTokConfig
 import com.rosyidputrar.taskify.feature.media.mediaFeatureModule
-import io.github.jan.supabase.auth.auth
 import com.rosyidputrar.taskify.ui.share.ShareViewModel
 import com.rosyidputrar.taskify.core.files.TempFileUploader
 import com.rosyidputrar.taskify.core.files.TempFilesApi
@@ -130,9 +141,12 @@ private val deviceModule = module {
     single { get<TaskifyDatabase>().db }
     single<UserIdProvider> { UserIdProvider { get<DevicePrefs>().dbOwner } }
     single { Messenger() }
+    // Bagikan & salin (teks, berkas, gambar) untuk Catatan, Jurnal, dan Snippet.
+    single<com.rosyidputrar.taskify.core.ui.share.ShareService> { com.rosyidputrar.taskify.core.ui.share.AndroidShareService(androidContext()) }
     single { TaskRepository(get(), get()) }
     single { TagRepository(get(), get()) }
     single { HomeRepository(get()) }
+    single { com.rosyidputrar.taskify.core.store.home.HomeShortcutRepository(get()) }
     single { CalendarRepository(get()) }
     single { JournalRepository(get(), get()) }
     single { NoteRepository(get(), get()) }
@@ -173,25 +187,73 @@ private val deviceModule = module {
         DeviceLeftovers(
             androidContext(), get(), get(), get(), get(), get(),
             devicePrefs = get(), deviceScheduler = get(),
+            aiWipe = {
+                get<com.rosyidputrar.taskify.feature.ai.ChatEngine>().cancelAll()
+                get<com.rosyidputrar.taskify.core.ai.AiSettingsStore>().wipe()
+            },
         )
     }
-    // Musik: token Supabase diambil segar setiap permintaan (Worker memeriksa sesi).
-    // Argumen bernama: parameter terakhir MusicClient kini `http` (khusus tes), jadi lambda di
-    // akhir (`MusicClient(url) { … }`) akan salah terikat ke `http`, bukan ke `token`.
-    // 401 dari Worker → refresh sesi Supabase sekali lalu permintaan diulang.
+    // Musik direct (Tahap 7): tidak ada lagi klien Worker — katalog/lirik/
+    // SponsorBlock lewat fasad MyTubeMusicClient. Secret MUSIC_API_URL sudah
+    // dihapus (musik direct terbukti jalan; Worker tetap hidup untuk webapp).
+    // Supabase tetap dipakai auth/database, bukan musik.
+    // Porting ArchiveTune Tahap 2 (C1-8, C2-13): resolver memakai penyedia
+    // signatureTimestamp (base.js) + memastikan visitorData siap sebelum
+    // resolve anonim. Tanpa keduanya perilaku sama seperti sebelumnya.
+    single { SignatureTimestampProvider() }
+    // Porting ArchiveTune Tahap 7 (C2-19): blacklist klien stream yang gagal.
+    single { FailedStreamClients() }
+    // Porting ArchiveTune Tahap 5 (C1-1..5): mesin mint PoToken BotGuard.
+    // initialize() sekali di sini (butuh context aplikasi untuk WebView).
     single {
-        MusicClient(
-            AppConfig.musicApiUrl,
-            token = { getOrNull<SupabaseClient>()?.auth?.currentAccessTokenOrNull() },
-            refresh = { getOrNull<SupabaseClient>()?.auth?.refreshCurrentSession() },
-        )
+        PoTokenEnsurer().also {
+            BotGuardTokenGenerator.initialize(androidContext())
+        }
     }
     single {
-        MusicPlayer(androidContext(), get()).also { player ->
+        DirectStreamResolver(
+            signatureTimestampProvider = { client, videoId ->
+                get<SignatureTimestampProvider>().signatureTimestamp(client, videoId)
+            },
+            ensureVisitorData = { get<VisitorDataBootstrap>().ensureVisitorData() },
+            poTokenEnsurer = get(),
+            failedStreamClients = get(),
+        )
+    }
+    single { SponsorBlockRepository() }
+    single { LyricsRepository(myTube = get()) }
+    single {
+        MyTubeMusicClient(get(), get(), get()) { get<MyTubeAuthStore>().loadAuthState() }
+    }
+    // Porting ArchiveTune Tahap 3 (C1-6): resolver youtubei.js (QuickJS).
+    // Malas dibuat — QuickJS baru dibuat saat pertama resolve, bukan saat
+    // aplikasi start. PoToken dipastikan lewat ensurer Tahap 5.
+    single { YoutubeiStreamResolver(androidContext(), poTokenEnsurer = get()) }
+    single {
+        MusicPlayer(
+            androidContext(), get(), get(), loginEvents = get<MusicLoginRepository>(),
+            youtubeiResolver = get(),
+            failedStreamClients = get(),
+            poTokenEnsurer = get(),
+            refreshVisitorData = { get<VisitorDataBootstrap>().refreshVisitorData() },
+            // Tahap 9 (C2-21): telemetri putar best-effort saat lagu mulai berbunyi.
+            registerPlayback = { _, trackingUrl, auth -> get<MyTube>().registerPlayback(trackingUrl, authState = auth).isSuccess },
+            // Agen B (tunggu-jaringan): observer koneksi yang sama dengan
+            // OnlineFlow di bawah (NetworkMonitor).
+            onlineFlow = get<NetworkMonitor>().online,
+        ).also { player ->
             // Pesan pemutar (lewati sponsor, pewaktu tidur) tampil sebagai snackbar aplikasi, sekali saja.
             get<CoroutineScope>(APP_SCOPE).launch { player.notice.filterNotNull().collect { get<Messenger>().show(it) } }
         }
     }
+    // Musik login (PLAN C.5/C.6): repo login + hook kedaluwarsa pemutar.
+    single { MusicLoginRepository(get(), get()) }
+    // Musik direct (Tahap 5): auth anonim — visitorData tersimpan di
+    // SharedPreferences "youtube_auth", di-bootstrap sekali saat start dari
+    // TaskifyApplication. Login/PoToken belum ada (follow-up, PLAN G.10).
+    single { MyTube() }
+    single { MyTubeAuthStore(androidContext()) }
+    single { VisitorDataBootstrap(get(), get()) }
     // TikTok: Worker hanya melayani Origin Taskify → dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
     single { TikTokClient(AppConfig.tiktokApiUrl, AppConfig.publicWebOrigin) }
     single { TikTokConfig(AppConfig.publicWebOrigin) }
@@ -214,7 +276,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
     viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get()) }
-    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull(), get(), getOrNull()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
@@ -224,7 +286,7 @@ private val deviceModule = module {
 
 /** Bagian yang butuh server (Supabase + PowerSync). Hanya dimuat bila konfigurasi lengkap. */
 private val serverModule = module {
-    single { createTaskifySupabase(serverConfig) }
+    single { createTaskifySupabase(serverConfig, androidContext()) }
     single { SupabaseConnector(get(), serverConfig.powerSyncUrl) }
     single { RejectedChangeRetrier(get<TaskifyDatabase>(), get<SupabaseConnector>()) }
     single { AuthRepository(get(), get(), get(), get(APP_SCOPE)) }
@@ -237,4 +299,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule, deviceDataModule, notificationsFeatureModule, wellbeingFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule, deviceDataModule, notificationsFeatureModule, wellbeingFeatureModule, com.rosyidputrar.taskify.feature.ai.aiFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()

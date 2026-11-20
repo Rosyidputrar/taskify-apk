@@ -12,12 +12,14 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 /**
- * Alarm akhir fase + tombol di notifikasi Mode Fokus (Jeda/Lanjut/Lewati/Berhenti).
- *
- * Juga menerima kejadian sistem (lihat intent-filter di AndroidManifest): setelah reboot /
+ * Kejadian sistem untuk Mode Fokus (lihat intent-filter di AndroidManifest): setelah reboot /
  * pembaruan aplikasi / ganti waktu / zona waktu / izin alarm tepat berubah, alarm AlarmManager
  * sudah hilang — [FocusController.recoverAfterRestart] memasangnya ulang dari sesi yang
  * tersimpan, dan memulihkan "Jangan Ganggu" bila macet menyala tanpa sesi aktif.
+ *
+ * D-03: receiver ini HANYA menangani aksi sistem. Aksi kustom (alarm akhir fase, tombol
+ * notifikasi) pindah ke [FocusActionReceiver] yang tidak diekspor — sebelumnya satu receiver
+ * yang diekspor ini menjalankan aksi kustom dari aplikasi mana pun tanpa memeriksa pengirim.
  */
 class FocusReceiver : BroadcastReceiver(), KoinComponent {
     private val controller: FocusController by inject()
@@ -27,29 +29,19 @@ class FocusReceiver : BroadcastReceiver(), KoinComponent {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
                 when (intent.action) {
-                    ACTION_PHASE_END -> controller.catchUp()
-                    ACTION_PAUSE -> controller.pause()
-                    ACTION_RESUME -> controller.resume()
-                    ACTION_SKIP -> controller.skip()
-                    ACTION_STOP -> controller.stop()
                     Intent.ACTION_BOOT_COMPLETED,
                     Intent.ACTION_MY_PACKAGE_REPLACED,
                     Intent.ACTION_TIME_CHANGED,
                     Intent.ACTION_TIMEZONE_CHANGED,
                     AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED ->
                         controller.recoverAfterRestart()
+                    // Aksi kustom sengaja diabaikan di sini: hanya FocusActionReceiver
+                    // (non-ekspor) yang boleh menanganinya.
+                    else -> Unit
                 }
             } finally {
                 pending.finish()
             }
         }
-    }
-
-    companion object {
-        const val ACTION_PHASE_END = "com.rosyidputrar.taskify.focus.PHASE_END"
-        const val ACTION_PAUSE = "com.rosyidputrar.taskify.focus.PAUSE"
-        const val ACTION_RESUME = "com.rosyidputrar.taskify.focus.RESUME"
-        const val ACTION_SKIP = "com.rosyidputrar.taskify.focus.SKIP"
-        const val ACTION_STOP = "com.rosyidputrar.taskify.focus.STOP"
     }
 }

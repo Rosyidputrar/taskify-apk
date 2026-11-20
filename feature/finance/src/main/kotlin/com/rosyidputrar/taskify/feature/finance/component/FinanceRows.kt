@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.finance.component
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.Dp
+import com.rosyidputrar.taskify.core.device.ui.AppIcon
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
 import androidx.compose.foundation.BorderStroke
@@ -62,6 +66,30 @@ fun amountColor(kind: TxKind): Color = when (kind) {
     TxKind.Transfer -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
+/**
+ * Ikon depan transaksi: ikon aplikasi asal bila dicatat dari notifikasi (kategori tetap terlihat
+ * sebagai lencana kecil di pojok), selain itu ikon kategori.
+ */
+@Composable
+fun TxLeading(tx: Transaction, size: Dp = 40.dp) {
+    val pkg = tx.sourcePackage
+    if (pkg == null) {
+        CategoryBadge(tx.categoryIcon, tx.categoryColor, size = size, transfer = tx.kind == TxKind.Transfer)
+        return
+    }
+    Box(Modifier.size(size)) {
+        AppIcon(pkg, tx.sourceLabel ?: "", size = size)
+        if (tx.categoryId != null || tx.kind == TxKind.Transfer) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(size * 0.5f)
+                    .background(MaterialTheme.colorScheme.background, CircleShape).padding(2.dp),
+            ) {
+                CategoryBadge(tx.categoryIcon, tx.categoryColor, size = size * 0.5f - 4.dp, transfer = tx.kind == TxKind.Transfer)
+            }
+        }
+    }
+}
+
 /** Baris transaksi; geser ke kiri untuk menghapus (dengan Urungkan). */
 @Composable
 fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier: Modifier = Modifier) {
@@ -73,7 +101,7 @@ fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier
         }
         if (tx.debtId != null) add("hutang")
     }.joinToString(" · ")
-    val description = "${tx.displayTitle}, ${signedLabel(tx.kind, tx.amount)}, $meta"
+    val description = "${tx.displayTitle}, ${signedLabel(tx.kind, tx.amount)}, $meta" + (tx.sourceLabel?.let { ", dari $it" } ?: "")
     val content: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).clickable(onClickLabel = "Ubah transaksi", onClick = onOpen)
@@ -84,7 +112,7 @@ fun TxRow(tx: Transaction, onOpen: () -> Unit, onDelete: (() -> Unit)?, modifier
                 },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CategoryBadge(tx.categoryIcon, tx.categoryColor, transfer = tx.kind == TxKind.Transfer)
+            TxLeading(tx)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -134,25 +162,29 @@ fun WalletCard(wallet: Wallet, selected: Boolean, onClick: () -> Unit, modifier:
         shape = MaterialTheme.shapes.large,
         color = TaskifyTheme.modules.tint(TaskifyModule.Finance, MaterialTheme.colorScheme.surfaceContainerLow),
         border = if (selected) BorderStroke(2.dp, accent) else null,
-        modifier = modifier.width(176.dp).semantics {
+        modifier = modifier.width(184.dp).semantics {
             contentDescription = "${wallet.name}, saldo ${Rupiah.format(wallet.balance)}" + if (selected) ", dipilih sebagai filter" else ""
         },
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CategoryBadge(wallet.icon ?: wallet.type.icon, wallet.color, size = 32.dp)
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(wallet.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(wallet.type.label.uppercase(), style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        // Ringkas (satu baris ikon + dua baris teks): karusel dompet setinggi ~64dp, bukan ~120dp,
+        // supaya tab & transaksi terlihat tanpa harus menggulir melewati hero.
+        Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(36.dp).background(accent.copy(alpha = 0.6f), CircleShape))
+            Spacer(Modifier.width(8.dp))
+            CategoryBadge(wallet.icon ?: wallet.type.icon, wallet.color, size = 28.dp)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    wallet.name + " · " + wallet.type.label,
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                FitText(
+                    Rupiah.format(wallet.balance),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = SerifFamily),
+                    color = if (wallet.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
             }
-            FitText(
-                Rupiah.format(wallet.balance),
-                style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily),
-                color = if (wallet.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = 0.6f)))
         }
     }
 }

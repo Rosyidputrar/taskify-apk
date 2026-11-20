@@ -31,6 +31,24 @@ internal suspend fun ConnectionContext.deleteEntityRefs(type: EntityType, ids: L
     )
 }
 
+/**
+ * Lampiran milik entitas yang dihapus PERMANEN ikut dihapus (soft-delete, bukan DELETE mentah):
+ * barisnya tersinkron ke server sehingga objek R2-nya bisa dibersihkan cron server — sama
+ * seperti hapus lampiran biasa. DELETE mentah akan menghilangkan `storage_key` dan membuat
+ * objek R2 yatim selamanya.
+ */
+internal suspend fun ConnectionContext.softDeleteAttachments(type: EntityType, ids: List<String>) {
+    if (ids.isEmpty()) return
+    val now = Timestamps.nowIso()
+    ids.chunked(200).forEach { chunk ->
+        val marks = chunk.joinToString(",") { "?" }
+        executeAsync(
+            "UPDATE attachments SET deleted_at = ?, updated_at = ? WHERE entity_type = ? AND entity_id IN ($marks) AND deleted_at IS NULL",
+            listOf(now, now, type.value) + chunk,
+        )
+    }
+}
+
 /** Jenis item rahasia di Sampah (bukan [EntityType]: tidak punya tag, tautan, atau lampiran). */
 enum class SecretTrashType(val table: String, val label: String) {
     PasswordItem("pw_items", "Item Sandi"),
@@ -66,7 +84,7 @@ class TrashRepository(private val db: PowerSyncDatabase) {
            SELECT 'snippet', id, title, language, deleted_at FROM snippets WHERE deleted_at IS NOT NULL
            UNION ALL
            SELECT 'code_project', id, name, NULL, deleted_at FROM code_projects WHERE deleted_at IS NOT NULL
-           ORDER BY deleted_at DESC""",
+           ORDER BY deleted_at DESC LIMIT 1000""",
     ) { it.entityRowOrNull() ?: NONE }.map { rows -> rows.filter { it !== NONE } }
 
     /** Item Sandi & Konfigurasi yang dihapus (terbaru dulu). */
@@ -119,6 +137,7 @@ class TrashRepository(private val db: PowerSyncDatabase) {
             ids + tx.getAllAsync("SELECT id FROM tasks WHERE parent_id IN ($marks)", ids) { it.getString(0)!! }
         } else ids
         tx.deleteEntityRefs(type, all)
+        tx.softDeleteAttachments(type, all)
         all.chunked(200).forEach { chunk ->
             tx.executeAsync("DELETE FROM ${type.table} WHERE id IN (${chunk.joinToString(",") { "?" }})", chunk)
         }
@@ -143,6 +162,8 @@ class TrashRepository(private val db: PowerSyncDatabase) {
      * Hapus permanen isi Sampah > 30 hari + baris pendukung yang aman (sama dengan webapp):
      * anggaran, hutang, transaksi berulang, daftar tugas, tag, item Sandi, berkas konfigurasi.
      * Dompet & kategori sengaja tidak (diacu RESTRICT/CASCADE di server).
+     * Daftar yang di-purge menolkan `list_id` tugasnya dulu (sama seperti hapus manual),
+     * dan tag yang di-purge menghapus baris `taggings`-nya (sama seperti `TagRepository.deleteTag`).
      */
     suspend fun purgeExpired(nowMs: Long = System.currentTimeMillis()) {
         val cutoff = java.time.Instant.ofEpochMilli(nowMs - RETENTION_DAYS * 86_400_000L).toString()
@@ -151,6 +172,23 @@ class TrashRepository(private val db: PowerSyncDatabase) {
                 // Bandingkan sebagai waktu (baris sinkron memakai spasi, lokal memakai "T").
                 val ids = tx.getAllAsync("SELECT id FROM ${type.table} WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
                 destroyIn(tx, type, ids)
+            }
+            // Daftar tugas yang di-purge: tugasnya pindah ke "Tanpa daftar" (sama seperti hapus manual).
+            val listIds = tx.getAllAsync("SELECT id FROM task_lists WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
+            if (listIds.isNotEmpty()) {
+                val now = Timestamps.nowIso()
+                listIds.chunked(200).forEach { chunk ->
+                    val marks = chunk.joinToString(",") { "?" }
+                    tx.executeAsync("UPDATE tasks SET list_id = NULL, updated_at = ? WHERE list_id IN ($marks)", listOf(now) + chunk)
+                }
+            }
+            // Tag yang di-purge: baris taggings-nya ikut dihapus (sama seperti TagRepository.deleteTag).
+            val tagIds = tx.getAllAsync("SELECT id FROM tags WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff)) { it.getString(0)!! }
+            if (tagIds.isNotEmpty()) {
+                tagIds.chunked(200).forEach { chunk ->
+                    val marks = chunk.joinToString(",") { "?" }
+                    tx.executeAsync("DELETE FROM taggings WHERE tag_id IN ($marks)", chunk)
+                }
             }
             for (table in listOf("budgets", "debts", "recurring_transactions", "task_lists", "tags")) {
                 tx.executeAsync("DELETE FROM $table WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)", listOf(cutoff))

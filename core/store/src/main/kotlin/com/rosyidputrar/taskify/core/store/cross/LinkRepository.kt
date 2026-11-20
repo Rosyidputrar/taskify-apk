@@ -37,22 +37,31 @@ class LinkRepository(private val db: PowerSyncDatabase, private val users: UserI
         LinkedEntity(if (t == null) "" else c.getString(5)!!, EntityRow(t ?: EntityType.Task, c.getString(1)!!, (c.getString(2) ?: "").trim(), c.getString(3), c.getString(4)))
     }.map { rows -> rows.filter { it.linkId.isNotEmpty() } }
 
-    /** Buat tautan bila belum ada (arah mana pun). */
+    /**
+     * Buat tautan bila belum ada (arah mana pun). Cek + insert dalam SATU transaksi tulis:
+     * dua pemanggilan bersamaan tidak bisa sama-sama lolos cek dan menyisipkan tautan ganda.
+     */
     suspend fun link(aType: EntityType, aId: String, bType: EntityType, bId: String): Boolean {
         if (aType == bType && aId == bId) return false
-        val exists = db.get(
-            """SELECT count(*) FROM entity_links
-                WHERE (source_type = ?1 AND source_id = ?2 AND target_type = ?3 AND target_id = ?4)
-                   OR (source_type = ?3 AND source_id = ?4 AND target_type = ?1 AND target_id = ?2)""",
-            listOf(aType.value, aId, bType.value, bId),
-        ) { it.getLong(0) ?: 0L } > 0
-        if (exists) return false
+        val userId = users.require()
         val now = Timestamps.nowIso()
-        db.execute(
-            "INSERT INTO entity_links (id, user_id, created_at, updated_at, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            listOf(Ids.newId(), users.require(), now, now, aType.value, aId, bType.value, bId),
-        )
-        return true
+        var inserted = false
+        db.writeTransactionAsync { tx ->
+            val exists = tx.getAllAsync(
+                """SELECT 1 FROM entity_links
+                    WHERE (source_type = ?1 AND source_id = ?2 AND target_type = ?3 AND target_id = ?4)
+                       OR (source_type = ?3 AND source_id = ?4 AND target_type = ?1 AND target_id = ?2) LIMIT 1""",
+                listOf(aType.value, aId, bType.value, bId),
+            ) { 1 }.isNotEmpty()
+            if (!exists) {
+                tx.executeAsync(
+                    "INSERT INTO entity_links (id, user_id, created_at, updated_at, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    listOf(Ids.newId(), userId, now, now, aType.value, aId, bType.value, bId),
+                )
+                inserted = true
+            }
+        }
+        return inserted
     }
 
     suspend fun unlink(linkId: String) {

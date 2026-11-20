@@ -88,6 +88,11 @@ class VaultFilesTest {
         assertEquals("v3", nextVersionLabel(listOf("v1", "v2")))
         assertEquals("v1.3", nextVersionLabel(listOf("v1.2", "1.1")))
         assertEquals("v2.1", nextVersionLabel(listOf("v1.9", "v2.0")))
+        // Label numerik raksasa diabaikan, bukan crash (dulu: NumberFormatException di toInt()).
+        assertEquals("v3", nextVersionLabel(listOf("v2", "v99999999999999999999")))
+        assertEquals("v1", nextVersionLabel(listOf("v99999999999999999999")))
+        assertEquals("v1", nextVersionLabel(listOf("v2147483647")))
+        assertEquals("v1.3", nextVersionLabel(listOf("v1.2", "v1.99999999999999999999")))
         assertEquals("docker", languageFromPath("x/Dockerfile"))
         assertEquals("ini", languageFromPath(".env.production"))
         assertEquals("kotlin", languageFromPath("Main.kt"))

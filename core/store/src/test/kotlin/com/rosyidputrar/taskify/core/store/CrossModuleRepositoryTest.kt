@@ -67,6 +67,76 @@ class CrossModuleRepositoryTest {
         assertEquals(1, count("SELECT count(*) FROM notes"))
     }
 
+    @Test fun destroySoftDeletesAttachments() = runBlocking {
+        note("n", deleted = "2026-11-10T00:00:00Z")
+        db.execute(
+            "INSERT INTO attachments (id, user_id, entity_type, entity_id, storage_key, file_name, status, created_at, updated_at) VALUES ('a1', ?, 'note', 'n', 'k1', 'f.png', 'uploaded', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')",
+            listOf(user),
+        )
+        task("p", deleted = "2026-11-10T00:00:00Z")
+        task("s", parent = "p", deleted = "2026-11-10T00:00:00Z")
+        db.execute(
+            "INSERT INTO attachments (id, user_id, entity_type, entity_id, storage_key, file_name, status, created_at, updated_at) VALUES ('a2', ?, 'task', 's', 'k2', 'g.png', 'uploaded', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')",
+            listOf(user),
+        )
+        db.execute(
+            "INSERT INTO code_projects (id, user_id, name, deleted_at, created_at, updated_at, position) VALUES ('cp', ?, 'Proj', '2026-11-10T00:00:00Z', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', 0)",
+            listOf(user),
+        )
+        db.execute(
+            "INSERT INTO attachments (id, user_id, entity_type, entity_id, storage_key, file_name, status, created_at, updated_at) VALUES ('a3', ?, 'code_project', 'cp', 'k3', 'v1.zip', 'uploaded', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')",
+            listOf(user),
+        )
+
+        trash.destroy(EntityType.Note, listOf("n"))
+        assertEquals(0, count("SELECT count(*) FROM notes WHERE id = 'n'"))
+        assertEquals(0, count("SELECT count(*) FROM attachments WHERE id = 'a1' AND deleted_at IS NULL"))
+        assertEquals(1, count("SELECT count(*) FROM attachments WHERE id = 'a1' AND deleted_at IS NOT NULL"), "baris lampiran tetap ada (soft-delete) agar tersinkron dan objek R2-nya dibersihkan server")
+
+        trash.destroy(EntityType.Task, listOf("p"))
+        assertEquals(0, count("SELECT count(*) FROM tasks WHERE id IN ('p', 's')"))
+        assertEquals(1, count("SELECT count(*) FROM attachments WHERE id = 'a2' AND deleted_at IS NOT NULL"), "lampiran subtask ikut terhapus")
+
+        trash.destroy(EntityType.CodeProject, listOf("cp"))
+        assertEquals(0, count("SELECT count(*) FROM code_projects WHERE id = 'cp'"))
+        assertEquals(1, count("SELECT count(*) FROM attachments WHERE id = 'a3' AND deleted_at IS NOT NULL"), "versi project ikut terhapus")
+    }
+
+    @Test fun purgeExpiredClearsListIdAndTaggings() = runBlocking {
+        val now = Instant.parse("2026-12-20T00:00:00Z").toEpochMilli()
+        // Daftar lama di Sampah (> 30 hari) + tugas aktif di dalamnya.
+        db.execute(
+            "INSERT INTO task_lists (id, user_id, name, color, deleted_at, created_at, updated_at, position, is_archived) VALUES ('l', ?, 'Belanja', 'red', '2026-11-01T00:00:00Z', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', 0, 0)",
+            listOf(user),
+        )
+        db.execute(
+            "INSERT INTO tasks (id, user_id, list_id, title, status, priority, created_at, updated_at, position) VALUES ('t1', ?, 'l', 'Beli susu', 'todo', 0, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', 0)",
+            listOf(user),
+        )
+        // Tag lama di Sampah + baris taggings-nya.
+        db.execute("INSERT INTO tags (id, user_id, name, deleted_at, created_at, updated_at) VALUES ('tg', ?, 'x', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')", listOf(user))
+        db.execute("INSERT INTO taggings (id, user_id, tag_id, entity_type, entity_id, created_at, updated_at) VALUES ('tg1', ?, 'tg', 'note', 'n1', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')", listOf(user))
+        // Daftar baru di Sampah (< 30 hari) + tugasnya: tidak tersentuh.
+        db.execute(
+            "INSERT INTO task_lists (id, user_id, name, color, deleted_at, created_at, updated_at, position, is_archived) VALUES ('l2', ?, 'Kerja', 'blue', '2026-12-10T00:00:00Z', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', 0, 0)",
+            listOf(user),
+        )
+        db.execute(
+            "INSERT INTO tasks (id, user_id, list_id, title, status, priority, created_at, updated_at, position) VALUES ('t2', ?, 'l2', 'Laporan', 'todo', 0, '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', 0)",
+            listOf(user),
+        )
+
+        trash.purgeExpired(now)
+
+        assertEquals(0, count("SELECT count(*) FROM task_lists WHERE id = 'l'"))
+        assertEquals(1, count("SELECT count(*) FROM tasks WHERE id = 't1'"), "tugasnya tetap ada")
+        assertEquals(0, count("SELECT count(*) FROM tasks WHERE id = 't1' AND list_id IS NOT NULL"), "tugas pindah ke Tanpa daftar (sama seperti hapus manual)")
+        assertEquals(0, count("SELECT count(*) FROM tags WHERE id = 'tg'"))
+        assertEquals(0, count("SELECT count(*) FROM taggings WHERE tag_id = 'tg'"), "baris taggings tag yang di-purge ikut terhapus")
+        assertEquals(1, count("SELECT count(*) FROM task_lists WHERE id = 'l2'"))
+        assertEquals("l2", db.get("SELECT list_id FROM tasks WHERE id = 't2'") { it.getString(0)!! })
+    }
+
     @Test fun purgeOlderThan30Days() = runBlocking {
         val now = Instant.parse("2026-12-20T00:00:00Z").toEpochMilli()
         note("lama", deleted = "2026-11-01 00:00:00Z")   // > 30 hari, format sinkron

@@ -4,7 +4,9 @@ import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
+import com.rosyidputrar.taskify.core.domain.sandi.ExportKind
 import com.rosyidputrar.taskify.core.domain.sandi.Generator
+import com.rosyidputrar.taskify.core.domain.sandi.GoogleAuthPlan
 import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
 import com.rosyidputrar.taskify.core.domain.sandi.MasterPassword
 import com.rosyidputrar.taskify.core.domain.sandi.Strength
@@ -61,6 +63,20 @@ data class SandiUiState(
     val email: String? = null,
     /** HP punya kunci layar → "ingat perangkat" bisa dipakai. */
     val trustAvailable: Boolean = true,
+    /** QR Google Authenticator yang sedang ditampilkan (rahasia; hilang saat ditutup atau brankas terkunci). */
+    val migration: GoogleAuthPlan? = null,
+    /** Berkas ekspor siap disimpan: UI membuka pemilih lokasi, lalu memanggil [SandiActions.finishExport]. */
+    val pendingExport: PendingExport? = null,
+    /** Pemilih berkas impor diminta (dibuka sekali oleh UI). */
+    val importPicking: SandiImporter.Picking? = null,
+    /** Ringkasan impor menunggu konfirmasi (hanya angka & judul contoh). */
+    val importPreview: ImportPreview? = null,
+    /** Impor selesai: tampilkan hasil + tawaran hapus berkas CSV. */
+    val importDone: ImportDone? = null,
+    /** Lembar impor 2FA terbuka (ringkasan tanpa kunci rahasia); null = tertutup. */
+    val authImport: AuthImportUi? = null,
+    /** D-11: peringatan sebelum rotasi — ada baris yang tidak bisa dibuka dengan kunci saat ini. */
+    val rotationWarning: RotationWarning? = null,
 ) {
     /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
     val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
@@ -70,6 +86,9 @@ data class SandiUiState(
     }
     val withTotp: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) { filtered.filter { it.payload.totp != null } }
 }
+
+/** D-11: hitungan baris yang akan tertinggal bila rotasi dilanjutkan. Judul baris tidak bisa ditampilkan — isinya terenkripsi. */
+data class RotationWarning(val items: Int, val log: Int, val configs: Int)
 
 interface SandiActions {
     fun setTab(tab: SandiTab)
@@ -83,6 +102,9 @@ interface SandiActions {
     fun recover(recoveryKey: String, newPassword: String)
     fun changePassword(old: String, new: String)
     fun rotateRecovery(password: String)
+    /** D-11: lanjutkan rotasi yang tertunda (sudah dikonfirmasi) / batalkan. */
+    fun confirmRotation() {}
+    fun dismissRotation() {}
     fun acknowledgeRecovery()
     fun lock()
     fun setAutoLock(minutes: Int)
@@ -99,7 +121,41 @@ interface SandiActions {
     fun clearLog()
     fun setGenerator(p: Generator.Prefs)
     fun regenerate()
+
+    // ekspor (bawaan kosong supaya implementasi palsu di tes tidak perlu ikut diubah)
+    /** Cek ulang master password, lalu siapkan ekspor [kind] (berkas atau QR). */
+    fun startExport(kind: ExportKind, password: String) {}
+    /** Pemilih lokasi sudah dibuka untuk [PendingExport] ini (jangan dibuka lagi setelah rotasi layar). */
+    fun exportLaunched() {}
+    /** Lokasi dipilih ([uri] null = batal): tulis berkas, lalu buang isinya dari memori. */
+    fun finishExport(uri: String?) {}
+    /** Tutup QR Google Authenticator dan buang isinya. */
+    fun closeMigration() {}
+
+    // impor CSV
+    /** Buka pemilih berkas CSV. */
+    fun startImport() {}
+    fun importLaunched() {}
+    /** Berkas dipilih ([uri] null = batal): baca & tampilkan ringkasan. */
+    fun importPicked(uri: String?) {}
+    fun confirmImport() {}
+    fun cancelImport() {}
+    fun deleteImportSource() {}
+    fun dismissImportDone() {}
+
+    // impor 2FA (Google Authenticator)
+    fun startAuthImport() {}
+    /** Teks hasil pindai / tempelan (otpauth-migration:// atau otpauth://). */
+    fun addAuthText(text: String) {}
+    /** Gambar berisi QR dipilih ([uri] null = batal). */
+    fun addAuthImage(uri: String?) {}
+    fun setAuthAttach(on: Boolean) {}
+    fun confirmAuthImport() {}
+    fun closeAuthImport() {}
+    /** Pemindai / papan klip gagal: tampilkan alasannya. */
+    fun authImportProblem(message: String) {}
 }
+
 
 class SandiViewModel(
     private val service: SandiService,
@@ -107,6 +163,9 @@ class SandiViewModel(
     private val prefs: SandiPrefs,
     private val messenger: Messenger,
     private val email: AccountEmail,
+    private val writer: SandiFileWriter,
+    private val documents: SandiDocuments,
+    private val qr: QrImageReader,
 ) : ViewModel(), SandiActions {
     private val local = MutableStateFlow(
         SandiUiState(autoLock = service.session.autoLockMinutes, generator = prefs.generator, email = email.get(), now = service.totpNow()),
@@ -119,15 +178,29 @@ class SandiViewModel(
     val clock: StateFlow<Long> = flow { while (true) { emit(service.totpNow()); delay(1_000) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), service.totpNow())
 
+    private val exporter = SandiExporter(viewModelScope, service::verifyMaster, writer, messenger::show)
+    private val importer = SandiImporter(viewModelScope, documents, { service.importItems(it) }, messenger::show)
+    private val authImporter = AuthenticatorImporter(viewModelScope, { add, attach -> service.importItems(add, attach) }, messenger::show)
+
     val state: StateFlow<SandiUiState> = combine(
         local,
         service.status,
         combine(service.items, service.totpLog) { i, l -> i to l },
         combine(service.rejectedKeyCreation, service.rejectedRotation, service.staleWrites) { a, b, c -> Triple(a, b, c) },
-    ) { l, status, (items, log), (rk, rr, sw) ->
+        combine(exporter.state, importer.state, authImporter.state) { e, i, a -> Triple(e, i, a) },
+    ) { l, status, (items, log), (rk, rr, sw), (export, import, auth) ->
+        val open = status is VaultStatus.Unlocked
         l.copy(
             status = status, items = items, log = log, rejectedKeyCreation = rk, rejectedRotation = rr, staleWrites = sw,
             clockOffsetMs = service.clockOffsetMs,
+            // QR rahasia tidak pernah tampil di atas brankas yang terkunci.
+            migration = export.migration.takeIf { open },
+            pendingExport = export.pending,
+            importPicking = import.picking,
+            // Judul item tidak tampil di atas brankas terkunci; muncul lagi setelah dibuka.
+            importPreview = if (open && import.pending != null && items.ready) importer.preview(items.items.map { it.payload }) else null,
+            importDone = import.done.takeIf { open },
+            authImport = if (open && auth.open && items.ready) authImporter.summary(items.items.map { it.payload }) else null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
@@ -145,6 +218,8 @@ class SandiViewModel(
         refreshTrust()
         if (local.value.generated.isEmpty()) regenerate()
         launchSafe { runCatching { withContext(Dispatchers.Default) { MasterPassword.warmUp() } } }
+        // Brankas terkunci → QR rahasia dibuang dari memori juga (bukan hanya disembunyikan).
+        launchSafe { service.status.collect { s -> if (s !is VaultStatus.Unlocked) exporter.onLocked() } }
     }
 
     private fun run(busy: String, block: suspend () -> Unit) {
@@ -206,21 +281,65 @@ class SandiViewModel(
         local.update { it.copy(recoveryToShow = recovery) }
     }
 
-    override fun recover(recoveryKey: String, newPassword: String) = run("Memulihkan brankas…") {
-        evaluateMaster(newPassword).second?.let { throw SandiUserException(it) }
-        val done = service.recover(recoveryKey, newPassword)
-        afterRotation(done.recoveryKey, done.confirmed, "Brankas dipulihkan", skippedMessage(done.result))
+    override fun recover(recoveryKey: String, newPassword: String) = askBeforeRotation(
+        probe = { service.rotationAtRiskWithRecoveryKey(recoveryKey) },
+    ) {
+        run("Memulihkan brankas…") {
+            evaluateMaster(newPassword).second?.let { throw SandiUserException(it) }
+            val done = service.recover(recoveryKey, newPassword)
+            afterRotation(done.recoveryKey, done.confirmed, "Brankas dipulihkan", skippedMessage(done.result))
+        }
     }
 
-    override fun changePassword(old: String, new: String) = run("Mengganti master password…") {
-        evaluateMaster(new).second?.let { throw SandiUserException(it) }
-        val done = service.changePassword(old, new)
-        afterRotation(done.recoveryKey, done.confirmed, "Master password diganti", skippedMessage(done.result))
+    override fun changePassword(old: String, new: String) = askBeforeRotation(
+        probe = { service.rotationAtRisk() },
+    ) {
+        run("Mengganti master password…") {
+            evaluateMaster(new).second?.let { throw SandiUserException(it) }
+            val done = service.changePassword(old, new)
+            afterRotation(done.recoveryKey, done.confirmed, "Master password diganti", skippedMessage(done.result))
+        }
     }
 
-    override fun rotateRecovery(password: String) = run("Membuat kunci pemulihan baru…") {
-        val done = service.rotateRecoveryKey(password)
-        afterRotation(done.recoveryKey, done.confirmed, "Kunci pemulihan baru dibuat", skippedMessage(done.result))
+    override fun rotateRecovery(password: String) = askBeforeRotation(
+        probe = { service.rotationAtRisk() },
+    ) {
+        run("Membuat kunci pemulihan baru…") {
+            val done = service.rotateRecoveryKey(password)
+            afterRotation(done.recoveryKey, done.confirmed, "Kunci pemulihan baru dibuat", skippedMessage(done.result))
+        }
+    }
+
+    /**
+     * D-11: sebelum rotasi, hitung baris yang akan tertinggal. Bila ada → tampilkan dialog dan
+     * tunda aksinya sampai pengguna menekan "Lanjutkan" ([confirmRotation]) atau "Batalkan"
+     * ([dismissRotation]). Aksi tertunda hanya hidup sampai dialog ditutup — kata sandi di
+     * dalamnya tidak disimpan di state. Bila probe gagal / tidak ada yang tertinggal, rotasi
+     * langsung jalan seperti sebelumnya (probe null pada pemulihan = kunci pemulihan salah,
+     * galatnya tetap muncul dari rotasi itu sendiri).
+     */
+    private var pendingRotation: (() -> Unit)? = null
+
+    private fun askBeforeRotation(probe: suspend () -> SandiService.RotationAtRisk?, action: () -> Unit) {
+        launchSafe {
+            val atRisk = runCatching { probe() }.getOrNull()
+            if (atRisk != null && atRisk.total > 0) {
+                pendingRotation = action
+                local.update { it.copy(rotationWarning = RotationWarning(atRisk.items, atRisk.log, atRisk.configs)) }
+            } else {
+                action()
+            }
+        }
+    }
+
+    override fun confirmRotation() {
+        local.update { it.copy(rotationWarning = null) }
+        pendingRotation?.invoke().also { pendingRotation = null }
+    }
+
+    override fun dismissRotation() {
+        pendingRotation = null
+        local.update { it.copy(rotationWarning = null) }
     }
 
     private fun afterRotation(recovery: String, confirmed: Boolean, what: String, skipped: String?) {
@@ -282,6 +401,68 @@ class SandiViewModel(
 
     override fun deleteLog(id: String) { launchSafe { service.deleteTotpLog(id) } }
     override fun clearLog() { launchSafe { service.clearTotpLog() } }
+
+    // ---------------------------------------------------------------- ekspor
+
+    override fun startExport(kind: ExportKind, password: String) = run("Memeriksa master password…") {
+        exporter.start(kind, password, state.value.items.items.map { it.payload })
+    }
+
+    override fun exportLaunched() = exporter.launched()
+    override fun finishExport(uri: String?) = exporter.finish(uri)
+    override fun closeMigration() = exporter.closeMigration()
+
+    // ---------------------------------------------------------------- impor
+
+    override fun startImport() = importer.pick()
+    override fun importLaunched() = importer.launched()
+    override fun importPicked(uri: String?) = run("Membaca berkas…") { importer.open(uri) }
+
+    override fun confirmImport() = run("Mengimpor…") {
+        val ready = state.value.items
+        if (!ready.ready) throw SandiUserException("Brankas masih dibuka. Coba lagi sebentar.")
+        importer.confirm(ready.items.map { it.payload })
+    }
+
+    override fun cancelImport() = importer.cancel()
+    override fun deleteImportSource() { launchSafe { importer.deleteSource() } }
+    override fun dismissImportDone() = importer.dismissDone()
+
+    // ---------------------------------------------------------------- impor 2FA
+
+    override fun startAuthImport() = authImporter.open()
+    override fun addAuthText(text: String) { authImporter.add(text) }
+
+    override fun addAuthImage(uri: String?) {
+        if (uri == null) return
+        run("Membaca QR dari gambar…") {
+            val texts = try {
+                qr.readQr(uri)
+            } catch (e: com.rosyidputrar.taskify.core.domain.sandi.ImportException) {
+                throw SandiUserException(e.message ?: "Gambar tidak bisa dibaca.")
+            }
+            if (texts.isEmpty()) messenger.show("Tidak ada QR di gambar itu. Foto layar \"Transfer akun\" lebih dekat dan tidak buram.")
+            texts.forEach { authImporter.add(it) }
+        }
+    }
+
+    override fun setAuthAttach(on: Boolean) = authImporter.setAttach(on)
+
+    override fun confirmAuthImport() = run("Mengimpor 2FA…") {
+        val current = state.value.items
+        if (!current.ready) throw SandiUserException("Brankas masih dibuka. Coba lagi sebentar.")
+        authImporter.confirm(current.items)
+    }
+
+    override fun closeAuthImport() = authImporter.close()
+    override fun authImportProblem(message: String) = messenger.show(message)
+
+    override fun onCleared() {
+        exporter.clear()
+        importer.clear()
+        authImporter.close()
+        super.onCleared()
+    }
 
     // ---------------------------------------------------------------- generator
 

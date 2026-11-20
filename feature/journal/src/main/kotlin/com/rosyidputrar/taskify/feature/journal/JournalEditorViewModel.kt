@@ -6,6 +6,13 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
+import android.os.Build
+import androidx.compose.ui.graphics.toArgb
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.domain.journal.moodLabel
+import com.rosyidputrar.taskify.core.domain.text.ShareFormat
+import com.rosyidputrar.taskify.core.ui.share.ShareDoc
+import com.rosyidputrar.taskify.core.ui.share.ShareService
 import com.rosyidputrar.taskify.core.domain.editor.Autosaver
 import com.rosyidputrar.taskify.core.domain.editor.SaveState
 import com.rosyidputrar.taskify.core.domain.journal.ReflectionKind
@@ -51,6 +58,18 @@ data class JournalDraftUi(
 
 const val JOURNAL_ENTITY = "journal_entry"
 
+private const val TRUNCATED = "Entri terlalu panjang — gambar dipotong. Pakai PDF untuk versi lengkap."
+
+/** Entri untuk dibagikan / disalin: tanggal + mood jadi keterangan di bawah judul. */
+fun JournalDraftUi.toShare() = ShareDoc(
+    title = title.trim().ifEmpty { null },
+    meta = listOfNotNull(date.takeIf { it.isNotEmpty() }?.let { Dates.format(it, "EEEE, d MMMM yyyy") }, moodLabel(mood)?.let { "Mood $it" })
+        .joinToString(" · ").ifEmpty { null },
+    markdown = body.text,
+    label = "Jurnal",
+    accent = TaskifyModule.Journal.light.toArgb(),
+)
+
 /**
  * Editor jurnal dengan simpan otomatis (port perilaku `JournalEditor` webapp):
  * draf baru baru dibuat di DB saat ada isi pertama; teks disimpan 0,7 dtk setelah berhenti
@@ -65,6 +84,7 @@ class JournalEditorViewModel(
     private val tags: TagRepository,
     private val messenger: Messenger,
     private val appScope: CoroutineScope,
+    private val sharer: ShareService,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(JournalDraftUi())
     val ui: StateFlow<JournalDraftUi> = _ui
@@ -162,6 +182,27 @@ class JournalEditorViewModel(
 
     /** Dipanggil saat aplikasi ke latar / layar ditutup. */
     fun flush() { saver.flushLater() }
+
+    /** Bagikan entri saat ini: [format] null = sebagai teks (tanpa berkas). */
+    fun share(format: ShareFormat?) {
+        val entry = _ui.value.toShare()
+        if (entry.markdown.isBlank() && entry.title == null) { messenger.show("Entri masih kosong"); return }
+        if (format == null) sharer.shareText(entry)
+        else launchSafe { if (sharer.shareFile(entry, format)) messenger.show(TRUNCATED) }
+    }
+
+    /** Salin entri sebagai gambar. */
+    fun copyImage() {
+        val entry = _ui.value.toShare()
+        if (entry.markdown.isBlank() && entry.title == null) return
+        launchSafe {
+            val truncated = sharer.copyImage(entry)
+            when {
+                truncated -> messenger.show(TRUNCATED)
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> messenger.show("Gambar jurnal disalin")
+            }
+        }
+    }
 
     fun remove(onDone: () -> Unit) {
         val id = savedId.value ?: return onDone()

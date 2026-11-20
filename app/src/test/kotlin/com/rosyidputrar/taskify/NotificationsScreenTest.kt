@@ -16,6 +16,9 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import kotlin.test.assertTrue
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -159,6 +162,31 @@ class NotificationsScreenTest {
         compose.onNode(hasText("BCA") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Selected)).performClick()
         compose.onNodeWithText("Simpan").performClick()
         assertEquals(DraftEdit(35_000, TxKind.Expense, "Kopi Kenangan", "w1", null), saved)
+    }
+
+    @Test fun draftWalletIsSuggestedButNeverAutoSaved() {
+        val gopay = Wallet("w2", "GoPay", WalletType.EWallet, 0, null, null, 1.0, false)
+        val tunai = Wallet("w3", "Tunai", WalletType.Cash, 0, null, null, 2.0, false)
+        val bca = state().drafts.single()
+        // Nama dompet cocok dengan sumber notifikasi ("BCA") → terpilih di kartu.
+        assertEquals("w1", state().copy(wallets = wallets + gopay + tunai).suggestWallet(bca))
+        // Satu-satunya dompet → terpilih walau namanya tidak cocok.
+        assertEquals("w3", state().copy(wallets = listOf(tunai)).suggestWallet(bca))
+        // Banyak dompet tanpa yang cocok → tidak menebak.
+        assertEquals(null, state().copy(wallets = listOf(gopay, tunai)).suggestWallet(bca))
+        // "Simpan semua" tetap hanya untuk dompet yang SUDAH diingat — tebakan tidak ikut.
+        assertTrue(state().copy(wallets = wallets + gopay).readyDrafts.isEmpty())
+    }
+
+    @Test fun draftWithoutWalletExplainsWhySaveIsDisabled() {
+        val gopay = Wallet("w2", "GoPay", WalletType.EWallet, 0, null, null, 1.0, false)
+        val tunai = Wallet("w3", "Tunai", WalletType.Cash, 0, null, null, 2.0, false)
+        show { NotificationsContent(state().copy(wallets = listOf(gopay, tunai)), NotificationsActions.None, padding, openDrafts = true) }
+        compose.onNodeWithText("Pilih dompet untuk menyimpan transaksi ini.").assertExists()
+        compose.onNodeWithText("Simpan").assertIsNotEnabled()
+        compose.onNodeWithText("Tunai", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Pilih dompet untuk menyimpan transaksi ini.").assertDoesNotExist()
+        compose.onNodeWithText("Simpan").assertIsEnabled()
     }
 
     @Test fun emptyDayMessage() {

@@ -108,7 +108,7 @@ interface FinanceActions {
     fun saveCategory(id: String?, input: CategoryInput, onDone: () -> Unit)
     fun removeCategory(c: Category)
     /** CSV transaksi bulan ini sesuai filter: (nama file, isi) atau null bila kosong. */
-    fun exportCsv(): Pair<String, String>?
+    suspend fun exportCsv(): Pair<String, String>?
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -151,6 +151,11 @@ class FinanceViewModel(
             txFilter = u.filter, transactions = tx, recurring = l.recurring, debts = l.debts, loaded = true,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState(today = today.value, month = month.value))
+
+    init {
+        // Transaksi dari notifikasi yang dicatat sebelum asal aplikasinya disimpan → pakai ikon aplikasinya juga.
+        launchSafe { runCatching { repo.backfillNotificationSources() } }
+    }
 
     override fun setTab(tab: FinanceTab) { this.tab.value = tab }
     override fun shiftMonth(amount: Long) { month.value = shiftMonth(month.value, amount) }
@@ -249,12 +254,15 @@ class FinanceViewModel(
         messenger.show("Kategori ${c.name} dihapus. Transaksi lamanya tetap tersimpan.")
     }
 
-    override fun exportCsv(): Pair<String, String>? {
-        val rows = state.value.transactions
+    /** Ekspor memakai query khusus tanpa LIMIT (bukan daftar layar yang dibatasi 2000). */
+    override suspend fun exportCsv(): Pair<String, String>? {
+        val m = month.value
+        val f = txFilter.value
+        val rows = repo.exportTransactions(TxFilter(m, Dates.monthEnd(m), f.kind, walletId.value, f.categoryId, f.search))
         if (rows.isEmpty()) {
             messenger.show("Tidak ada transaksi untuk diekspor")
             return null
         }
-        return transactionsCsvName(month.value) to transactionsCsv(rows)
+        return transactionsCsvName(m) to transactionsCsv(rows)
     }
 }

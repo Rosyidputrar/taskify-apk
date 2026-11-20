@@ -22,7 +22,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Pencatat modul Notifikasi. Hanya aktif setelah pengguna memberi Akses notifikasi; tidak mencatat
  * apa pun saat belum masuk akun. Isi disaring [NotificationCapture] (OTP disensor, tingkat
- * penyimpanan dihormati) lalu disimpan di tabel lokal — tidak pernah dikirim ke server.
+ * penyimpanan dihormati) lalu disimpan di tabel lokal — tidak pernah dikirim ke server. Isi yang
+ * disimpan terenkripsi di perangkat (AES-256-GCM, kunci di AndroidKeyStore; D-06) dan terhapus
+ * otomatis setelah 7 hari; pilih "Hitungan saja" bila tidak mau ada isi yang tersimpan sama sekali.
  */
 class TaskifyNotificationListener : NotificationListenerService(), KoinComponent {
     private val repo: NotificationLogRepository by inject()

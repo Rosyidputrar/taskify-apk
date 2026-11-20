@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.RecentEntities
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import com.rosyidputrar.taskify.core.designsystem.component.ConfirmDeleteDialog
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingRow
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
@@ -198,6 +202,7 @@ fun ProjectContent(
     backButton: @Composable (() -> Unit) -> Unit,
 ) {
     val project = state.project
+    LaunchedEffect(project?.id, project?.name) { project?.let { RecentEntities.report("code_project", it.id, it.name) } }
     var editing by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(actions::pick) }
@@ -219,6 +224,7 @@ fun ProjectContent(
                             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(text = { Text("Ubah project") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; editing = true })
+                                TodayPinMenuItem(ShortcutType.Project, project.id, project.name, onDone = { menu = false })
                                 DropdownMenuItem(text = { Text("Pindahkan ke Sampah") }, leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = { menu = false; actions.removeProject(onBack) })
                             }
                         }

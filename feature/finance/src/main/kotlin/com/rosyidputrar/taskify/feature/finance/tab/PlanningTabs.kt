@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.finance.tab
 
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -234,31 +238,55 @@ private fun SummaryTile(title: String, hint: String, amount: Long, color: androi
     }
 }
 
+/**
+ * Baris hutang dua tingkat: nama + nominal di atas (nominal tidak pernah terpotong), status
+ * jatuh tempo + catatan di bawah (boleh dua baris), lalu tombol "Tandai lunas" berlabel di
+ * bawahnya. Sebelumnya semua berjejal di satu baris dan tanggal jatuh tempo terpotong.
+ */
 @Composable
 private fun DebtRow(d: Debt, today: String, actions: FinanceActions, onSettle: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val lent = d.direction == DebtDirection.Lent
     val color = if (lent) incomeColor() else expenseColor()
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (lent) Icons.AutoMirrored.Outlined.CallMade else Icons.AutoMirrored.Outlined.CallReceived, null, tint = color, modifier = Modifier.size(24.dp))
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.Top) {
+        Icon(
+            if (lent) Icons.AutoMirrored.Outlined.CallMade else Icons.AutoMirrored.Outlined.CallReceived, null,
+            tint = color, modifier = Modifier.padding(top = 2.dp).size(22.dp),
+        )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                (if (lent) "Ke " else "Dari ") + d.counterparty,
-                style = MaterialTheme.typography.bodyLarge,
-                textDecoration = if (d.settled) TextDecoration.LineThrough else null,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    (if (lent) "Ke " else "Dari ") + d.counterparty,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textDecoration = if (d.settled) TextDecoration.LineThrough else null,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    Rupiah.format(d.amount), style = MaterialTheme.typography.titleSmall, maxLines = 1,
+                    color = if (d.settled) MaterialTheme.colorScheme.onSurfaceVariant else color,
+                )
+            }
             Text(
                 d.statusLabel(today) + (d.note?.let { " · $it" } ?: ""),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (d.isOverdue(today)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
             )
-        }
-        Text(Rupiah.format(d.amount), style = MaterialTheme.typography.titleSmall, color = if (d.settled) MaterialTheme.colorScheme.onSurfaceVariant else color)
-        if (!d.settled) {
-            IconButton(onClick = onSettle) { Icon(Icons.Outlined.CheckCircle, contentDescription = "Tandai lunas") }
+            if (!d.settled) {
+                TextButton(
+                    onClick = onSettle,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.padding(top = 2.dp).offset(x = (-8).dp).height(36.dp),
+                ) {
+                    Icon(Icons.Outlined.CheckCircle, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Tandai lunas")
+                }
+            }
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }

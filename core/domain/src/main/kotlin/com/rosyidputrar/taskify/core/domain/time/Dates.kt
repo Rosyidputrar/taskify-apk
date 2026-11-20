@@ -20,6 +20,9 @@ object Dates {
 
     fun parse(date: String): LocalDate = LocalDate.parse(date)
 
+    /** Seperti [parse], tapi mengembalikan null untuk teks tanggal yang rusak (data eksternal). */
+    fun parseOrNull(date: String): LocalDate? = runCatching { LocalDate.parse(date) }.getOrNull()
+
     fun today(nowMillis: Long = System.currentTimeMillis()): String =
         Instant.ofEpochMilli(nowMillis).atOffset(WIB).toLocalDate().toString()
 

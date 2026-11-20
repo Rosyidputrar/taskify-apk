@@ -6,5 +6,5 @@ import org.koin.dsl.module
 
 val notesFeatureModule = module {
     viewModel { NotesViewModel(get(), get()) }
-    viewModel { params -> NoteEditorViewModel(params.get(), get(), get(), get(), get(named("appScope"))) }
+    viewModel { params -> NoteEditorViewModel(params.get(), get(), get(), get(), get(named("appScope")), get()) }
 }

@@ -23,7 +23,6 @@ Dibaca saat build dari environment variable (CI: GitHub Secrets) atau `local.pro
 | `SUPABASE_URL` | ya | Auth & database |
 | `SUPABASE_PUBLISHABLE_KEY` | ya | Kunci publik Supabase |
 | `POWERSYNC_URL` | ya | Sinkronisasi offline |
-| `MUSIC_API_URL` | tidak | Pemutar musik (kosong = disembunyikan) |
 | `TIKTOK_API_URL` | tidak | Unduh TikTok (kosong = disembunyikan) |
 | `PUBLIC_WEB_ORIGIN` | tidak | Tautan publik Berkas & header `Origin` ke Worker |
 
@@ -102,6 +101,8 @@ core/media           Musik (Worker music-taskify + Media3: putar di latar, notif
                      URL kedaluwarsa diminta ulang, arsip R2, SponsorBlock, volume rata, pewaktu tidur,
                      antrean tersimpan lintas proses, sesi 401 di-refresh sekali) dan TikTok (Worker
                      ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
+core/ai              Klien AI: OpenAI-compatible (OpenAI, OpenRouter, Groq, Gemini, DeepSeek, Mistral, …)
+                     & Anthropic, streaming SSE + pemanggilan alat, ambil daftar model, kunci API di Keystore
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
@@ -128,6 +129,8 @@ feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, dafta
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
                      Hutang, Kelola), editor transaksi, grafik, ekspor CSV, transaksi berulang otomatis
+feature/ai           Asisten AI: sesi chat lokal, streaming halus (per kalimat, fade-in), Markdown lengkap +
+                     kode berwarna, alat baca & tulis data Taskify dengan konfirmasi
 build-logic/         Convention plugin Gradle
 tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji kripto Sandi
 ```
@@ -183,6 +186,15 @@ Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **
 - **Susun Beranda** (ikon di samping sapaan): urutkan atau sembunyikan pita minggu, Fokus, Ringkasan,
   dan Aktivitas; pilih ubin ringkasan (termasuk *Saldo semua dompet* dan *Masuk bulan ini*). Pita
   minggu menampilkan titik tugas/jurnal/catatan/transaksi per hari.
+- **Pintasan di Hari ini**: baris kartu yang langsung membuka *isi* modul, bukan halaman depannya.
+  - *Disematkan* (maks. 12): catatan, jurnal, snippet, project, konfigurasi, chat asisten, daftar
+    tugas, dompet, tag, dan *tampilan cepat* (Tugas terlambat, Kode 2FA, Anggaran, Tulis jurnal, …).
+    Sematkan lewat kartu "Tambah pintasan" (ada pencarian), menu ⋮ di layar isi (*Sematkan ke
+    Hari ini*), atau tekan lama kartu "Lanjutkan".
+  - *Lanjutkan* otomatis: isi yang terakhir dibuka di HP ini atau diubah, bisa dimatikan.
+  - Tekan lama kartu → lepas / geser kiri-kanan; semuanya juga bisa diatur di Susun Beranda.
+  - Disimpan di tabel lokal `home_pins` & `home_recent` (tidak disinkronkan; ikut terhapus saat Keluar).
+  - Ubin ringkasan membuka tampilan yang relevan (mis. "2 terlambat" → filter Terlambat).
 
 ### Isi otomatis Sandi
 
@@ -226,6 +238,37 @@ disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi da
 - Mode Minggu: batang bertumpuk per aplikasi + rata-rata; detail aplikasi: per jam, riwayat 7/30 hari,
   daftar sesi. Jam pergantian hari bisa diatur (mis. 04.00); aplikasi bisa dikecualikan.
 - Disalin dari sistem tiap jam (WorkManager). Ubin di Beranda (Susun Beranda) & bagian di Review.
+
+### Catatan, Jurnal & Snippet: baca, bagikan, salin
+
+- Catatan, entri jurnal, dan snippet yang sudah ada **dibuka di mode Baca/Lihat**; tombol mengambang
+  **Ubah** untuk menulis. Item baru/kosong langsung di mode Tulis. Teks di mode Baca bisa diblok.
+- **Bagikan**: kirim sebagai teks, atau berkas Markdown (.md), teks biasa (.txt), halaman web (.html),
+  PDF A4 bertingkat halaman, dan **gambar PNG** (lembar kertas setinggi isi; isi sangat panjang dipotong
+  rapi dengan saran memakai PDF). Jurnal menyertakan tanggal & mood, catatan bertanggal menyertakan tanggalnya.
+- **Salin**: teks (tanpa simbol Markdown), Markdown, dan **gambar** — bisa ditempel di chat & dokumen.
+- **Snippet**: bagikan sebagai berkas kode dengan ekstensi sesuai bahasa (.kt, .py, .sql, …), Markdown
+  berpagar, atau **gambar kode** (jendela gelap, nomor baris, pewarnaan sintaks). Kode yang tampak berisi
+  rahasia (token, password, API key) meminta konfirmasi sebelum dibagikan; salinannya ditandai sensitif.
+- **Geser ke kiri** pada kartu catatan, jurnal, atau snippet → pindah ke Sampah, dengan **Urungkan**.
+- Berkas bagikan hanya disimpan sementara di cache aplikasi (FileProvider), tanpa izin penyimpanan.
+
+### Asisten AI
+
+Pakai kunci API sendiri (*bring your own key*): pilih penyedia (OpenAI-compatible atau Anthropic),
+isi base URL (ada preset), simpan kunci, lalu **Tes koneksi & muat model**.
+
+- Kunci API dienkripsi Android Keystore dan tidak pernah ditampilkan lagi; bila Keystore gagal, kunci
+  tidak disimpan sama sekali. Hanya HTTPS.
+- Percakapan tersimpan **di HP ini saja** (tidak sinkron) dan terhapus saat Keluar. System prompt per
+  percakapan, dengan variabel `{hari}` `{tanggal}` `{jam}` `{zona}`.
+- Jawaban mengalir per kalimat/baris dengan fade-in (bukan per huruf), bisa dihentikan, diulang, atau
+  pesan terakhir diubah. Markdown GFM lengkap: tabel, checklist, kutipan, tautan, kode berwarna + salin.
+- **Akses data** mati secara bawaan dan dinyalakan per percakapan (dengan persetujuan). Saat hidup, asisten
+  bisa *membaca* tugas, catatan, jurnal, dan keuangan (cari, daftar, ringkasan, saldo, anggaran) dan
+  *membuat* tugas, catatan, atau transaksi — setiap tulisan tampil sebagai kartu yang harus kamu setujui
+  dulu, dengan dompet/kategori/daftar yang sudah dicocokkan. Sandi, Brankas kode, dan Berkas tidak pernah
+  bisa diakses. Isi pesan dan data yang dibaca alat dikirim ke penyedia yang kamu pilih.
 
 ### Pengaturan
 

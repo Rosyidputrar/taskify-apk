@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
@@ -124,8 +126,8 @@ fun LazyListScope.discovery(prefix: String, sections: List<DiscoverySection>, ac
     sections.forEachIndexed { i, section ->
         val key = "$prefix-$i"
         when (section) {
-            is DiscoverySection.Songs -> cardRow(key, section.title, section.items.mapIndexed { idx, s ->
-                CardItem(s.videoId, s.title, s.artist, s.cover) { actions.playSongs(section.items, idx) }
+            is DiscoverySection.Songs -> cardRow(key, section.title, section.items.map { s ->
+                CardItem(s.videoId, s.title, s.artist, s.cover) { actions.playSong(s) }
             })
             is DiscoverySection.Albums -> cardRow(key, section.title, section.items.map { a ->
                 CardItem(a.browseId, a.title, listOf(a.artist, a.year).filter { it.isNotBlank() }.joinToString(" · "), a.cover) { actions.open(BrowseTarget.Album(a.browseId, a.title)) }
@@ -149,14 +151,43 @@ fun LazyListScope.exploreTab(state: MusicUiState, actions: MusicActions) {
     if (e.loading && !e.loaded) { item(key = "x-load") { ExploreSkeleton() }; return }
     e.error?.let { err ->
         item(key = "x-err") {
-            EmptyState(TaskifyModule.Music, "Jelajah belum bisa dimuat", err, action = { OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") } })
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                EmptyState(TaskifyModule.Music, "Jelajah belum bisa dimuat", err, action = { OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") } })
+                // Semua seksi Jelajah gagal: detail mentah di bawah pesan
+                // (komponen bersama, bisa disalin di debug).
+                e.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    Spacer(Modifier.height(8.dp))
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+        // C S-1: gagal TOTAL — seksi disembunyikan (dulu blok error tampil
+        // bersamaan dengan konten Jelajah). Stasiun fallback lokal pun
+        // disembunyikan, konsisten dengan cabang offline di atas.
+        return
+    }
+    // C S-1: gagal SEBAGIAN — pemberitahuan ringkas di atas seksi yang
+    // berhasil dimuat, bukan blok error besar.
+    e.partialError?.let { msg ->
+        item(key = "x-partial-err") {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") }
+                }
+            }
         }
     }
     e.moods.forEachIndexed { gi, group ->
         item(key = "x-mood-$gi") {
             Column {
                 SectionTitle(group.title.ifBlank { "Mood & genre" })
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val moodScroll = rememberScrollState()
+                Row(Modifier.fadingEdges(moodScroll).horizontalScroll(moodScroll).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     group.items.forEach { m -> AssistChip(onClick = { actions.open(BrowseTarget.Mood(m.params, m.title)) }, label = { Text(m.title) }) }
                 }
             }
@@ -189,7 +220,17 @@ fun LazyListScope.pageContent(page: BrowsePage, state: MusicUiState, actions: Mu
     when {
         page.loading -> { item(key = "p-load") { ListSkeleton(TaskifyModule.Music, rows = 6, label = "Memuat…") }; return }
         page.error != null -> {
-            item(key = "p-err") { EmptyState(TaskifyModule.Music, "Gagal memuat", page.error, action = { OutlinedButton(onClick = actions::retryPage) { Text("Coba lagi") } }) }
+            item(key = "p-err") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    EmptyState(TaskifyModule.Music, "Gagal memuat", page.error, action = { OutlinedButton(onClick = actions::retryPage) { Text("Coba lagi") } })
+                    // Gagal muat halaman: detail mentah di bawah pesan
+                    // (komponen bersama, bisa disalin di debug).
+                    page.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                        Spacer(Modifier.height(8.dp))
+                        RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
             return
         }
     }

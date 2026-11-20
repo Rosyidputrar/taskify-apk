@@ -139,7 +139,7 @@ class VaultScreenshotTest {
 
     @Test fun snippetEditor() = shot("vault_snippet_editor_light", false) {
         val s = SampleVault.snippets[1]
-        SnippetEditorContent(SnippetDraft(true, s.id, s.title, s.language, "Hook React untuk menunda nilai", s.code), {}, {}, {}, {}, initialPreview = true)
+        SnippetEditorContent(SnippetDraft(true, s.id, s.title, s.language, "Hook React untuk menunda nilai", s.code), SnippetShareTest.NoActions, initialPreview = false)
     }
 
     @Test fun project() = shot("vault_project_light", false) {

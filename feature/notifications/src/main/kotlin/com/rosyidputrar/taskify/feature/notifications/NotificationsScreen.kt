@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notifications
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -311,6 +312,13 @@ private fun NotifOnboarding(state: NotificationsUiState, actions: NotificationsA
         Spacer(Modifier.height(14.dp))
         Text("YANG DISIMPAN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LevelChoice(state.settings.level, actions::setLevel)
+        // D-06: isi yang disimpan terenkripsi di perangkat (AES-256-GCM, kunci Keystore) dan
+        // terhapus setelah 7 hari. "Hitungan saja" tidak menyimpan isi sama sekali.
+        Text(
+            "Isi yang disimpan terenkripsi di perangkat dan terhapus otomatis setelah 7 hari. Pilih \"Hitungan saja\" bila tidak mau ada isi notifikasi yang tersimpan sama sekali.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -570,7 +578,8 @@ private fun HourBars(hourly: IntArray, color: androidx.compose.ui.graphics.Color
 @Composable
 private fun Filters(state: NotificationsUiState, actions: NotificationsActions) {
     val haptics = rememberHaptics()
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+    val filterScroll = rememberLazyListState()
+    LazyRow(state = filterScroll, contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp).fadingEdges(filterScroll)) {
         state.app?.let { pkg ->
             item(key = "app") {
                 InputChip(

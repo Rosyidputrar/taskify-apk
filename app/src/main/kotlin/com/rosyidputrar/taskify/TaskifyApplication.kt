@@ -3,10 +3,12 @@ package com.rosyidputrar.taskify
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import android.app.Application
 import android.util.Log
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.UiErrors
+import com.rosyidputrar.taskify.core.media.mytube.VisitorDataBootstrap
 import com.rosyidputrar.taskify.ui.shell.userMessageFor
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.rosyidputrar.taskify.core.auth.LockManager
@@ -57,12 +59,50 @@ class TaskifyApplication : Application() {
         com.rosyidputrar.taskify.core.designsystem.component.FocusLauncher.install { taskId ->
             com.rosyidputrar.taskify.ui.shell.AppEvents.send(com.rosyidputrar.taskify.ui.shell.AppEvent.OpenFocus(taskId))
         }
+        val appScope = get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER)
+        val homeShortcuts = get<com.rosyidputrar.taskify.core.store.home.HomeShortcutRepository>()
         com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.install { type, id, title ->
             com.rosyidputrar.taskify.widget.EntityShortcuts.report(this, type, id, title, pinActive = lock.state.value.config != null)
+            // "Lanjutkan" di Hari ini: dibuka (baca saja) juga dihitung, bukan hanya diubah.
+            appScope.launch { runCatching { homeShortcuts.recordOpen(type, id) } }
         }
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launchPinShortcutGuard(lock, this)
         // Widget "Hari ini" mengikuti perubahan tugas (lokal maupun dari sinkron).
         com.rosyidputrar.taskify.widget.WidgetUpdater(this, get(), get(), get(APP_SCOPE_QUALIFIER)).start()
+        // Musik direct (Tahap 5): bootstrap visitorData anonim sekali saat
+        // start — best-effort, gagal = lanjut tanpa visitorData (player
+        // ANDROID tidak butuhnya). Tidak pernah memblokir start aplikasi.
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            try {
+                get<VisitorDataBootstrap>().ensureVisitorData()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: bootstrap visitorData gagal, lanjut anonim", e)
+            }
+        }
+        // Musik direct (Tahap 5, C1-9/C2-32): panaskan resolver youtubei.js
+        // (muat bundle ke QuickJS) + mesin PoToken BotGuard (boot WebView +
+        // token sesi) sekali saat start — best-effort, tidak memblokir.
+        // Tanpa ini mint pertama kena cold start ~45 detik dan resolve
+        // pertama jalan tanpa token (fallback yang sudah ditangani).
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            try {
+                get<com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver>().preWarm()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: pre-warm youtubei gagal (non-fatal)", e)
+            }
+            try {
+                val auth = get<com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore>().loadAuthState()
+                get<com.rosyidputrar.taskify.core.media.mytube.PoTokenEnsurer>().preWarm(auth)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Taskify", "Musik: pre-warm PoToken gagal (non-fatal)", e)
+            }
+        }
     }
 }
 

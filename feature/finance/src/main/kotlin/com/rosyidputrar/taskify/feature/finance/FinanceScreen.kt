@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
 import com.rosyidputrar.taskify.core.domain.finance.Debt
@@ -37,10 +39,14 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.rememberScrollState
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -84,9 +90,16 @@ fun FinanceScreen(
     /** Konten tambahan di bawah kepala layar (mis. kartu draf transaksi dari Notifikasi). */
     topSlot: @Composable () -> Unit = {},
     viewModel: FinanceViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `FinanceTab`). */
+    initialTab: String? = null,
+    /** Langsung disaring ke satu dompet (pintasan dompet). */
+    initialWalletId: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { FinanceTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
+    ApplyOnce(initialWalletId) { viewModel.setWallet(initialWalletId) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val csv = pendingCsv
@@ -97,9 +110,12 @@ fun FinanceScreen(
         state, viewModel, contentPadding, onOpenTx, onNewTx, onBack, backButton,
         topSlot = topSlot,
         onExport = {
-            viewModel.exportCsv()?.let { (name, csv) ->
-                pendingCsv = csv
-                saveCsv.launch(name)
+            // exportCsv suspend (query ekspor tanpa LIMIT) → jalankan di scope layar.
+            scope.launch {
+                viewModel.exportCsv()?.let { (name, csv) ->
+                    pendingCsv = csv
+                    saveCsv.launch(name)
+                }
             }
         },
     )
@@ -149,11 +165,15 @@ fun FinanceContent(
             else SkeletonCard(TaskifyModule.Finance, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), lines = 3, leadingDot = false)
         }
         stickyHeader(key = "tabs") {
+            // 6 tab tidak muat di HP: tab di tepi dulu terpotong di tengah kata ("…kasan").
+            // Tepi kini memudar hanya ke arah yang masih bisa digeser.
+            val tabScroll = rememberScrollState()
             PrimaryScrollableTabRow(
                 selectedTabIndex = state.tab.ordinal,
+                scrollState = tabScroll,
                 edgePadding = 12.dp,
                 containerColor = MaterialTheme.colorScheme.background,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).fadingEdges(tabScroll, width = 40.dp),
             ) {
                 FinanceTab.entries.forEach { tab ->
                     Tab(selected = state.tab == tab, onClick = { actions.setTab(tab) }, text = { Text(tab.label) })
@@ -207,14 +227,14 @@ fun FinanceContent(
 /** Kartu saldo total + karusel dompet (ketuk dompet = filter transaksi). */
 @Composable
 private fun BalanceHero(state: FinanceUiState, actions: FinanceActions) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-        IndexCard(TaskifyModule.Finance, tinted = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+        IndexCard(TaskifyModule.Finance, tinted = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), contentPadding = 14.dp) {
             Text("SALDO SEMUA DOMPET", style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Finance))
             Text(
                 Rupiah.format(state.totalBalance),
                 style = TaskifyTextStyles.numeric,
                 color = if (state.totalBalance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 4.dp).semantics { contentDescription = "Saldo semua dompet ${Rupiah.format(state.totalBalance)}" },
+                modifier = Modifier.padding(top = 2.dp).semantics { contentDescription = "Saldo semua dompet ${Rupiah.format(state.totalBalance)}" },
             )
             val net = state.monthData.totals.net
             Text(
@@ -224,7 +244,8 @@ private fun BalanceHero(state: FinanceUiState, actions: FinanceActions) {
             )
         }
         if (state.activeWallets.isNotEmpty()) {
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val walletScroll = rememberLazyListState()
+            LazyRow(state = walletScroll, modifier = Modifier.fadingEdges(walletScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.activeWallets, key = { it.id }) { w ->
                     WalletCard(w, selected = state.walletId == w.id, onClick = { actions.setWallet(if (state.walletId == w.id) null else w.id) })
                 }

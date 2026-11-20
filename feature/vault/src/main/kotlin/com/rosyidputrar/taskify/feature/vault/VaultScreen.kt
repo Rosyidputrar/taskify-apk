@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -86,8 +90,11 @@ fun VaultScreen(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: VaultViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `VaultTab`). */
+    initialTab: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { VaultTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
     VaultContent(state, viewModel, contentPadding, onOpenSnippet, onOpenProject, onBack, backButton, onOpenConfig)
 }
 
@@ -153,7 +160,8 @@ private fun LazyListScope.configs(state: VaultUiState, actions: VaultActions, on
         )
     }
     if (state.environments.isNotEmpty()) item(key = "c-envs") {
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val envScroll = rememberLazyListState()
+        LazyRow(state = envScroll, modifier = Modifier.fadingEdges(envScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.environments, key = { it.first }) { (env, n) ->
                 FilterChip(selected = state.configEnv == env, onClick = { actions.setConfigEnv(if (state.configEnv == env) null else env) }, label = { Text("$env $n") })
             }
@@ -194,7 +202,8 @@ private fun LazyListScope.snippets(state: VaultUiState, actions: VaultActions, o
         )
     }
     item(key = "s-langs") {
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val langScroll = rememberLazyListState()
+        LazyRow(state = langScroll, modifier = Modifier.fadingEdges(langScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 FilterChip(selected = f.favorites, onClick = { actions.setFilter(f.copy(favorites = !f.favorites)) }, label = { Text("Favorit") },
                     leadingIcon = { Icon(if (f.favorites) Icons.Rounded.Star else Icons.Outlined.StarOutline, null, Modifier.size(18.dp)) })
@@ -215,7 +224,12 @@ private fun LazyListScope.snippets(state: VaultUiState, actions: VaultActions, o
             )
         }
     }
-    items(state.snippets, key = { it.id }) { s -> SnippetCard(s, actions, onOpen = { onOpen(s.id) }, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).animateItem()) }
+    items(state.snippets, key = { it.id }) { s ->
+        // Geser ke kiri → Sampah (Urungkan di snackbar).
+        SwipeToDelete(onDelete = { actions.removeSnippet(s) }, label = "Pindahkan ke Sampah", modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).animateItem()) {
+            SnippetCard(s, actions, onOpen = { onOpen(s.id) })
+        }
+    }
 }
 
 @Composable
@@ -334,4 +348,5 @@ private class HapticVaultActions(private val a: VaultActions, private val h: Tas
     override fun toggleFavorite(snippet: Snippet) { h.toggle(!snippet.favorite); a.toggleFavorite(snippet) }
     override fun toggleFavorite(project: CodeProject) { h.toggle(!project.favorite); a.toggleFavorite(project) }
     override fun copied(snippet: Snippet) { h.success(); a.copied(snippet) }
+    override fun removeSnippet(snippet: Snippet) { h.success(); a.removeSnippet(snippet) }
 }

@@ -8,6 +8,13 @@ import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.domain.editor.Autosaver
 import com.rosyidputrar.taskify.core.domain.editor.SaveState
+import android.os.Build
+import androidx.compose.ui.graphics.toArgb
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.domain.text.ShareFormat
+import com.rosyidputrar.taskify.core.ui.share.ShareDoc
+import com.rosyidputrar.taskify.core.ui.share.ShareService
+import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.store.notes.NoteRepository
 import com.rosyidputrar.taskify.core.store.tasks.TagRef
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
@@ -39,6 +46,17 @@ data class NoteDraftUi(
 
 const val NOTE_ENTITY = "note"
 
+internal const val TRUNCATED = "Catatan terlalu panjang — gambar dipotong. Pakai PDF untuk versi lengkap."
+
+/** Isi catatan untuk dibagikan / disalin; tanggal tempel jadi keterangan di bawah judul. */
+fun NoteDraftUi.toShare() = ShareDoc(
+    title = title.trim().ifEmpty { null },
+    meta = date?.let { "Ditempel ke " + Dates.format(it, "EEEE, d MMMM yyyy") },
+    markdown = body.text,
+    label = "Catatan",
+    accent = TaskifyModule.Notes.light.toArgb(),
+)
+
 /** Editor catatan — perilaku simpan otomatis sama dengan Jurnal (lihat [Autosaver]). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NoteEditorViewModel(
@@ -47,6 +65,7 @@ class NoteEditorViewModel(
     private val tags: TagRepository,
     private val messenger: Messenger,
     private val appScope: CoroutineScope,
+    private val sharer: ShareService,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(NoteDraftUi())
     val ui: StateFlow<NoteDraftUi> = _ui
@@ -129,6 +148,28 @@ class NoteEditorViewModel(
         launchSafe {
             repo.restore(id)
             _ui.update { it.copy(trashed = false) }
+        }
+    }
+
+    /** Bagikan isi saat ini: [format] null = sebagai teks (tanpa berkas). */
+    fun share(format: ShareFormat?) {
+        val note = _ui.value.toShare()
+        if (note.markdown.isBlank() && note.title == null) { messenger.show("Catatan masih kosong"); return }
+        if (format == null) sharer.shareText(note)
+        else launchSafe { if (sharer.shareFile(note, format)) messenger.show(TRUNCATED) }
+    }
+
+    /** Salin catatan sebagai gambar (bisa ditempel di chat & dokumen). */
+    fun copyImage() {
+        val note = _ui.value.toShare()
+        if (note.markdown.isBlank() && note.title == null) return
+        launchSafe {
+            val truncated = sharer.copyImage(note)
+            when {
+                truncated -> messenger.show(TRUNCATED)
+                // Android 13+ sudah menampilkan konfirmasi salin sendiri.
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> messenger.show("Gambar catatan disalin")
+            }
         }
     }
 

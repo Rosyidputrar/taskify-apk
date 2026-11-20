@@ -1,10 +1,12 @@
 package com.rosyidputrar.taskify
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,6 +15,8 @@ import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.domain.sandi.ConfigFormat
 import com.rosyidputrar.taskify.core.domain.sandi.ConfigPayload
 import com.rosyidputrar.taskify.core.domain.sandi.Dek
+import com.rosyidputrar.taskify.core.domain.sandi.ExportKind
+import com.rosyidputrar.taskify.core.domain.sandi.SandiExport
 import com.rosyidputrar.taskify.core.domain.sandi.Generator
 import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
 import com.rosyidputrar.taskify.core.domain.sandi.KeyRecord
@@ -30,7 +34,9 @@ import com.rosyidputrar.taskify.core.sandi.VaultStatus
 import com.rosyidputrar.taskify.core.store.sandi.ConfigFile
 import com.rosyidputrar.taskify.core.store.sandi.ConfigVersionRow
 import com.rosyidputrar.taskify.core.store.sandi.KeyRow
+import com.rosyidputrar.taskify.feature.sandi.ExportConfirmBody
 import com.rosyidputrar.taskify.feature.sandi.ItemDetail
+import com.rosyidputrar.taskify.feature.sandi.MigrationDialog
 import com.rosyidputrar.taskify.feature.sandi.RecoveryKeyCard
 import com.rosyidputrar.taskify.feature.sandi.SandiActions
 import com.rosyidputrar.taskify.feature.sandi.SandiContent
@@ -140,6 +146,16 @@ object SampleSandi {
         emptyList(), true,
     )
     val v2Text = v2
+
+    val importPreview = com.rosyidputrar.taskify.feature.sandi.ImportPreview(
+        format = com.rosyidputrar.taskify.core.domain.sandi.ImportFormat.Google, add = 42, withTotp = 3, identical = 5, duplicateInFile = 1,
+        differentPassword = 2, noSecret = 1, malformed = 0, badTotp = 1, sample = listOf("GitHub", "Bank Jago", "Tokopedia", "Steam", "Shopee"),
+    )
+
+    val authImport = com.rosyidputrar.taskify.feature.sandi.AuthImportUi(
+        scanned = 2, missing = listOf(2), batchSize = 3, add = 13, attach = listOf("GitHub · rosyid@example.com", "Bank Jago · rosyidputra"),
+        identical = 1, duplicates = 0, unsupported = listOf("Lama (hotp-user)" to "HOTP (berbasis penghitung) belum didukung"), attachEnabled = true, attachOn = true,
+    )
 }
 
 @RunWith(AndroidJUnit4::class)
@@ -169,6 +185,43 @@ class SandiScreenshotTest {
     @Test fun item() = shot("sandi_item_light", false) { ItemDetail(SampleSandi.items[0], SampleSandi.NOW, SampleSandi.Actions, {}, {}) }
 
     @Test fun settingsDark() = shot("sandi_settings_dark", true) { SettingsBody(SampleSandi.state(), SampleSandi.Actions, {}, {}) }
+
+    /** Seksi Ekspor di bawah Pengaturan brankas (layar tinggi supaya ikut terlihat). */
+    @Config(qualifiers = "w393dp-h2000dp-xxhdpi")
+    @Test fun settingsExport() = shot("sandi_settings_export_light", false) { SettingsBody(SampleSandi.state(), SampleSandi.Actions, {}, {}) }
+
+    private fun dialogShot(name: String, dark: Boolean, content: @Composable () -> Unit) {
+        compose.setContent { TaskifyTheme(darkTheme = dark) { Surface(color = MaterialTheme.colorScheme.background) { content() } } }
+        compose.waitForIdle()
+        compose.onNode(isDialog()).captureRoboImage("screenshots/$name.png")
+    }
+
+    @Test fun exportCsv() = shot("sandi_export_csv_light", false) {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(24.dp)) {
+            ExportConfirmBody(ExportKind.GoogleCsv, SampleSandi.state(), "", {}, {})
+        }
+    }
+
+    @Test fun exportGoogleQr() = dialogShot("sandi_export_qr_dark", true) {
+        MigrationDialog(SandiExport.googleMigration(SampleSandi.items.map { it.payload }, batchId = 7), SampleSandi.Actions)
+    }
+
+    @Test fun importPreview() = dialogShot("sandi_import_preview_light", false) {
+        com.rosyidputrar.taskify.feature.sandi.ImportDialog(SampleSandi.importPreview, SampleSandi.state(), SampleSandi.Actions)
+    }
+
+    @Test fun importDoneDark() = dialogShot("sandi_import_done_dark", true) {
+        com.rosyidputrar.taskify.feature.sandi.ImportDoneDialog(com.rosyidputrar.taskify.feature.sandi.ImportDone(41, listOf("Catatan server")), SampleSandi.Actions)
+    }
+
+    @Test fun authImportEmpty() = shot("sandi_auth_import_light", false) {
+        com.rosyidputrar.taskify.feature.sandi.AuthImportContent(com.rosyidputrar.taskify.feature.sandi.AuthImportUi(), SampleSandi.state(), SampleSandi.Actions, {}, {}, {})
+    }
+
+    @Config(qualifiers = "w393dp-h1100dp-xxhdpi")
+    @Test fun authImportProgressDark() = shot("sandi_auth_import_progress_dark", true) {
+        com.rosyidputrar.taskify.feature.sandi.AuthImportContent(SampleSandi.authImport, SampleSandi.state(), SampleSandi.Actions, {}, {}, {})
+    }
 
     @Test fun recoveryKey() = shot("sandi_recovery_key_light", false) {
         RecoveryKeyCard("7K3M-Q9TR-X2VB-H8NC-4WDZ-PF6J-AE", false, {}, {}, {}, {})

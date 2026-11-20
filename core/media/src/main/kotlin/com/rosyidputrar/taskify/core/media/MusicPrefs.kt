@@ -32,12 +32,13 @@ class MusicPrefs(context: Context) {
             quality = MusicQuality.of(prefs.getString("quality", null)),
             normalize = prefs.getBoolean("normalize", true),
             sponsorBlock = prefs.getBoolean("sponsorBlock", true),
-            forceMp3 = prefs.getBoolean("forceMp3", false),
-            archive = prefs.getBoolean("archive", true),
+            preferMp4a = prefs.getBoolean("preferMp4a", false),
         )
         set(v) {
-            prefs.edit().putString("quality", v.quality.value).putBoolean("normalize", v.normalize).putBoolean("sponsorBlock", v.sponsorBlock)
-                .putBoolean("forceMp3", v.forceMp3).putBoolean("archive", v.archive).apply()
+            // Baca toleran: kunci lama `forceMp3`/`archive` (jalur Worker) diabaikan
+            // bila ada, dan dihapus saat pengaturan baru disimpan.
+            prefs.edit().putString("quality", v.quality.value).putBoolean("normalize", v.normalize).putBoolean("sponsorBlock", v.sponsorBlock).putBoolean("preferMp4a", v.preferMp4a)
+                .remove("forceMp3").remove("archive").apply()
         }
 
     fun saveQueue(snapshot: QueueSnapshot?) {

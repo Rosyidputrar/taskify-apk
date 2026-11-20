@@ -51,6 +51,8 @@ interface NotesActions {
     fun toggleTrash()
     fun togglePin(note: Note)
     fun restore(note: Note)
+    /** Pindahkan ke Sampah (geser ke kiri) — bisa diurungkan dari snackbar. */
+    fun remove(note: Note) {}
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -88,6 +90,13 @@ class NotesViewModel(
         launchSafe {
             repo.restore(note.id)
             messenger.show("Catatan dipulihkan")
+        }
+    }
+
+    override fun remove(note: Note) {
+        launchSafe {
+            repo.remove(note.id)
+            messenger.undoable("Catatan dipindahkan ke Sampah") { repo.restore(note.id) }
         }
     }
 }

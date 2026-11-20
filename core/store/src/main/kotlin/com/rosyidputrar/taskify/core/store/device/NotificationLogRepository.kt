@@ -68,21 +68,22 @@ data class AppCount(val pkg: String, val label: String, val count: Int)
 data class Parcel(val ref: String, val pkg: String, val appLabel: String, val stage: ParcelStage, val updatedAt: Long, val title: String?)
 
 /** Riwayat notifikasi lokal (tabel `notif_log` + hitungan `notif_daily`). */
-class NotificationLogRepository(private val db: PowerSyncDatabase) {
+class NotificationLogRepository(private val db: PowerSyncDatabase, private val crypto: NotifLogCrypto = PlainNotifLogCrypto) {
 
     /**
      * Catat satu notifikasi. Notifikasi yang sama persis (paket + key + judul + isi) dalam
      * [DEDUPE_MS] terakhir diabaikan — aplikasi sering memperbarui notifikasi tanpa isi baru.
+     * D-06: judul/isi tersimpan terenkripsi, jadi dedupe membandingkan hasil dekripsi di memori
+     * (bukan SQL) — baris lama plaintext tetap ikut terbandingkan.
      * @return id baris, atau null bila duplikat.
      */
     suspend fun log(n: NewNotif): String? {
         val since = n.postedAt - DEDUPE_MS
-        val dup = db.getOptional(
-            """SELECT id FROM notif_log WHERE package = ? AND IFNULL(n_key, '') = ? AND IFNULL(title, '') = ? AND IFNULL(text, '') = ?
-               AND posted_ms >= ? LIMIT 1""",
-            listOf(n.pkg, n.key.orEmpty(), n.title.orEmpty(), n.text.orEmpty(), since),
-        ) { it.getString(0)!! }
-        if (dup != null) return null
+        val candidates = db.getAll(
+            "SELECT title, text FROM notif_log WHERE package = ? AND IFNULL(n_key, '') = ? AND posted_ms >= ?",
+            listOf(n.pkg, n.key.orEmpty(), since),
+        ) { c -> c.getString(0) to c.getString(1) }
+        if (candidates.any { (t, x) -> decForCompare(t) == n.title && decForCompare(x) == n.text }) return null
         val id = UUID.randomUUID().toString()
         db.writeTransaction { tx ->
             tx.execute(
@@ -90,8 +91,8 @@ class NotificationLogRepository(private val db: PowerSyncDatabase) {
                    money_amount, money_kind, money_party, money_source, draft, parcel_stage, parcel_ref)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)""",
                 listOf(
-                    id, n.pkg, n.appLabel, n.key, n.conversation, n.title, n.text, n.category.name, n.postedAt, n.day,
-                    n.money?.amount, n.money?.kind?.value, n.money?.counterparty, n.money?.source, n.money?.let { DraftState.Pending.db },
+                    id, n.pkg, n.appLabel, n.key, enc(n.conversation), enc(n.title), enc(n.text), n.category.name, n.postedAt, n.day,
+                    n.money?.amount, n.money?.kind?.value, enc(n.money?.counterparty), enc(n.money?.source), n.money?.let { DraftState.Pending.db },
                     n.parcel?.stage?.name, n.parcel?.reference,
                 ),
             )
@@ -150,7 +151,7 @@ class NotificationLogRepository(private val db: PowerSyncDatabase) {
         """SELECT IFNULL(parcel_ref, id), package, app_label, parcel_stage, posted_ms, title FROM notif_log
            WHERE parcel_stage IS NOT NULL AND posted_ms >= ? ORDER BY posted_ms DESC""",
         listOf(sinceMs),
-    ) { c -> Parcel(c.getString(0)!!, c.getString(1)!!, c.getString(2) ?: c.getString(1)!!, ParcelStage.valueOf(c.getString(3)!!), c.getLong(4) ?: 0, c.getString(5)) }
+    ) { c -> Parcel(c.getString(0)!!, c.getString(1)!!, c.getString(2) ?: c.getString(1)!!, ParcelStage.valueOf(c.getString(3)!!), c.getLong(4) ?: 0, dec(c.getString(5))) }
         .map { rows -> rows.distinctBy { it.pkg to it.ref }.sortedWith(compareBy<Parcel> { it.stage == ParcelStage.Delivered }.thenByDescending { it.updatedAt }) }
 
     suspend fun get(id: String): NotifEntry? = db.getOptional("SELECT $COLUMNS FROM notif_log WHERE id = ?", listOf(id)) { it.toEntry() }
@@ -167,15 +168,20 @@ class NotificationLogRepository(private val db: PowerSyncDatabase) {
         db.execute("UPDATE notif_log SET draft = ? WHERE id = ?", listOf(state.db, id))
     }
 
-    /** Cari di judul/isi/nama aplikasi (Spotlight). */
+    /**
+     * Cari di judul/isi/nama aplikasi (Spotlight). D-06: judul/isi tersimpan terenkripsi, jadi
+     * pencarian mendekripsi 500 baris terbaru di memori lalu mencocokkan di sana — hanya 500
+     * baris terbaru yang bisa dicari (bukan seluruh riwayat seperti LIKE SQL sebelumnya).
+     */
     suspend fun search(query: String, limit: Int = 20): List<NotifEntry> {
-        val q = "%" + query.trim().replace("%", "").replace("_", "") + "%"
-        if (q.length <= 2) return emptyList()
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
         return db.getAll(
-            """SELECT $COLUMNS FROM notif_log WHERE hidden = 0 AND (title LIKE ? OR text LIKE ? OR app_label LIKE ?)
-               ORDER BY posted_ms DESC LIMIT ?""",
-            listOf(q, q, q, limit),
+            "SELECT $COLUMNS FROM notif_log WHERE hidden = 0 ORDER BY posted_ms DESC LIMIT 500",
+            emptyList(),
         ) { it.toEntry() }
+            .filter { e -> e.title?.lowercase()?.contains(q) == true || e.text?.lowercase()?.contains(q) == true || e.appLabel.lowercase().contains(q) }
+            .take(limit)
     }
 
     /** Buang isi notifikasi lebih lama dari [beforeDay]; hitungan harian disimpan [COUNT_KEEP_DAYS]. */
@@ -208,19 +214,32 @@ class NotificationLogRepository(private val db: PowerSyncDatabase) {
             pkg = getString(1)!!,
             appLabel = getString(2) ?: getString(1)!!,
             key = getString(3),
-            conversation = getString(4),
-            title = getString(5),
-            text = getString(6),
+            conversation = dec(getString(4)),
+            title = dec(getString(5)),
+            text = dec(getString(6)),
             category = runCatching { NotifCategory.valueOf(getString(7)!!) }.getOrDefault(NotifCategory.Other),
             postedAt = getLong(8) ?: 0,
             day = getString(9)!!,
             hidden = (getLong(10) ?: 0) != 0L,
-            money = if (amount != null && kind != null) MoneyNotif(amount, kind, getString(13), getString(14) ?: "") else null,
+            money = if (amount != null && kind != null) MoneyNotif(amount, kind, dec(getString(13)), dec(getString(14)) ?: "") else null,
             draft = DraftState.of(getString(15)),
             parcel = getString(16)?.let { s -> runCatching { ParcelNotif(ParcelStage.valueOf(s), getString(17)) }.getOrNull() },
             handled = NotifAction.of(getString(18)),
         )
     }
+
+    /** D-06: enkripsi kolom teks sensitif; null tetap null. */
+    private fun enc(v: String?): String? = v?.let { crypto.encrypt(it) }
+
+    /**
+     * D-06: dekripsi kolom; baris lama plaintext dikembalikan apa adanya oleh [NotifLogCrypto].
+     * Baris yang gagal dibuka (kunci berubah / data rusak) menampilkan null — bukan ciphertext
+     * mentah — supaya ciphertext tidak pernah bocor ke UI.
+     */
+    private fun dec(v: String?): String? = v?.let { runCatching { crypto.decrypt(it) }.getOrNull() }
+
+    /** Dedupe: dekripsi gagal mengembalikan nilai mentah (tidak pernah sama dengan judul/isi polos). */
+    private fun decForCompare(v: String?): String? = v?.let { runCatching { crypto.decrypt(it) }.getOrDefault(it) }
 
     companion object {
         const val DEDUPE_MS = 10 * 60_000L

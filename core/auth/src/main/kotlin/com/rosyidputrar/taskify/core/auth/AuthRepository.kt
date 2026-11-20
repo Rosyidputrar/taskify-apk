@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify.core.auth
 
 import com.rosyidputrar.taskify.core.domain.auth.AuthFailure
 import com.rosyidputrar.taskify.core.domain.auth.GateStatus
+import com.rosyidputrar.taskify.core.domain.auth.OFFLINE_GRACE_MILLIS
 import com.rosyidputrar.taskify.core.domain.auth.decodeJwtPayload
 import com.rosyidputrar.taskify.core.domain.auth.gateStatus
 import com.rosyidputrar.taskify.core.domain.auth.mfaStatus
@@ -73,7 +74,7 @@ class AuthRepository(
         val userId = user?.id ?: subjectOf(session.accessToken) ?: return AuthState.SignedOut
         val verified = user?.factors?.any { it.isVerified }?.also { knownVerified[userId] = it } ?: knownVerified[userId] ?: true
         val mfa = mfaStatus(session.accessToken, verified)
-        val gate = gateStatus(mfa, userId, System.currentTimeMillis(), online, trustStore.read(), launchUser)
+        val gate = gateStatus(mfa, userId, System.currentTimeMillis(), online, trustStore.read(), launchUser, trustStore.lastVerifiedAt())
         if (gate == GateStatus.Ok) launchUser = userId
         return AuthState.SignedIn(userId, user?.email, gate)
     }
@@ -123,6 +124,9 @@ class AuthRepository(
                 false -> trustStore.clear()
                 null -> Unit
             }
+            // Jejak lolos untuk masa tenggang offline — tapi BUKAN bila pengguna memilih untuk
+            // tidak mengingat perangkat ini (remember == false): pilihannya dihormati.
+            if (remember != false) trustStore.recordVerified()
         }
         refreshGate()
     }
@@ -140,8 +144,20 @@ class AuthRepository(
     /** Hapus authenticator (butuh sesi aal2). Pemanggil wajib mencegah menghapus yang terakhir (MFA wajib). */
     suspend fun unenroll(factorId: String) = guard { auth.mfa.unenroll(factorId) }
 
-    /** Konfirmasi ulang tidak bisa diperiksa tanpa internet → lewati untuk pembukaan ini. */
+    /**
+     * Konfirmasi ulang offline HANYA bila perangkat pernah lolos verifikasi dalam masa tenggang
+     * (24 jam). Tanpa jejak lolos sama sekali — atau sudah lewat tenggang — tombol lewati tidak
+     * boleh ada gunanya: gerbang tetap Reverify sampai online (D-02).
+     */
+    fun canSkipReverifyOffline(): Boolean {
+        val last = trustStore.lastVerifiedAt() ?: return false
+        val now = System.currentTimeMillis()
+        return last <= now && now - last < OFFLINE_GRACE_MILLIS
+    }
+
+    /** Lewati reverify untuk pembukaan ini — diam bila [canSkipReverifyOffline] false. */
     fun skipReverifyOffline() {
+        if (!canSkipReverifyOffline()) return
         val userId = auth.currentUserOrNull()?.id ?: auth.currentSessionOrNull()?.let { subjectOf(it.accessToken) } ?: return
         launchUser = userId
         refreshGate()

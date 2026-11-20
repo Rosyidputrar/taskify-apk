@@ -52,6 +52,8 @@ interface VaultActions {
     fun toggleFavorite(snippet: Snippet)
     fun toggleFavorite(project: CodeProject)
     fun copied(snippet: Snippet)
+    /** Pindahkan snippet ke Sampah (geser ke kiri) — bisa diurungkan. */
+    fun removeSnippet(snippet: Snippet) {}
     fun setConfigSearch(text: String)
     fun setConfigEnv(env: String?)
     fun createProject(name: String, description: String?, repoUrl: String?, onCreated: (String) -> Unit)
@@ -87,6 +89,12 @@ class VaultViewModel(private val repo: VaultRepository, attachments: AttachmentR
     override fun toggleFavorite(snippet: Snippet) { launchSafe { repo.setSnippetFavorite(snippet.id, !snippet.favorite) } }
     override fun toggleFavorite(project: CodeProject) { launchSafe { repo.setProjectFavorite(project.id, !project.favorite) } }
     override fun copied(snippet: Snippet) = messenger.show("${snippet.title} tersalin")
+    override fun removeSnippet(snippet: Snippet) {
+        launchSafe {
+            repo.removeSnippet(snippet.id)
+            messenger.undoable("Snippet dipindahkan ke Sampah") { repo.restoreSnippet(snippet.id) }
+        }
+    }
 
     override fun createProject(name: String, description: String?, repoUrl: String?, onCreated: (String) -> Unit) {
         if (name.isBlank()) return

@@ -42,6 +42,15 @@ class ContextNotifierTest {
 
     private val netflix = Recurring("r1", TxKind.Expense, 54_990, "w1", null, null, "Netflix", null, "FREQ=MONTHLY;INTERVAL=1", "2026-01-01", null, "2026-11-16", false, true)
 
+    /** D-13: bawaan baru = isi disembunyikan; pengguna lama yang sudah menyimpan pilihan tidak berubah. */
+    @Test fun hideContentDefaultsToHidden() {
+        app.getSharedPreferences("taskify_device", 0).edit().clear().commit()
+        val fresh = ReminderPrefs(DevicePrefs(app))
+        assertTrue(fresh.hideContent)
+        fresh.hideContent = false
+        assertFalse(ReminderPrefs(DevicePrefs(app)).hideContent, "pilihan pengguna yang disimpan harus dihormati")
+    }
+
     @Test fun billHasPostAndSkipActionsAndOpensFinance() {
         notifier.bill(netflix, "2026-11-16")
         val n = shadowOf(nm).allNotifications.single()

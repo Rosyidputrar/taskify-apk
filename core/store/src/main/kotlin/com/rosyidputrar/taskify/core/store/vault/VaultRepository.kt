@@ -33,7 +33,7 @@ class VaultRepository(private val db: PowerSyncDatabase, private val users: User
               AND (?1 IS NULL OR language = ?1)
               AND (?2 = 0 OR is_favorite = 1)
               AND (?3 = '' OR LOWER(title || ' ' || COALESCE(description, '') || ' ' || code) LIKE '%' || ?3 || '%' ESCAPE '\')
-            ORDER BY is_favorite DESC, updated_at DESC""",
+            ORDER BY is_favorite DESC, updated_at DESC LIMIT 1000""",
         listOf(language, if (favorites) 1 else 0, escapeLike(search.trim().lowercase())),
     ) { it.toSnippet() }
 
@@ -119,8 +119,40 @@ class VaultRepository(private val db: PowerSyncDatabase, private val users: User
         db.execute("UPDATE code_projects SET is_favorite = ?, updated_at = ? WHERE id = ?", listOf(if (favorite) 1 else 0, Timestamps.nowIso(), id))
     }
 
-    suspend fun removeProject(id: String) = softDelete("code_projects", id)
-    suspend fun restoreProject(id: String) = restore("code_projects", id)
+    /**
+     * Pindahkan project ke Sampah beserta versi-versinya (lampiran): versi yang tetap hidup
+     * akan terus terhitung di pemakaian penyimpanan padahal projectnya sudah tidak ada.
+     * Versi dihidupkan lagi oleh [restoreProject] bila project dipulihkan.
+     */
+    suspend fun removeProject(id: String) {
+        val now = Timestamps.nowIso()
+        db.writeTransactionAsync { tx ->
+            tx.executeAsync("UPDATE code_projects SET deleted_at = ?, updated_at = ? WHERE id = ?", listOf(now, now, id))
+            tx.executeAsync(
+                "UPDATE attachments SET deleted_at = ?, updated_at = ? WHERE entity_type = 'code_project' AND entity_id = ? AND deleted_at IS NULL",
+                listOf(now, now, id),
+            )
+        }
+    }
+
+    suspend fun restoreProject(id: String) {
+        val now = Timestamps.nowIso()
+        db.writeTransactionAsync { tx ->
+            val deletedAt = tx.getAllAsync(
+                "SELECT deleted_at FROM code_projects WHERE id = ? AND deleted_at IS NOT NULL",
+                listOf(id),
+            ) { it.getString(0)!! }.firstOrNull()
+            tx.executeAsync("UPDATE code_projects SET deleted_at = NULL, updated_at = ? WHERE id = ?", listOf(now, id))
+            // Hidupkan lagi versi yang ikut terhapus bersama project ini — bukan versi yang
+            // dihapus sendiri sebelum project masuk Sampah (deleted_at-nya berbeda).
+            if (deletedAt != null) {
+                tx.executeAsync(
+                    "UPDATE attachments SET deleted_at = NULL, updated_at = ? WHERE entity_type = 'code_project' AND entity_id = ? AND deleted_at = ?",
+                    listOf(now, id, deletedAt),
+                )
+            }
+        }
+    }
 
     private suspend fun softDelete(table: String, id: String) {
         val now = Timestamps.nowIso()

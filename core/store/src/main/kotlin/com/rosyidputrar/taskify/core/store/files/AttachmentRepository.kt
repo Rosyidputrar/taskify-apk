@@ -54,9 +54,9 @@ class AttachmentRepository(private val db: PowerSyncDatabase, private val users:
 
     fun watchOne(id: String): Flow<Attachment?> = db.watch("SELECT $COLUMNS FROM attachments WHERE id = ?", listOf(id)) { it.toAttachment() }.map { it.firstOrNull() }
 
-    /** Lampiran yang belum terunggah (outbox), terlama dulu. */
+    /** Lampiran yang belum terunggah (outbox), terlama dulu. Dibatasi 500: outbox memproses maks. 5 per putaran. */
     suspend fun pending(): List<Attachment> =
-        db.getAll("SELECT $COLUMNS FROM attachments WHERE deleted_at IS NULL AND status <> 'uploaded' ORDER BY created_at", emptyList()) { it.toAttachment() }
+        db.getAll("SELECT $COLUMNS FROM attachments WHERE deleted_at IS NULL AND status <> 'uploaded' ORDER BY created_at LIMIT 500", emptyList()) { it.toAttachment() }
 
     suspend fun isLive(id: String): Boolean =
         db.getOptional("SELECT 1 FROM attachments WHERE id = ? AND deleted_at IS NULL", listOf(id)) { 1 } != null
@@ -81,7 +81,15 @@ class AttachmentRepository(private val db: PowerSyncDatabase, private val users:
     suspend fun create(input: NewAttachment): Attachment {
         val id = Ids.newId()
         val userId = users.require()
-        val now = Timestamps.nowIso()
+        // Versi diurutkan menurut created_at. Dua unggahan beruntun bisa jatuh di milidetik yang
+        // sama → urutan & "versi terbaru" jadi acak. Jamin selalu SETELAH lampiran terakhir entitas ini.
+        val last = db.get(
+            "SELECT COALESCE(MAX(created_at), '') FROM attachments WHERE entity_type = ? AND entity_id = ?",
+            listOf(input.entityType.value, input.entityId),
+        ) { it.getString(0) ?: "" }
+        val lastMs = Timestamps.parseMillis(last)
+        val nowMs = System.currentTimeMillis().let { if (lastMs != null && it <= lastMs) lastMs + 1 else it }
+        val now = Timestamps.nowIso(nowMs)
         val name = input.fileName.take(255).ifEmpty { "file" }
         val key = storageKey(userId, id, name)
         db.execute(

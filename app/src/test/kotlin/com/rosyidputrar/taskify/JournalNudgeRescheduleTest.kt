@@ -32,6 +32,15 @@ class JournalNudgeRescheduleTest {
         app.getSharedPreferences("taskify_device", 0).edit().clear().commit()
         // Penyedia startup androidx tidak jalan di Robolectric → inisialisasi manual.
         runCatching { WorkManager.initialize(app, Configuration.Builder().build()) }
+        // WorkManager (DB-nya) dipakai bersama antar kelas tes dalam satu worker Gradle:
+        // LogoutCleanupTest dan tes saudara di kelas ini sama-sama mengantrekan
+        // "journal-nudge", dan entri CANCELLED tetap terdaftar di
+        // getWorkInfosForUniqueWork(). Tanpa pembersihan ini, hasil tes ini bergantung
+        // pada urutan eksekusi (flaky: lolos di base dan run C/D, gagal di run A dan
+        // full test). Batalkan lalu pangkas, tunggu keduanya selesai.
+        val wm = WorkManager.getInstance(app)
+        wm.cancelUniqueWork(ContextReminderScheduler.WORK_JOURNAL).result.get()
+        wm.pruneWork().result.get()
         scheduler = ContextReminderScheduler(app, ContextReminderPrefs(DevicePrefs(app)))
     }
 

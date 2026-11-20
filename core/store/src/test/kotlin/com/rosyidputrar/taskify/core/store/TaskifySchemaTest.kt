@@ -45,7 +45,16 @@ class TaskifySchemaTest {
         "usage_sessions" to mapOf("day" to "TEXT", "package" to "TEXT", "start_ms" to "INTEGER", "end_ms" to "INTEGER"),
         "usage_daily" to mapOf("day" to "TEXT", "package" to "TEXT", "app_label" to "TEXT", "foreground_ms" to "INTEGER", "opens" to "INTEGER", "longest_ms" to "INTEGER"),
         "device_daily" to mapOf("day" to "TEXT", "screen_ms" to "INTEGER", "unlocks" to "INTEGER", "first_pickup_ms" to "INTEGER"),
+        "tx_sources" to mapOf("package" to "TEXT", "app_label" to "TEXT"),
+        "ai_sessions" to mapOf("title" to "TEXT", "provider" to "TEXT", "model" to "TEXT", "system_prompt" to "TEXT", "data_access" to "INTEGER", "created_ms" to "INTEGER", "updated_ms" to "INTEGER"),
+        "ai_messages" to mapOf(
+            "session_id" to "TEXT", "seq" to "INTEGER", "role" to "TEXT", "content" to "TEXT", "tool_calls" to "TEXT", "tool_call_id" to "TEXT",
+            "tool_name" to "TEXT", "state" to "TEXT", "error" to "TEXT", "created_ms" to "INTEGER",
+        ),
         "focus_sessions" to mapOf("task_id" to "TEXT", "task_title" to "TEXT", "day" to "TEXT", "started_at" to "TEXT", "ended_at" to "TEXT", "minutes" to "INTEGER"),
+        // Lokal saja: pintasan Hari ini yang disematkan.
+        "home_pins" to mapOf("kind" to "TEXT", "target" to "TEXT", "title" to "TEXT", "position" to "REAL", "created_ms" to "INTEGER"),
+        "home_recent" to mapOf("kind" to "TEXT", "target" to "TEXT", "opened_ms" to "INTEGER"),
     )
 
     @Test fun schemaIsValid() = TaskifySchema.schema.validate()
@@ -59,7 +68,7 @@ class TaskifySchemaTest {
     @Test fun uploadErrorsIsLocalOnlyAndVaultTablesTrackOldEnc() {
         assertTrue(TaskifySchema.uploadErrors.options.localOnly)
         assertTrue(TaskifySchema.focusSessions.options.localOnly)
-        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily)
+        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily, TaskifySchema.txSources, TaskifySchema.aiSessions, TaskifySchema.aiMessages, TaskifySchema.homePins, TaskifySchema.homeRecent)
             .forEach { assertTrue(it.options.localOnly, it.name) }
         listOf(TaskifySchema.pwItems, TaskifySchema.pwTotpLog, TaskifySchema.configVersions).forEach {
             assertEquals(listOf("enc"), it.options.trackPreviousValues?.columnFilter, it.name)

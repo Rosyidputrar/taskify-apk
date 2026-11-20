@@ -193,11 +193,57 @@ object TaskifySchema {
         localOnly = true,
     )
 
+    /**
+     * LOCAL-ONLY: asal transaksi yang dicatat dari notifikasi (id = id transaksi). Ikon aplikasi hanya
+     * ada di HP ini, jadi tidak disinkronkan — skema server & webapp tidak berubah.
+     */
+    val txSources = Table(
+        name = "tx_sources",
+        columns = listOf(t("package"), t("app_label")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: sesi chat asisten AI (riwayat pribadi; webapp tidak punya AI → tidak disinkronkan). */
+    val aiSessions = Table(
+        name = "ai_sessions",
+        columns = listOf(t("title"), t("provider"), t("model"), t("system_prompt"), i("data_access"), i("created_ms"), i("updated_ms")),
+        indexes = listOf(idx("ai_sessions_updated", "updated_ms")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: pesan chat AI, urut [seq] dalam satu sesi. */
+    val aiMessages = Table(
+        name = "ai_messages",
+        columns = listOf(
+            t("session_id"), i("seq"), t("role"), t("content"), t("tool_calls"), t("tool_call_id"), t("tool_name"),
+            t("state"), t("error"), i("created_ms"),
+        ),
+        indexes = listOf(idx("ai_messages_session", "session_id", "seq")),
+        localOnly = true,
+    )
+
+    /**
+     * LOCAL-ONLY: pintasan yang disematkan ke Hari ini (id = `jenis:sasaran`). Milik akun di HP ini
+     * — ikut terhapus saat keluar akun (disconnectAndClear); webapp tidak punya fitur ini.
+     */
+    val homePins = Table(
+        name = "home_pins",
+        columns = listOf(t("kind"), t("target"), t("title"), r("position"), i("created_ms")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: kapan isi terakhir DIBUKA di HP ini (id = `jenis:sasaran`) — untuk "Lanjutkan" di Hari ini. */
+    val homeRecent = Table(
+        name = "home_recent",
+        columns = listOf(t("kind"), t("target"), i("opened_ms")),
+        localOnly = true,
+    )
+
     val all: List<Table> = listOf(
         userSettings, tags, taggings, entityLinks, taskLists, tasks, journalEntries, notes, wallets, categories, debts,
         recurringTransactions, transactions, budgets, snippets, codeProjects, attachments, pwKeys, pwItems, pwTotpLog,
         configFiles, configVersions, tempFiles, uploadErrors, focusSessions,
-        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily,
+        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily, txSources, aiSessions, aiMessages, homePins, homeRecent,
     )
 
     val schema = Schema(all)

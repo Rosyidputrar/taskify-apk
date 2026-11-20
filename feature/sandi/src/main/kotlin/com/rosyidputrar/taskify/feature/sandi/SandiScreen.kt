@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
 import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -81,8 +82,11 @@ fun SandiScreen(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: SandiViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `SandiTab`). */
+    initialTab: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { SandiTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
     // Detak 1 dtk dibaca HANYA oleh baris kode 2FA (bukan seluruh layar) → daftar tidak disusun ulang tiap detik.
     val clock = viewModel.clock.collectAsStateWithLifecycle()
     SecureWindow()
@@ -186,6 +190,8 @@ fun SandiContent(
         if (settings) SettingsSheet(state, actions, onDismiss = { settings = false })
         if (history) HistorySheet(state, actions, onDismiss = { history = false })
     }
+    // Di luar `if (unlocked)`: pemilih lokasi bisa kembali saat brankas sudah terkunci otomatis.
+    ExportHost(state, actions)
     if (quick) QuickCheckSheet(state, actions, now, onDismiss = { quick = false })
     state.recoveryToShow?.let { RecoveryKeyDialog(it, state.email, actions) }
 }
@@ -258,11 +264,11 @@ fun ItemRow(item: SandiItem, now: () -> Long, actions: SandiActions, onClick: ()
                 Text(listOf(p.username, displayHost(p.url)).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "—" },
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            // D-09: di tab Brankas kode TOTP TIDAK ditampilkan — hanya ikon salin. Kode hanya
+            // tampil di tab Kode (CodeRow). Sebelumnya kode terlihat polos di daftar brankas.
             val w = p.totp?.let { Totp.window(it, now()) }
             if (w != null) {
-                TextButton(onClick = { actions.copyCode(item, w.code) }) {
-                    Text(spacedCode(w.code), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleSmall)
-                }
+                IconButton(onClick = { actions.copyCode(item, w.code) }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin kode 2FA") }
             } else if (p.password.isNotEmpty()) {
                 IconButton(onClick = { actions.copy("Sandi ${p.title}", p.password) }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin sandi") }
             }

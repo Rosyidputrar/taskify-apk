@@ -17,6 +17,13 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ReminderAndDatesTest {
+    @Test fun parseOrNullReturnsNullForBrokenDates() {
+        assertEquals(java.time.LocalDate.of(2026, 10, 7), Dates.parseOrNull("2026-10-07"))
+        assertNull(Dates.parseOrNull("bukan-tanggal"))
+        assertNull(Dates.parseOrNull("2026-13-45"))
+        assertNull(Dates.parseOrNull(""))
+    }
+
     @Test fun wibConversion() {
         assertEquals("2026-10-07T02:00:00.000Z", Dates.localDateTimeToIso("2026-10-07", "09:00"))
         assertEquals("2026-10-06T17:00:00.000Z", Dates.localDateTimeToIso("2026-10-07"))

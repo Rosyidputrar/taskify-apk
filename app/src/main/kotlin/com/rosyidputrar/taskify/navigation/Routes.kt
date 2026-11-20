@@ -9,10 +9,14 @@ import kotlinx.serialization.Serializable
 @Serializable data object RoomRoute
 @Serializable data object SettingsRoute
 
-/** Tugas; [taskId] membuka detail tugas itu (dari notifikasi, Beranda, dsb.). */
-@Serializable data class TasksRoute(val taskId: String? = null)
+/**
+ * Tugas; [taskId] membuka detail tugas itu (dari notifikasi, Beranda, dsb.). [view] = tampilan awal:
+ * nama `SmartView` (mis. "Overdue") atau "list:<id>" untuk satu daftar (pintasan Hari ini).
+ */
+@Serializable data class TasksRoute(val taskId: String? = null, val view: String? = null)
 
-@Serializable data object JournalRoute
+/** Jurnal; [tab] = nama `JournalTab` awal (pintasan "Insight jurnal"). */
+@Serializable data class JournalRoute(val tab: String? = null)
 
 /**
  * Editor jurnal: [id] = entri yang ada; tanpa id = draf baru di [date] (default hari ini).
@@ -31,12 +35,14 @@ import kotlinx.serialization.Serializable
 /** Editor catatan: [id] = catatan yang ada; tanpa id = catatan baru, ditempel ke [date] bila diisi. */
 @Serializable data class NoteEditRoute(val id: String? = null, val date: String? = null)
 
-@Serializable data object FinanceRoute
+/** Keuangan; [tab] = nama `FinanceTab` awal, [walletId] = langsung disaring ke satu dompet. */
+@Serializable data class FinanceRoute(val tab: String? = null, val walletId: String? = null)
 
 /** Editor transaksi: [id] = transaksi yang ada; tanpa id = baru di [date] / dompet [walletId]. */
 @Serializable data class TransactionRoute(val id: String? = null, val date: String? = null, val walletId: String? = null)
 
-@Serializable data object VaultRoute
+/** Vault; [tab] = nama `VaultTab` awal. */
+@Serializable data class VaultRoute(val tab: String? = null)
 
 /** Editor snippet: [id] null = snippet baru. */
 @Serializable data class SnippetRoute(val id: String? = null)
@@ -52,7 +58,8 @@ import kotlinx.serialization.Serializable
 /** Editor konfigurasi: [fileId] null = berkas baru (opsional tertaut [projectId]); selain itu versi baru. */
 @Serializable data class ConfigEditRoute(val fileId: String? = null, val projectId: String? = null)
 
-@Serializable data object SandiRoute
+/** Sandi; [tab] = nama `SandiTab` awal (dibuka setelah brankas dibuka kuncinya). */
+@Serializable data class SandiRoute(val tab: String? = null)
 
 @Serializable data object FilesRoute
 
@@ -73,6 +80,15 @@ import kotlinx.serialization.Serializable
 /** Modul Kesehatan Digital. */
 @Serializable data object WellbeingRoute
 
+/** Asisten AI: daftar percakapan (layar lebar: daftar + chat berdampingan). */
+@Serializable data object AiRoute
+
+/** Satu percakapan AI; [sessionId] null = chat baru (sesi dibuat saat pesan pertama). */
+@Serializable data class AiChatRoute(val sessionId: String? = null)
+
+/** Pengaturan AI (penyedia, kunci API, model, system prompt). */
+@Serializable data object AiSettingsRoute
+
 @Serializable data class FocusRoute(val taskId: String? = null)
 
 /** Pemutar musik; [link] = link YouTube dari Bagikan yang langsung dibuka. */
@@ -83,7 +99,12 @@ import kotlinx.serialization.Serializable
 
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
-    val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
+    /**
+     * Parse aman (A8): shortcut launcher bertahan melewati update, dan nama modul bisa basi
+     * bila modul diganti nama/dihapus — kembalikan null (pemanggil mengarahkan ke Ruang),
+     * bukan `valueOf` mentah yang melempar dan membuat aplikasi crash.
+     */
+    val module: TaskifyModule? get() = TaskifyModule.entries.firstOrNull { it.name == moduleName }
 }
 
 fun TaskifyModule.route(): Any = when (this) {
@@ -91,11 +112,11 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Calendar -> CalendarRoute()
     TaskifyModule.Settings -> SettingsRoute
     TaskifyModule.Tasks -> TasksRoute()
-    TaskifyModule.Journal -> JournalRoute
+    TaskifyModule.Journal -> JournalRoute()
     TaskifyModule.Notes -> NotesRoute
-    TaskifyModule.Finance -> FinanceRoute
-    TaskifyModule.Vault -> VaultRoute
-    TaskifyModule.Sandi -> SandiRoute
+    TaskifyModule.Finance -> FinanceRoute()
+    TaskifyModule.Vault -> VaultRoute()
+    TaskifyModule.Sandi -> SandiRoute()
     TaskifyModule.Files -> FilesRoute
     TaskifyModule.Review -> ReviewRoute
     TaskifyModule.Tags -> TagsRoute
@@ -104,5 +125,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.TikTok -> TikTokRoute()
     TaskifyModule.Notifications -> NotificationsRoute()
     TaskifyModule.Wellbeing -> WellbeingRoute
+    TaskifyModule.Assistant -> AiRoute
     else -> ModuleRoute(name)
 }

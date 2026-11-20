@@ -1,5 +1,30 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.domain.text.DocExport
+import com.rosyidputrar.taskify.core.domain.text.ShareFormat
+import com.rosyidputrar.taskify.core.ui.share.ShareSheet
+import com.rosyidputrar.taskify.core.ui.share.confirmCopied
+import com.rosyidputrar.taskify.core.ui.share.docShareSections
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.feature.links.LinksSection
@@ -86,8 +111,10 @@ fun NoteEditorScreen(args: NoteEditorArgs, onBack: () -> Unit) {
             override fun restore() = vm.restore()
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
+            override fun share(format: ShareFormat?) = vm.share(format)
+            override fun copyImage() = vm.copyImage()
         },
-        links = { id -> LinksSection(EntityType.Note, id) },
+        links = { id, readOnly -> LinksSection(EntityType.Note, id, readOnly = readOnly) },
     )
 }
 
@@ -102,6 +129,10 @@ interface NoteEditorActions {
     fun restore()
     fun addTag(name: String)
     fun removeTag(tag: TagRef)
+    /** Bagikan catatan: [format] null = kirim sebagai teks. */
+    fun share(format: ShareFormat?) {}
+    /** Salin catatan sebagai gambar. */
+    fun copyImage() {}
 }
 
 @Composable
@@ -111,9 +142,10 @@ fun NoteEditorContent(
     tags: List<TagRef>,
     allTags: List<TagRef>,
     actions: NoteEditorActions,
-    initialPreview: Boolean = false,
+    /** null = otomatis: catatan yang sudah ada & berisi dibuka di mode Baca, catatan baru di Tulis. */
+    initialPreview: Boolean? = null,
     today: String = Dates.today(),
-    links: @Composable (noteId: String) -> Unit = {},
+    links: @Composable (noteId: String, readOnly: Boolean) -> Unit = { _, _ -> },
 ) {
     if (!ui.loaded) {
         LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Notes)
@@ -126,11 +158,23 @@ fun NoteEditorContent(
         }
         return
     }
-    var preview by rememberSaveable { mutableStateOf(initialPreview) }
+    var preview by rememberSaveable { mutableStateOf(initialPreview ?: (ui.id != null && ui.body.text.isNotBlank())) }
     var picking by rememberSaveable { mutableStateOf(false) }
     var menu by rememberSaveable { mutableStateOf(false) }
+    var sharing by rememberSaveable { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val haptics = rememberHaptics()
+    val copy = { text: String, what: String ->
+        clipboard.setText(AnnotatedString(text))
+        haptics.tick()
+        confirmCopied(context, what)
+    }
+    val doc = ui.toShare()
+    val empty = ui.title.isBlank() && ui.body.text.isBlank()
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Notes)
 
+    Box(Modifier.fillMaxSize()) {
     PaperEditor(
         module = TaskifyModule.Notes,
         title = ui.title,
@@ -159,16 +203,37 @@ fun NoteEditorContent(
                     }
                 },
                 actions = {
-                    IconButton(onClick = actions::togglePin) {
-                        Icon(
-                            if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin,
-                            contentDescription = if (ui.pinned) "Lepas sematan" else "Sematkan",
-                            tint = if (ui.pinned) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    IconButton(onClick = { sharing = true }, enabled = !empty) {
+                        Icon(Icons.Outlined.Share, contentDescription = "Bagikan")
                     }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (ui.pinned) "Lepas sematan" else "Sematkan") },
+                                leadingIcon = { Icon(if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (ui.pinned) accent else LocalContentColor.current) },
+                                onClick = { menu = false; actions.togglePin() },
+                            )
+                            TodayPinMenuItem(ShortcutType.Note, ui.id, doc.title ?: "Catatan", onDone = { menu = false })
+                            DropdownMenuItem(
+                                text = { Text("Salin teks") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(DocExport.plainText(doc.title, doc.markdown, doc.meta).trimEnd(), "Teks catatan") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin sebagai Markdown") },
+                                leadingIcon = { Icon(Icons.Outlined.Code, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(DocExport.markdown(doc.title, doc.markdown, doc.meta).trimEnd(), "Markdown") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin sebagai gambar") },
+                                leadingIcon = { Icon(Icons.Outlined.Image, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; haptics.tick(); actions.copyImage() },
+                            )
+                            HorizontalDivider()
                             if (ui.date != null) {
                                 DropdownMenuItem(
                                     text = { Text("Lepas dari tanggal") },
@@ -210,17 +275,38 @@ fun NoteEditorContent(
         },
         afterBody = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Tag", style = MaterialTheme.typography.titleSmall)
+                // Mode Baca tanpa tag: judul "Tag" tidak ditampilkan sendirian (tampak seperti bagian kosong).
+                if (!preview || tags.isNotEmpty()) Text("Tag", style = MaterialTheme.typography.titleSmall)
                 if (ui.id != null) {
-                    TagPicker(tags, allTags, actions::addTag, actions::removeTag)
+                    TagPicker(tags, allTags, actions::addTag, actions::removeTag, enabled = !preview)
                 } else {
                     Text("Tag bisa ditambahkan setelah catatan tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                ui.id?.let { links(it) }
+                ui.id?.let { links(it, preview) }
             }
         },
     )
 
+    // Mode Baca: tombol Ubah selalu terjangkau walau isi sudah digulir jauh.
+    AnimatedVisibility(
+        visible = preview && !ui.trashed,
+        enter = scaleIn(initialScale = 0.8f) + fadeIn(),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(),
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
+    ) {
+        ExtendedFloatingActionButton(
+            onClick = { preview = false },
+            icon = { Icon(Icons.Outlined.Edit, null) },
+            text = { Text("Ubah") },
+            containerColor = TaskifyTheme.modules.tint(TaskifyModule.Notes, MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    }
+
+    if (sharing) {
+        ShareSheet("Bagikan catatan", TaskifyModule.Notes, docShareSections(), onPick = { format -> sharing = false; actions.share(format) }, onDismiss = { sharing = false })
+    }
     if (picking) {
         DatePickerSheet(ui.date, today, onPick = { picked -> actions.date(picked); picking = false }, onDismiss = { picking = false })
     }

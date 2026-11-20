@@ -4,14 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.designsystem.component.Messenger
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
+import com.rosyidputrar.taskify.core.domain.media.AccountInfo
 import com.rosyidputrar.taskify.core.domain.media.ArtistPage
 import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
+import com.rosyidputrar.taskify.core.domain.media.CollectionKind
 import com.rosyidputrar.taskify.core.domain.media.DiscoverySection
 import com.rosyidputrar.taskify.core.domain.media.Lyrics
 import com.rosyidputrar.taskify.core.domain.media.MoodGroup
 import com.rosyidputrar.taskify.core.domain.media.MoodPage
 import com.rosyidputrar.taskify.core.domain.media.MusicCatalog
 import com.rosyidputrar.taskify.core.domain.media.MusicCollection
+import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.MusicSettings
 import com.rosyidputrar.taskify.core.domain.media.RadioSource
@@ -24,8 +27,12 @@ import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.TopResult
 import com.rosyidputrar.taskify.core.domain.media.YtState
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
-import com.rosyidputrar.taskify.core.media.MusicClient
+import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.core.media.MusicPlayer
+import com.rosyidputrar.taskify.core.media.MyTubeMusicClient
+import com.rosyidputrar.taskify.core.media.MyTubeMusicException
+import com.rosyidputrar.taskify.core.media.musicErrorRawDetail
+import com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository
 import com.rosyidputrar.taskify.core.media.PlaybackPosition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -51,6 +58,8 @@ data class MusicSearch(
     val loading: Boolean = false,
     val loadingMore: Boolean = false,
     val error: String? = null,
+    /** Detail mentah error pencarian (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
     val searched: Boolean = false,
     val suggestions: List<Suggestion> = emptyList(),
 ) {
@@ -58,13 +67,15 @@ data class MusicSearch(
 }
 
 /** Lirik lagu yang sedang diputar; [lyrics] `null` + tidak memuat = tidak ada lirik. */
-data class LyricsState(val videoId: String = "", val lyrics: Lyrics? = null, val loading: Boolean = false, val error: String? = null)
+data class LyricsState(val videoId: String = "", val lyrics: Lyrics? = null, val loading: Boolean = false, val error: String? = null, val errorDetail: String? = null)
 
 /** Satu halaman yang dibuka di dalam layar Musik (album, playlist, artis, podcast, mood). */
 data class BrowsePage(
     val target: BrowseTarget,
     val loading: Boolean = true,
     val error: String? = null,
+    /** Detail mentah error halaman (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
     val collection: MusicCollection? = null,
     val artist: ArtistPage? = null,
     val mood: MoodPage? = null,
@@ -84,6 +95,15 @@ data class ExploreState(
     val loading: Boolean = false,
     val loaded: Boolean = false,
     val error: String? = null,
+    /** Detail mentah error Jelajah (jenis + status + pesan, tanpa URL/cookie/token). */
+    val errorDetail: String? = null,
+    /**
+     * C S-1: gagal SEBAGIAN — 1..3 dari 4 seksi jaringan gagal, sisanya
+     * tampil. Beda salinan dengan [error] (gagal TOTAL): sebagian tampil
+     * pemberitahuan ringkas di atas seksi, total tampil blok besar dan
+     * seksi disembunyikan.
+     */
+    val partialError: String? = null,
     val home: List<DiscoverySection> = emptyList(),
     val charts: List<DiscoverySection> = emptyList(),
     val releases: List<DiscoverySection> = emptyList(),
@@ -92,7 +112,6 @@ data class ExploreState(
 )
 
 data class MusicUiState(
-    val configured: Boolean = true,
     val online: Boolean = true,
     val tab: MusicTab = MusicTab.Explore,
     val search: MusicSearch = MusicSearch(),
@@ -105,8 +124,19 @@ data class MusicUiState(
     val sleep: SleepTimer? = null,
     /** Sedang memutar dari link/radio/saran (menunggu server). */
     val busy: String? = null,
+    /** Status login YouTube (PLAN C.7): musik hanya jalan bila LoggedIn. */
+    val login: MusicLoginUiState = MusicLoginUiState.LoggedOut,
+    /** Layar login sedang ditampilkan sebagai overlay (dibuka prompt / tombol Masuk). */
+    val showLogin: Boolean = false,
 ) {
     val page: BrowsePage? get() = pages.lastOrNull()
+}
+
+/** Status login untuk UI musik (PLAN C.7). */
+sealed interface MusicLoginUiState {
+    data object LoggedOut : MusicLoginUiState
+    data class LoggedIn(val account: AccountInfo) : MusicLoginUiState
+    data class Expired(val account: AccountInfo?) : MusicLoginUiState
 }
 
 interface MusicActions {
@@ -118,6 +148,8 @@ interface MusicActions {
     /** Putar lagu ke-[index] dari daftar lagu hasil pencarian. */
     fun play(index: Int) {}
     fun playSongs(songs: List<Song>, index: Int) {}
+    /** Lagu tunggal dari hasil cari/Jelajah: hanya lagu itu + lagu serupa — hasil lain TIDAK masuk antrean. */
+    fun playSong(song: Song) {}
     fun playTop(top: TopResult) {}
     fun togglePlay() {}
     fun next() {}
@@ -142,10 +174,12 @@ interface MusicActions {
     fun setQuality(q: MusicQuality) {}
     fun toggleNormalize() {}
     fun toggleSponsorBlock() {}
-    fun toggleForceMp3() {}
-    fun toggleArchive() {}
+    fun togglePreferMp4a() {}
     fun setSleep(minutes: Int?) {}
     fun sleepEndOfSong() {}
+    fun openLogin() {}
+    fun closeLogin() {}
+    fun logout() {}
 }
 
 /** Status online (petunjuk saja; diisi app dari NetworkMonitor). */
@@ -155,16 +189,20 @@ fun interface OnlineFlow {
 
 class MusicViewModel(
     private val player: MusicPlayer,
-    private val client: MusicClient,
+    private val client: MyTubeMusicClient,
     online: OnlineFlow,
     /** Snackbar aplikasi (sama dengan modul lain); null di tes. */
     private val messenger: Messenger? = null,
+    /** Repo login (PLAN C.7, param ke-5): sumber status login + pemicu kedaluwarsa. */
+    private val loginRepo: MusicLoginRepository,
 ) : ViewModel(), MusicActions {
-    private val local = MutableStateFlow(MusicUiState(configured = player.configured))
+    private val local = MutableStateFlow(MusicUiState())
     private var searchJob: Job? = null
     private var suggestJob: Job? = null
     private var pageJob: Job? = null
     private var lyricsJob: Job? = null
+    /** C S-4: status online terakhir (untuk gagal-cepat di `search()`). */
+    private var isOnline = true
     private val extras = combine(player.settings, player.sleep) { set, sleep -> set to sleep }
 
     val state: StateFlow<MusicUiState> = combine(local, player.state, player.position, online.flow(), extras) { l, p, pos, on, ex ->
@@ -172,6 +210,22 @@ class MusicViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
     init {
+        // C S-4: lacak online di sini (bukan dari `local.value.online` —
+        // nilainya selalu default `true` di `local`; online asli hanya
+        // mengalir lewat `combine` di `state`).
+        launchSafe { online.flow().collect { isOnline = it } }
+        // Status login mengalir ke state UI (PLAN C.7): akun + flag kedaluwarsa
+        // dari repo digabung di sini; player TIDAK mengekspos StateFlow sendiri
+        // (ia memanggil loginEvents.onSessionExpired() langsung ke repo).
+        launchSafe {
+            combine(loginRepo.account, loginRepo.sessionExpired) { account, expired ->
+                when {
+                    expired -> MusicLoginUiState.Expired(account)
+                    account != null -> MusicLoginUiState.LoggedIn(account)
+                    else -> MusicLoginUiState.LoggedOut
+                }
+            }.collect { login -> local.update { it.copy(login = login) } }
+        }
         // Lirik mengikuti lagu yang sedang diputar (dan keterangannya, yang bisa membawa lirik inline).
         launchSafe {
             player.state.map { s -> s.current to s.current?.let { c -> s.details[c.videoId] } }.distinctUntilChanged().collect { (song, details) ->
@@ -181,7 +235,28 @@ class MusicViewModel(
                 loadLyrics(song, details)
             }
         }
-        if (local.value.tab == MusicTab.Explore && player.configured) loadExplore()
+        // Gate (PLAN C.7): init TIDAK BOLEH loadExplore bila belum login —
+        // diam saja (tanpa prompt); prompt hanya untuk aksi UI eksplisit.
+        if (local.value.tab == MusicTab.Explore) loadExploreInternal(force = false, prompt = false)
+    }
+
+    /**
+     * Gate login (PLAN C.7). Keputusan per aksi, ditulis di sini supaya satu tempat:
+     * aksi dari UI yang punya tombol (cari, putar, buka halaman, radio, muat
+     * lagi) → buka prompt login (`showLogin = true`); aksi latar
+     * (loadExplore di init, suggest debounce) → diam saja (tanpa prompt,
+     * tanpa memanggil client/player). Sesi kedaluwarsa (Expired) juga
+     * ter-gate: prompt-nya yang menampilkan baris "Sesi berakhir".
+     */
+    private fun requireLogin(prompt: Boolean): Boolean {
+        if (loginRepo.isLoggedIn && !loginRepo.sessionExpired.value) return true
+        if (prompt) local.update { it.copy(showLogin = true) }
+        return false
+    }
+
+    /** Fasad gagal isAuth (401/403) saat login → sesi dianggap kedaluwarsa (PLAN C.7). */
+    private fun noteAuthFailure(e: Exception) {
+        if ((e as? MyTubeMusicException)?.isAuth == true && loginRepo.isLoggedIn) loginRepo.markSessionExpired()
     }
 
     private fun loadLyrics(song: Song, details: com.rosyidputrar.taskify.core.domain.media.TrackDetails?) {
@@ -194,13 +269,13 @@ class MusicViewModel(
         }
         local.update { it.copy(lyrics = LyricsState(id, loading = true)) }
         lyricsJob = launchSafe {
-            val r = runCatching { client.syncedLyrics(id) }.recoverCatching { e ->
-                val lid = details?.lyricsId.orEmpty()
-                if (lid.isEmpty()) throw e
-                Lyrics(null, client.lyrics(lid), "youtube")
-            }
+            // Repository lirik (LRCLib -> teks MyTube -> transkrip); null =
+            // tidak ada lirik, bukan galat. lyricsId dari Track dipakai untuk
+            // langkah teks MyTube supaya tidak memanggil `next` lagi.
+            val r = runCatching { client.syncedLyrics(song, details?.lyricsId) }
             if (local.value.lyrics.videoId != id) return@launchSafe
-            local.update { it.copy(lyrics = LyricsState(id, r.getOrNull()?.takeIf { l -> !l.empty || l.instrumental }, false, r.exceptionOrNull()?.message)) }
+            val failure = r.exceptionOrNull()
+            local.update { it.copy(lyrics = LyricsState(id, r.getOrNull()?.takeIf { l -> !l.empty || l.instrumental }, false, failure?.message, failure?.let(::musicErrorRawDetail))) }
         }
     }
 
@@ -220,8 +295,20 @@ class MusicViewModel(
         if (text.length < 2 || MusicCatalog.isLink(text)) { local.update { it.copy(search = it.search.copy(suggestions = emptyList())) }; return }
         suggestJob = launchSafe {
             delay(SUGGEST_DEBOUNCE_MS)
-            val list = runCatching { client.suggest(text) }.getOrDefault(emptyList())
-            if (local.value.search.query.trim() == text) local.update { it.copy(search = it.search.copy(suggestions = list.take(8))) }
+            // Gate (aksi latar): saran hanya jalan bila login; bila belum,
+            // diam saja seperti galat jaringan sesaat (tanpa prompt).
+            if (!requireLogin(prompt = false)) return@launchSafe
+            val r = runCatching { client.suggest(text) }
+            if (local.value.search.query.trim() != text) return@launchSafe
+            val e = r.exceptionOrNull()
+            // Galat jaringan/server sesaat: dropdown disembunyikan diam-diam (bukan fitur utama).
+            // Tapi galat auth InnerTube (401/403) saat login ditampilkan DAN
+            // menandai sesi kedaluwarsa — saran hanya jalan bila login, jadi
+            // isAuth di sini berarti sesi yang dulu sah sudah habis.
+            val blockedEx = (e as? MyTubeMusicException)?.takeIf { it.isAuth }
+            val blocked = blockedEx?.message
+            (e as? Exception)?.let(::noteAuthFailure)
+            local.update { it.copy(search = it.search.copy(suggestions = r.getOrDefault(emptyList()).take(8), error = blocked ?: it.search.error, errorDetail = blockedEx?.let(::musicErrorRawDetail) ?: it.search.errorDetail)) }
         }
     }
 
@@ -234,10 +321,18 @@ class MusicViewModel(
         val s = local.value.search
         val q = s.query.trim()
         if (q.isEmpty()) return
+        if (!requireLogin(prompt = true)) return
         suggestJob?.cancel()
         if (MusicCatalog.isLink(q)) { openLink(q); return }
+        // C S-4: gagal-cepat saat offline — tanpa ini `client.search`
+        // menunggu sampai timeout katalog (20 dtk) padahal NetworkMonitor
+        // sudah tahu tidak ada koneksi.
+        if (!isOnline) {
+            local.update { it.copy(tab = MusicTab.Search, search = s.copy(loading = false, error = "Kamu sedang offline. Periksa koneksi lalu coba lagi.", errorDetail = null, suggestions = emptyList())) }
+            return
+        }
         searchJob?.cancel()
-        local.update { it.copy(tab = MusicTab.Search, pages = emptyList(), search = s.copy(loading = true, error = null, suggestions = emptyList())) }
+        local.update { it.copy(tab = MusicTab.Search, pages = emptyList(), search = s.copy(loading = true, error = null, errorDetail = null, suggestions = emptyList())) }
         searchJob = launchSafe {
             try {
                 val results = client.search(q, s.filter)
@@ -245,7 +340,8 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                local.update { it.copy(search = it.search.copy(loading = false, error = e.message, searched = true)) }
+                noteAuthFailure(e)
+                local.update { it.copy(search = it.search.copy(loading = false, error = e.message, errorDetail = musicErrorRawDetail(e), searched = true)) }
             }
         }
     }
@@ -254,7 +350,8 @@ class MusicViewModel(
         val s = local.value.search
         val cursor = s.cursor ?: return
         if (s.loading || s.loadingMore) return
-        local.update { it.copy(search = s.copy(loadingMore = true, error = null)) }
+        if (!requireLogin(prompt = true)) return
+        local.update { it.copy(search = s.copy(loadingMore = true, error = null, errorDetail = null)) }
         launchSafe {
             try {
                 val next = client.searchMore(cursor)
@@ -262,7 +359,8 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                local.update { it.copy(search = it.search.copy(loadingMore = false, error = e.message)) }
+                noteAuthFailure(e)
+                local.update { it.copy(search = it.search.copy(loadingMore = false, error = e.message, errorDetail = musicErrorRawDetail(e))) }
             }
         }
     }
@@ -270,6 +368,7 @@ class MusicViewModel(
     override fun pickSuggestion(s: Suggestion) {
         suggestJob?.cancel()
         local.update { it.copy(search = it.search.copy(suggestions = emptyList())) }
+        if (!requireLogin(prompt = true)) return
         when {
             s.type == "video" && s.videoId.isNotEmpty() -> playVideo(s.videoId)
             s.type == "artist" && s.browseId.isNotEmpty() -> open(BrowseTarget.Artist(s.browseId, s.text))
@@ -279,6 +378,7 @@ class MusicViewModel(
 
     /** Link YouTube/YouTube Music (ditempel atau dibagikan) → lagu, playlist, album, artis, podcast. */
     override fun openLink(url: String) {
+        if (!requireLogin(prompt = true)) return
         val link = MusicCatalog.findLink(url) ?: url.trim()
         local.update { it.copy(busy = "Membuka link…", search = it.search.copy(suggestions = emptyList())) }
         launchSafe {
@@ -289,6 +389,7 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                noteAuthFailure(e)
                 local.update { it.copy(busy = null) }
                 say(e.message ?: "Link tidak dikenali.")
             }
@@ -297,10 +398,20 @@ class MusicViewModel(
 
     // ------------------------------------------------------------------ pemutaran
 
-    override fun play(index: Int) = player.playQueue(local.value.search.results.songs, index)
-    override fun playSongs(songs: List<Song>, index: Int) = player.playQueue(songs, index)
+    override fun play(index: Int) { local.value.search.results.songs.getOrNull(index)?.let(::playSong) }
+    override fun playSongs(songs: List<Song>, index: Int) {
+        if (!requireLogin(prompt = true)) return
+        player.playQueue(songs, index)
+    }
+    override fun playSong(song: Song) {
+        if (!requireLogin(prompt = true)) return
+        player.playSimilar(song)
+    }
     override fun playTop(top: TopResult) {
-        top.toSong()?.let { player.playQueue(listOf(it) + local.value.search.results.songs.filter { s -> s.videoId != it.videoId }, 0); return }
+        if (!requireLogin(prompt = true)) return
+        top.toSong()?.let { song ->
+            playSong(song); return
+        }
         // Hasil teratas bukan lagu: buka artis/album yang cocok di daftar hasil.
         val r = local.value.search.results
         r.artists.firstOrNull { it.name.equals(top.title, true) }?.let { open(BrowseTarget.Artist(it.browseId, it.name)); return }
@@ -309,7 +420,7 @@ class MusicViewModel(
     override fun togglePlay() = player.togglePlay()
     override fun next() = player.next()
     override fun prev() = player.prev()
-    override fun seek(ms: Long) { if (!player.seekTo(ms)) say("Audio dari konverter tidak bisa digeser. Tunggu arsip siap atau ganti ke jalur langsung.") }
+    override fun seek(ms: Long) { if (!player.seekTo(ms)) say("Audio ini tidak bisa digeser.") }
     override fun seekLyric(seconds: Double) { if (local.value.player.seekable) player.seekTo((seconds * 1000).toLong()) }
     override fun jump(position: Int) = player.jump(position)
     override fun toggleRepeat() = player.toggleRepeat()
@@ -319,6 +430,7 @@ class MusicViewModel(
     override fun playStation(station: RadioStation) = player.playStation(station)
 
     private fun playVideo(videoId: String) {
+        if (!requireLogin(prompt = true)) return
         local.update { it.copy(busy = "Menyiapkan lagu…") }
         launchSafe {
             try {
@@ -328,6 +440,7 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                noteAuthFailure(e)
                 say(e.message)
             } finally {
                 local.update { it.copy(busy = null) }
@@ -339,6 +452,7 @@ class MusicViewModel(
     override fun startRadio(song: Song) = radio(song, null, "Menyiapkan radio…")
 
     private fun radio(seed: Song?, playlistId: String?, label: String) {
+        if (!requireLogin(prompt = true)) return
         local.update { it.copy(busy = label) }
         launchSafe {
             try {
@@ -349,6 +463,7 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                noteAuthFailure(e)
                 say(e.message)
             } finally {
                 local.update { it.copy(busy = null) }
@@ -364,6 +479,7 @@ class MusicViewModel(
             is BrowseTarget.Radio -> { radio(null, target.playlistId, "Menyiapkan mix…"); return }
             else -> Unit
         }
+        if (!requireLogin(prompt = true)) return
         if (local.value.page?.target?.key == target.key) return
         local.update { it.copy(pages = (it.pages + BrowsePage(target)).takeLast(MAX_PAGES)) }
         loadPage(target)
@@ -380,6 +496,7 @@ class MusicViewModel(
         local.update { s -> s.copy(pages = s.pages.map { if (it.target.key == target.key) f(it) else it }) }
 
     private fun loadPage(target: BrowseTarget) {
+        if (!requireLogin(prompt = true)) return
         pageJob?.cancel()
         pageJob = launchSafe {
             try {
@@ -395,7 +512,8 @@ class MusicViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updatePage(target) { it.copy(loading = false, error = e.message ?: "Gagal memuat.") }
+                noteAuthFailure(e)
+                updatePage(target) { it.copy(loading = false, error = e.message ?: "Gagal memuat.", errorDetail = musicErrorRawDetail(e)) }
             }
         }
     }
@@ -405,14 +523,19 @@ class MusicViewModel(
         val c = p.collection ?: return
         val cursor = c.cursor ?: return
         if (p.loadingMore) return
+        if (!requireLogin(prompt = true)) return
         updatePage(p.target) { it.copy(loadingMore = true) }
         launchSafe {
             try {
-                val next = client.collectionMore(c.kind, cursor, c.id)
+                // Podcast: judul acara halaman pertama diteruskan — respons
+                // lanjutan tidak mengulang judul itu (gap Tahap 6).
+                val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                val next = client.collectionMore(c.kind, cursor, c.id, showTitle)
                 updatePage(p.target) { it.copy(loadingMore = false, collection = it.collection?.merge(next)) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                noteAuthFailure(e)
                 updatePage(p.target) { it.copy(loadingMore = false) }
                 say(e.message)
             }
@@ -420,11 +543,13 @@ class MusicViewModel(
     }
 
     /**
-     * Putar seluruh koleksi. Playlist panjang: halaman lanjutan (≤ 100 per halaman) diambil dulu
-     * sampai habis supaya antrean tidak berhenti di lagu ke-100 tanpa terlihat.
+     * Putar seluruh koleksi. Playlist panjang: lagu pertama berbunyi dari
+     * halaman pertama SEKARANG, halaman lanjutan disambung di latar (C S-9)
+     * — dulu semua halaman (≤ 9) diambil dulu sebelum lagu pertama berbunyi.
      */
     override fun playPage(shuffle: Boolean) {
         val p = local.value.page ?: return
+        if (!requireLogin(prompt = true)) return
         p.artist?.let { a ->
             val pid = a.topSongsPlaylistId
             if (pid != null) { open(BrowseTarget.Playlist(pid, "Lagu teratas ${a.name}")); return }
@@ -433,20 +558,57 @@ class MusicViewModel(
         }
         val c = p.collection ?: return
         if (c.cursor == null) { startQueue(c.tracks, shuffle); return }
+        // Halaman pertama kosong: jalur lama (ambil semua dulu) supaya
+        // antrean tidak mulai kosong.
+        if (c.tracks.isEmpty()) { fetchAllThenStart(c, p, shuffle); return }
+        startQueue(c.tracks, shuffle)
+        val firstId = c.tracks.first().videoId
+        local.update { it.copy(busy = "Mengambil lagu… halaman 2") }
+        launchSafe {
+            var all = c
+            try {
+                var pages = 1
+                while (all.cursor != null && pages < MAX_COLLECTION_PAGES) {
+                    // Podcast: judul acara halaman pertama diteruskan (gap Tahap 6, sama seperti loadMorePage).
+                    val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                    val next = client.collectionMore(c.kind, all.cursor!!, c.id, showTitle)
+                    all = all.merge(next)
+                    pages++
+                    // Berhenti menyambung bila antrean sudah bukan koleksi
+                    // ini (pengguna memutar hal lain / stop).
+                    if (player.state.value.queue.firstOrNull()?.videoId != firstId) break
+                    if (next.tracks.isNotEmpty()) player.dispatch(YtEvent.ContinueQueue("playPage:${c.id}", next.tracks))
+                    local.update { it.copy(busy = if (all.cursor != null) "Mengambil lagu… halaman ${pages + 1}" else null) }
+                }
+                updatePage(p.target) { it.copy(collection = all) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                noteAuthFailure(e)
+                // Sebagian halaman sudah cukup untuk mulai (lagu sudah berbunyi).
+            } finally {
+                local.update { it.copy(busy = null) }
+            }
+        }
+    }
+
+    /** Jalur lama playPage untuk halaman pertama yang kosong: ambil semua, baru putar. */
+    private fun fetchAllThenStart(c: MusicCollection, p: BrowsePage, shuffle: Boolean) {
         local.update { it.copy(busy = "Mengambil semua lagu…") }
         launchSafe {
             var all = c
             try {
                 var pages = 0
                 while (all.cursor != null && pages < MAX_COLLECTION_PAGES) {
-                    all = all.merge(client.collectionMore(c.kind, all.cursor!!, c.id))
+                    val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                    all = all.merge(client.collectionMore(c.kind, all.cursor!!, c.id, showTitle))
                     pages++
                 }
                 updatePage(p.target) { it.copy(collection = all) }
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
-                // Sebagian halaman sudah cukup untuk mulai.
+            } catch (e: Exception) {
+                noteAuthFailure(e)
             } finally {
                 local.update { it.copy(busy = null) }
             }
@@ -462,10 +624,17 @@ class MusicViewModel(
 
     // ------------------------------------------------------------------ jelajah
 
-    override fun loadExplore(force: Boolean) {
+    /**
+     * Muat Jelajah (aksi UI: pindah tab / tarik muat ulang). Dari init, pakai
+     * [loadExploreInternal] dengan `prompt = false` supaya belum-login diam saja.
+     */
+    override fun loadExplore(force: Boolean) = loadExploreInternal(force, prompt = true)
+
+    private fun loadExploreInternal(force: Boolean, prompt: Boolean) {
+        if (!requireLogin(prompt = prompt)) return
         val e = local.value.explore
         if (e.loading || (e.loaded && !force && e.error == null)) return
-        local.update { it.copy(explore = it.explore.copy(loading = true, error = null)) }
+        local.update { it.copy(explore = it.explore.copy(loading = true, error = null, errorDetail = null, partialError = null)) }
         launchSafe {
             coroutineScope {
                 val home = async { runCatching { client.home() } }
@@ -475,19 +644,47 @@ class MusicViewModel(
                 val stations = async { runCatching { client.stations() } }
                 val all = listOf(home.await(), charts.await(), releases.await(), moods.await())
                 val firstError = all.firstNotNullOfOrNull { it.exceptionOrNull() }
+                (firstError as? Exception)?.let(::noteAuthFailure)
+                // C S-1: bedakan gagal total (4/4) vs gagal sebagian (1..3) —
+                // sebagian tetap menampilkan seksi yang berhasil + pemberitahuan
+                // ringkas, bukan blok error besar di atas konten.
+                val failedCount = all.count { it.isFailure }
                 local.update {
                     it.copy(explore = ExploreState(
                         loading = false, loaded = true,
-                        error = if (all.all { r -> r.isFailure }) firstError?.message ?: "Gagal memuat Jelajah." else null,
+                        error = if (failedCount == 4) firstError?.message ?: "Gagal memuat Jelajah." else null,
+                        errorDetail = if (failedCount == 4) firstError?.let(::musicErrorRawDetail) else null,
+                        partialError = if (failedCount in 1..3) "Sebagian Jelajah gagal dimuat. Coba lagi untuk memuat bagian yang hilang." else null,
                         home = home.await().getOrDefault(emptyList()),
                         charts = charts.await().getOrDefault(emptyList()),
                         releases = releases.await().getOrDefault(emptyList()),
                         moods = moods.await().getOrDefault(emptyList()),
-                        stations = stations.await().getOrDefault(com.rosyidputrar.taskify.core.media.RadioStations.FALLBACK),
+                        stations = stations.await().getOrDefault(LocalRadioStations.FALLBACK),
                     ))
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------ login
+
+    override fun openLogin() {
+        local.update { it.copy(showLogin = true) }
+    }
+
+    override fun closeLogin() {
+        local.update { it.copy(showLogin = false) }
+        // Setelah login sukses (layar login menutup), muat ulang Explore bila
+        // tab Explore — supaya konten yang tadinya ter-gate langsung tampil.
+        if (loginRepo.isLoggedIn && !loginRepo.sessionExpired.value && local.value.tab == MusicTab.Explore) loadExplore(force = true)
+    }
+
+    override fun logout() {
+        // player.stop() dulu: menghentikan + persist antrean kosong, BARU repo
+        // dibersihkan — urutan ini yang menjamin antrean tidak kembali.
+        player.stop()
+        loginRepo.logout()
+        local.update { it.copy(showLogin = false) }
     }
 
     // ------------------------------------------------------------------ pengaturan
@@ -495,8 +692,7 @@ class MusicViewModel(
     override fun setQuality(q: MusicQuality) = player.updateSettings { it.copy(quality = q) }
     override fun toggleNormalize() = player.updateSettings { it.copy(normalize = !it.normalize) }
     override fun toggleSponsorBlock() = player.updateSettings { it.copy(sponsorBlock = !it.sponsorBlock) }
-    override fun toggleForceMp3() = player.updateSettings { it.copy(forceMp3 = !it.forceMp3) }
-    override fun toggleArchive() = player.updateSettings { it.copy(archive = !it.archive) }
+    override fun togglePreferMp4a() = player.updateSettings { it.copy(preferMp4a = !it.preferMp4a) }
     override fun setSleep(minutes: Int?) = player.setSleep(minutes)
     override fun sleepEndOfSong() = player.setSleep(null, endOfSong = true)
 

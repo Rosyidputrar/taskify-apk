@@ -7,5 +7,5 @@ import org.koin.dsl.module
 val journalFeatureModule = module {
     viewModel { JournalViewModel(get(), get()) }
     // "appScope" = scope aplikasi (didefinisikan di modul app) agar simpan terakhir tetap selesai.
-    viewModel { params -> JournalEditorViewModel(params.get(), get(), get(), get(), get(named("appScope"))) }
+    viewModel { params -> JournalEditorViewModel(params.get(), get(), get(), get(), get(named("appScope")), get()) }
 }

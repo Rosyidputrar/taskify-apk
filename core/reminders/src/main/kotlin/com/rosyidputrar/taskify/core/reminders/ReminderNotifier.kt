@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify.core.reminders
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -36,6 +37,10 @@ class ReminderNotifier(private val context: Context, private val prefs: Reminder
         return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
+    // False positive lint: izin POST_NOTIFICATIONS SUDAH dicek di canPost()
+    // (baris pertama metode ini) — lint tidak mengenali guard itu karena
+    // notify() berada di dalam runCatching. Sama seperti DraftAlerts.
+    @SuppressLint("MissingPermission")
     fun show(task: Task) {
         if (!canPost()) return
         ensureChannel()

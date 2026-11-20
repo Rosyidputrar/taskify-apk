@@ -62,6 +62,86 @@ sleep 3
 "$ADB" shell am start -W -n "$PKG/com.rosyidputrar.taskify.MainActivity" > /dev/null || fail "kembali dari latar"
 settle 4 "kembali dari latar"
 
+# Ketuk simpul UI yang teks / content-desc-nya sama dengan $1 (uiautomator dump + python3).
+# Dipakai untuk membuka layar lewat dok/daftar, tanpa koordinat hardcode.
+tap_text() {
+  local want="$1" what="$2"
+  "$ADB" shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || fail "uiautomator dump gagal ($what)"
+  "$ADB" pull /sdcard/ui.xml "$OUT/ui.xml" > /dev/null 2>&1 || fail "ambil dump UI gagal ($what)"
+  local xy
+  xy=$(python3 - "$OUT/ui.xml" "$want" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+want = sys.argv[2]
+root = ET.parse(sys.argv[1]).getroot()
+parent = {c: p for p in root.iter() for c in p}
+for node in root.iter("node"):
+    if node.get("text") == want or node.get("content-desc") == want:
+        # Naik sampai simpul yang bisa diketuk (label dok/baris daftar sendiri tidak klikabel).
+        n = node
+        while n is not None and n.get("clickable") != "true":
+            n = parent.get(n)
+        if n is None:
+            continue
+        m = re.findall(r"\d+", n.get("bounds", ""))
+        if len(m) == 4:
+            print((int(m[0]) + int(m[2])) // 2, (int(m[1]) + int(m[3])) // 2)
+            break
+PY
+)
+  [ -n "$xy" ] || fail "\"$want\" tidak ditemukan di layar ($what)"
+  "$ADB" shell input tap $xy > /dev/null || fail "ketuk \"$want\" ($what)"
+}
+
+# Layar Asisten AI (R8): Ruang → Asisten AI. Instalasi baru belum punya percakapan, jadi
+# yang dibuktikan di sini: layar daftar Asisten AI terbuka tanpa crash di APK R8
+# (aturan keep markdown/highlights ikut teruji lewat pembukaan layar). Render satu jawaban
+# markdown panjang di R8 masih butuh percakapan berisi — dicatat di status area E.
+#
+# APK uji asap dibangun TANPA secret (alamat server kosong) → aplikasi berhenti di layar
+# "Server belum diatur" (atau layar Masuk bila server diisi tapi belum masuk akun), dan dok
+# (Ruang) belum ada. Langkah ini hanya jalan bila shell tampil; di dua layar gerbang itu
+# dilewati dengan catatan (bukan lulus palsu: layar lain yang tak dikenal tetap GAGAL).
+screen_has() {
+  "$ADB" shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || fail "uiautomator dump gagal (cek layar)"
+  "$ADB" pull /sdcard/ui.xml "$OUT/ui.xml" > /dev/null 2>&1 || fail "ambil dump UI gagal (cek layar)"
+  python3 - "$OUT/ui.xml" "$@" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+nodes = list(root.iter("node"))
+texts = [t for n in nodes for t in (n.get("text") or "", n.get("content-desc") or "") if t]
+mode = sys.argv[2]
+if mode == "shell":
+    ok = "Ruang" in texts
+elif mode == "config":
+    ok = "Server belum diatur" in texts
+else:
+    # Layar Masuk: label kolom Compose bisa tergabung ke EditText & tombol "Masuk" bisa di luar
+    # layar kecil — cukup salah satu penanda yang pasti ada di layar itu.
+    ok = any(t == "Masuk" or t.startswith("Masuk untuk menyinkronkan") or t in ("Tampilkan password", "Sembunyikan password") for t in texts) \
+        or any(n.get("password") == "true" for n in nodes)
+if not ok:
+    print("teks terlihat: " + " | ".join(texts[:40]), file=sys.stderr)
+sys.exit(0 if ok else 1)
+PY
+}
+if screen_has shell 2>/dev/null; then
+  tap_text "Ruang" "buka Ruang"
+  settle 4 "Ruang"
+  tap_text "Asisten AI" "buka Asisten AI"
+  settle 5 "layar Asisten AI"
+  "$ADB" exec-out screencap -p > "$OUT/ai.png" 2>/dev/null || true
+  echo "ok: layar Asisten AI terbuka"
+elif screen_has config 2>/dev/null; then
+  "$ADB" exec-out screencap -p > "$OUT/config-missing.png" 2>/dev/null || true
+  echo "lewati: layar Asisten AI butuh server & akun — APK uji tanpa secret (layar \"Server belum diatur\" tampil tanpa crash)"
+elif screen_has login; then
+  "$ADB" exec-out screencap -p > "$OUT/login.png" 2>/dev/null || true
+  echo "lewati: layar Asisten AI butuh akun — APK uji belum masuk (layar Masuk tampil tanpa crash)"
+else
+  "$ADB" exec-out screencap -p > "$OUT/unknown.png" 2>/dev/null || true
+  fail "layar tak dikenal: bukan shell (Ruang) dan bukan layar Masuk"
+fi
+
 # Putar layar (Activity dibuat ulang).
 "$ADB" shell settings put system accelerometer_rotation 0 > /dev/null 2>&1 || true
 "$ADB" shell settings put system user_rotation 1 > /dev/null 2>&1 || true

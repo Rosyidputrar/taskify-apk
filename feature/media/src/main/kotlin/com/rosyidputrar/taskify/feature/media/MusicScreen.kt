@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.spring
@@ -51,6 +53,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
@@ -112,7 +116,6 @@ import com.rosyidputrar.taskify.core.domain.media.RepeatMode
 import com.rosyidputrar.taskify.core.domain.media.SearchFilter
 import com.rosyidputrar.taskify.core.domain.media.SleepTimer
 import com.rosyidputrar.taskify.core.domain.media.Song
-import com.rosyidputrar.taskify.core.domain.media.StreamSource
 import com.rosyidputrar.taskify.core.domain.media.Suggestion
 import com.rosyidputrar.taskify.core.domain.media.YtStatus
 import org.koin.compose.viewmodel.koinViewModel
@@ -144,8 +147,8 @@ private data class MusicFrame(val page: BrowsePage?, val depth: Int)
  * paralaks 1/3), supaya membuka album/artis terasa sama dengan membuka layar lain.
  */
 private object MusicMotion {
-    val offset = spring(dampingRatio = 0.95f, stiffness = 420f, visibilityThreshold = IntOffset(1, 1))
-    val float = spring<Float>(dampingRatio = 1f, stiffness = 420f)
+    val offset get() = TaskifyMotion.screenOffset
+    val float get() = TaskifyMotion.screenFloat
 }
 
 @Composable
@@ -159,6 +162,12 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
     val listStates = remember { mutableMapOf<String, LazyListState>() }
     val stackKeys = state.pages.map { it.target.key }
     LaunchedEffect(stackKeys) { listStates.keys.retainAll(stackKeys.toSet() + ROOT_KEY) }
+    // Layar login full-screen: menutup seluruh konten Musik; kembali atau
+    // sukses → actions.closeLogin() (kontrak PLAN C.9).
+    if (state.showLogin) {
+        MusicLoginScreen(onBack = actions::closeLogin, onLoginComplete = actions::closeLogin)
+        return
+    }
     AnimatedContent(
         targetState = MusicFrame(state.page, state.pages.size),
         contentKey = { it.page?.target?.key ?: ROOT_KEY },
@@ -177,7 +186,27 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
     ) { frame ->
         val page = frame.page
         val listState = listStates.getOrPut(page?.target?.key ?: ROOT_KEY) { LazyListState() }
-        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), state = listState, contentPadding = contentPadding) {
+        // Dok mengambang menutupi pemutar (bug HP 17 Nov 2026): baris bawah
+        // kartu pemutar ("Hentikan & kosongkan antrean") tergambar setengah
+        // di bawah dok — dok mencegat sentuhan, dan scroll-to tidak
+        // menggesernya karena scroller menganggap baris itu sudah terlihat
+        // (viewport daftar memanjang sampai bawah layar, ke bawah dok).
+        // Karena itu, saat pemutar aktif, padding bawah konten dipakai
+        // sebagai padding VIEWPORT (daftar diukur lebih pendek, berakhir di
+        // atas dok), bukan sebagai padding gulir di akhir daftar: tidak ada
+        // konten yang tergambar di bawah dok, dan baris mana pun bisa
+        // digulir sampai sepenuhnya di atas dok. Tanpa pemutar aktif,
+        // perilaku lama persis (golden tanpa pemutar tak berubah).
+        // Diukur dari `contentPadding` supaya layar kecil/ponsel lain ikut
+        // dapat ruang yang sama seperti yang dicadangkan shell untuk dok.
+        val playerActive = state.player.status != YtStatus.Idle
+        val dockClearance = if (playerActive) contentPadding.calculateBottomPadding() else 0.dp
+        val listPadding = if (playerActive) {
+            // Semua pemanggil (shell + tes) hanya mengisi atas/bawah
+            // contentPadding; kiri/kanan selalu 0 — jadi cukup salin atas.
+            PaddingValues(top = contentPadding.calculateTopPadding(), bottom = 0.dp)
+        } else contentPadding
+        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(bottom = dockClearance), state = listState, contentPadding = listPadding) {
             item(key = "header") {
                 ModuleHeader(
                     // Judul koleksi tampil besar di kepala halaman; header cukup menyebut jenisnya.
@@ -187,12 +216,8 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
                         page != null -> { { backButton { actions.back() } } }
                         else -> onBack?.let { { backButton(it) } }
                     },
-                    actions = { if (state.configured) IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
+                    actions = { IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan musik") } },
                 )
-            }
-            if (!state.configured) {
-                item(key = "off") { EmptyState(TaskifyModule.Music, "Pemutar musik belum diatur", "Isi MUSIC_API_URL saat build (GitHub Secrets) untuk mengaktifkan pemutar.") }
-                return@LazyColumn
             }
             state.busy?.let { label ->
                 item(key = "busy") {
@@ -201,6 +226,13 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
                         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
+            }
+            // Gate login (kontrak PLAN C.9): belum login / sesi berakhir →
+            // SELURUH konten tab diganti prompt; header tetap, tab disembunyikan.
+            val login = state.login
+            if (login is MusicLoginUiState.LoggedOut || login is MusicLoginUiState.Expired) {
+                item(key = "login-prompt") { LoginPrompt(login, actions) }
+                return@LazyColumn
             }
             if (page != null) {
                 if (state.player.status != YtStatus.Idle) item(key = "page-mini") { MiniPlayerBar(state, actions, onOpen = actions::back, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
@@ -222,6 +254,31 @@ fun MusicContent(state: MusicUiState, actions: MusicActions, contentPadding: Pad
         }
     }
     if (settingsOpen) MusicSettingsSheet(state, actions) { settingsOpen = false }
+}
+
+/** Prompt gate login (kontrak PLAN C.9): mengganti seluruh konten tab. */
+@Composable
+private fun LoginPrompt(login: MusicLoginUiState, actions: MusicActions) {
+    val accent = TaskifyTheme.modules.accent(TaskifyModule.Music)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (login is MusicLoginUiState.Expired) {
+            Text(
+                "Sesi login YouTube berakhir. Masuk lagi.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Text("Masuk untuk memakai musik", style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily))
+        Text(
+            "Musik memakai akun YouTube Music kamu. Masuk dengan Google di dalam aplikasi; kata sandi tidak pernah dilihat atau disimpan Taskify.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = actions::openLogin,
+            colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = TaskifyTheme.modules.onAccent(TaskifyModule.Music)),
+        ) { Text("Masuk dengan Google") }
+    }
 }
 
 private const val ROOT_KEY = "root"
@@ -246,6 +303,13 @@ private fun NowPlaying(state: MusicUiState, actions: MusicActions, modifier: Mod
             Text(song.title, style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily), textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(MusicQueue.barStatus(p, state.online), style = MaterialTheme.typography.bodyMedium, color = if (p.status == YtStatus.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center)
+            // Error pemutar: detail mentah di bawah pesan ramah (perintah
+            // sir: error apa pun tampil teks mentah + bisa disalin di debug).
+            if (p.status == YtStatus.Error) {
+                p.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
             when {
                 p.status == YtStatus.Preparing -> LinearProgressIndicator(progress = { p.percent / 100f }, modifier = Modifier.fillMaxWidth())
                 song.live -> Text("Siaran langsung — tidak bisa digeser", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -294,10 +358,7 @@ private fun SeekBar(state: MusicUiState, actions: MusicActions) {
         // Durasi tidak diketahui (null) → tanpa total, bukan "0:00".
         if (dur > 0) Text(MusicQueue.formatClock(dur / 1000), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
     }
-    if (!p.seekable && p.currentStream?.source == StreamSource.SOURCE_CONVERTER) {
-        Text("Audio dari konverter tidak bisa digeser" + if (state.settings.archive) " — menunggu arsip…" else "",
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    // Audio direct selalu bisa digeser; siaran langsung tidak (Slider sudah nonaktif + berlabel).
 }
 
 @Composable
@@ -329,11 +390,17 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
                 keyboardActions = KeyboardActions(onSearch = { actions.search() }), modifier = Modifier.fillMaxWidth(),
             )
             if (s.suggestions.isNotEmpty()) Suggestions(s.suggestions, actions)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val filterScroll = rememberScrollState()
+            Row(Modifier.fadingEdges(filterScroll).horizontalScroll(filterScroll), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SearchFilter.entries.forEach { f -> FilterChip(s.filter == f, { actions.setFilter(f) }, label = { Text(f.label) }) }
             }
             if (!state.online) Text("Tidak ada koneksi — pencarian & pemutaran butuh internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
             s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            // Gagal cari / muat lagi: detail mentah di bawah pesan ramah
+            // (perintah sir) — komponen bersama, bisa disalin di debug.
+            s.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+            }
         }
     }
     if (s.loading) { item(key = "s-skeleton") { ListSkeleton(TaskifyModule.Music, rows = 5, label = "Mencari…") }; return }
@@ -356,8 +423,8 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
     if (r.podcasts.isNotEmpty()) cardRow("podcasts", if (all) "Podcast" else null, r.podcasts.map { p -> CardItem(p.browseId, p.title, p.author, p.cover) { actions.open(BrowseTarget.Podcast(p.browseId, p.title)) } }, grid = !all)
     if (r.episodes.isNotEmpty()) {
         if (all) item(key = "h-episodes") { SectionTitle("Episode") }
-        itemsIndexed(r.episodes, key = { _, e -> "e-" + e.videoId }) { i, e ->
-            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSongs(r.episodes, i) }, modifier = Modifier.animateItem())
+        itemsIndexed(r.episodes, key = { _, e -> "e-" + e.videoId }) { _, e ->
+            SongRow(e, playing = state.player.current?.videoId == e.videoId, onClick = { actions.playSong(e) }, modifier = Modifier.animateItem())
         }
     }
     if (s.cursor != null) item(key = "more") {
@@ -437,7 +504,15 @@ private fun Lyrics(state: MusicUiState, actions: MusicActions) {
             song == null -> EmptyState(TaskifyModule.Music, "Belum ada lagu", "Lirik muncul di sini saat lagu diputar.")
             song.live -> Text("Siaran radio langsung tidak punya lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             l.loading -> ListSkeleton(TaskifyModule.Music, rows = 5, lines = 1, label = "Memuat lirik…")
-            l.error != null -> Text(l.error, color = MaterialTheme.colorScheme.error)
+            l.error != null -> Column {
+                Text(l.error, color = MaterialTheme.colorScheme.error)
+                // Gagal muat lirik yang ditampilkan sebagai error: detail
+                // mentah di bawah pesan (komponen bersama, bisa disalin).
+                l.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                    Spacer(Modifier.height(8.dp))
+                    RawErrorDetail(detail, modifier = Modifier.fillMaxWidth())
+                }
+            }
             l.lyrics?.instrumental == true -> Text("Lagu instrumental — tanpa lirik.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             l.lyrics?.hasSynced == true -> SyncedLyrics(state, actions)
             l.lyrics?.plain.isNullOrBlank() -> Text("Lagu ini tidak punya lirik (atau belum tersedia).", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -492,8 +567,12 @@ private fun SyncedLyrics(state: MusicUiState, actions: MusicActions) {
 fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val vm: MusicViewModel = koinViewModel(key = "mini-player")
     val state by vm.state.collectAsStateWithLifecycle()
-    if (state.player.status == YtStatus.Idle) return
-    MiniPlayerBar(state, vm, onOpen, modifier)
+    // Simpan keadaan terakhir yang aktif: saat musik dihentikan, bilah tetap berisi lagu terakhir
+    // selama animasi turunnya (bukan kosong mendadak).
+    var last by remember { mutableStateOf<MusicUiState?>(null) }
+    if (state.player.status != YtStatus.Idle) last = state
+    val shown = last ?: return
+    MiniPlayerBar(shown, vm, onOpen, modifier)
 }
 
 @Composable
@@ -528,6 +607,7 @@ private class HapticMusicActions(private val a: MusicActions, private val h: Tas
     override fun setFilter(f: SearchFilter) { h.tick(); a.setFilter(f) }
     override fun play(index: Int) { h.tap(); a.play(index) }
     override fun playSongs(songs: List<Song>, index: Int) { h.tap(); a.playSongs(songs, index) }
+    override fun playSong(song: Song) { h.tap(); a.playSong(song) }
     override fun playPage(shuffle: Boolean) { h.tap(); a.playPage(shuffle) }
     override fun playStation(station: com.rosyidputrar.taskify.core.domain.media.RadioStation) { h.tap(); a.playStation(station) }
     override fun togglePlay() { h.tap(); a.togglePlay() }

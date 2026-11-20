@@ -69,18 +69,27 @@ object SponsorBlock {
 }
 
 object Loudness {
-    /** Target kekerasan relatif YouTube (0 dB); lagu yang lebih keras dilirihkan, tidak pernah dikeraskan. */
-    fun gain(loudnessDb: Double?): Float {
-        if (loudnessDb == null || loudnessDb.isNaN()) return 1f
-        return 10.0.pow(-loudnessDb / 20.0).coerceIn(0.1, 1.0).toFloat()
+    /**
+     * Faktor gain normalisasi (Tahap 8, C2-26 — ArchiveTune
+     * `calculateAudioNormalizationFactor`): `perceptualLoudnessDb` dulu
+     * (persepsi manusia), jatuh ke `loudnessDb`; faktor
+     * `10^(-db/20)`, dijaga 0,25–1,414 (boleh mengeraskan sampai +3 dB,
+     * tidak lebih — bukan tanpa batas). Tanpa data loudness → 1.
+     */
+    fun gain(loudnessDb: Double?, perceptualLoudnessDb: Double? = null): Float {
+        val db = perceptualLoudnessDb ?: loudnessDb
+        if (db == null || db.isNaN()) return 1f
+        return 10.0.pow(-db / 20.0).coerceIn(0.25, 1.414).toFloat()
     }
 }
 
-/** Kualitas jalur direct (`quality`); konverter mengabaikannya. */
+/** Kualitas jalur direct (`quality`) — dipetakan ke `pickAudioFormat`. */
 enum class MusicQuality(val value: String, val label: String, val hint: String) {
     Auto("auto", "Otomatis", "Opus terbaik (~170 kbps)"),
     High("high", "Hemat", "Opus tengah (~68 kbps)"),
-    Low("low", "Paling hemat", "Bitrate terendah (~32 kbps)");
+    Low("low", "Paling hemat", "Bitrate terendah (~32 kbps)"),
+    /** Tier tertinggi (Tahap 8, C2-23 — ArchiveTune `AudioQuality.HIGHEST`): bitrate tertinggi apa pun codec-nya (~320 kbps). */
+    Highest("highest", "Tertinggi", "Kualitas tertinggi (~320 kbps)");
 
     companion object {
         fun of(value: String?): MusicQuality = entries.firstOrNull { it.value == value } ?: Auto
@@ -93,10 +102,13 @@ data class MusicSettings(
     val normalize: Boolean = true,
     /** Lompati segmen SponsorBlock (hanya bila audio bisa di-seek). */
     val sponsorBlock: Boolean = true,
-    /** Selalu lewat konverter MP3 (untuk perangkat yang gagal memutar opus/webm). */
-    val forceMp3: Boolean = false,
-    /** Arsipkan hasil konverter ke R2 supaya bisa di-seek & diputar ulang tanpa konversi. */
-    val archive: Boolean = true,
+    /**
+     * Utamakan MP4A (itag 140) daripada opus — pengganti `forceMp3` (Tahap 7):
+     * untuk perangkat yang gagal memutar opus/webm. Bukan larangan opus:
+     * bila tidak ada format mp4a sama sekali, pemilihan kembali ke aturan
+     * biasa (opus tertinggi). Lihat `pickAudioFormat`.
+     */
+    val preferMp4a: Boolean = false,
 )
 
 /** Pewaktu tidur: berhenti pada [endsAt] (epoch ms) atau di akhir lagu ini. */

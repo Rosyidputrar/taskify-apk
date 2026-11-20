@@ -77,48 +77,52 @@ import java.io.File
  * antrean dan tetap jalan offline/latar; status & progres tampil per file.
  */
 @Composable
-fun AttachmentsSection(type: EntityType, entityId: String, modifier: Modifier = Modifier, label: String = attachmentLabel(type)) {
+fun AttachmentsSection(type: EntityType, entityId: String, modifier: Modifier = Modifier, label: String = attachmentLabel(type), readOnly: Boolean = false) {
     val vm: AttachmentsViewModel = koinViewModel(key = "att-${type.value}-$entityId") { parametersOf(type, entityId) }
     val items by vm.items.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    AttachmentsContent(items, busy, vm, modifier, label)
+    AttachmentsContent(items, busy, vm, modifier, label, readOnly = readOnly)
 }
 
 @Composable
-fun AttachmentsContent(items: List<Attachment>, busy: String?, actions: AttachmentActions, modifier: Modifier = Modifier, label: String = "Lampiran", localFile: (Attachment) -> File? = { null }) {
+fun AttachmentsContent(items: List<Attachment>, busy: String?, actions: AttachmentActions, modifier: Modifier = Modifier, label: String = "Lampiran", localFile: (Attachment) -> File? = { null }, readOnly: Boolean = false) {
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(5)) { uris -> if (uris.isNotEmpty()) actions.add(uris) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> if (uris.isNotEmpty()) actions.add(uris) }
+    // Mode Baca tanpa lampiran: sembunyikan bagian kosong (hanya judul tanpa isi).
+    if (readOnly && items.isEmpty() && busy == null) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             if (items.isNotEmpty()) Text("${items.size} file", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        items.forEach { att -> AttachmentRow(att, actions, localFile(att)) }
+        items.forEach { att -> AttachmentRow(att, actions, localFile(att), readOnly) }
         busy?.let {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LoadingRow(it)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(
-                onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                label = { Text("Foto") },
-                leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp)) },
-            )
-            AssistChip(
-                onClick = { pickFile.launch(arrayOf("*/*")) },
-                label = { Text("File") },
-                leadingIcon = { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)) },
-            )
+        if (!readOnly) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(
+                    onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    label = { Text("Foto") },
+                    leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp)) },
+                )
+                AssistChip(
+                    onClick = { pickFile.launch(arrayOf("*/*")) },
+                    label = { Text("File") },
+                    leadingIcon = { Icon(Icons.Outlined.AttachFile, null, Modifier.size(18.dp)) },
+                )
+            }
         }
-        if (items.isEmpty() && busy == null) {
+        if (items.isEmpty() && busy == null && !readOnly) {
             Text("Maks. 100 MB per file. Foto besar diperkecil otomatis.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun AttachmentRow(att: Attachment, actions: AttachmentActions, previewFile: File?) {
+private fun AttachmentRow(att: Attachment, actions: AttachmentActions, previewFile: File?, readOnly: Boolean = false) {
     val progressFlow = remember(att.id) { runCatching { actions.progress(att) }.getOrElse { emptyFlow() } }
     val progress: UploadProgress? by progressFlow.collectAsState(initial = null)
     var menu by remember { mutableStateOf(false) }
@@ -147,14 +151,14 @@ private fun AttachmentRow(att: Attachment, actions: AttachmentActions, previewFi
                     )
                     att.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
-                if (att.status == AttachmentStatus.Failed && progress?.running != true) TextButton(onClick = { actions.retry(att) }) { Text("Ulangi") }
+                if (!readOnly && att.status == AttachmentStatus.Failed && progress?.running != true) TextButton(onClick = { actions.retry(att) }) { Text("Ulangi") }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Aksi ${att.fileName}") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Buka") }, onClick = { menu = false; actions.open(att) })
                         DropdownMenuItem(text = { Text("Simpan ke perangkat…") }, onClick = { menu = false; save.launch(att.fileName) })
-                        if (att.status != AttachmentStatus.Uploaded) DropdownMenuItem(text = { Text("Batalkan unggahan") }, onClick = { menu = false; actions.cancel(att) })
-                        DropdownMenuItem(text = { Text("Hapus") }, onClick = { menu = false; confirmDelete = true })
+                        if (!readOnly && att.status != AttachmentStatus.Uploaded) DropdownMenuItem(text = { Text("Batalkan unggahan") }, onClick = { menu = false; actions.cancel(att) })
+                        if (!readOnly) DropdownMenuItem(text = { Text("Hapus") }, onClick = { menu = false; confirmDelete = true })
                     }
                 }
                 if (confirmDelete) {

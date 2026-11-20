@@ -22,6 +22,19 @@ import com.rosyidputrar.taskify.core.store.tasks.Progress
 import com.rosyidputrar.taskify.core.store.tasks.TagRepository
 import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.mapLatest
+import com.rosyidputrar.taskify.core.domain.home.HomeShortcut
+import com.rosyidputrar.taskify.core.domain.home.HomeShortcuts
+import com.rosyidputrar.taskify.core.domain.home.ShortcutRef
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.domain.search.EntityRow
+import com.rosyidputrar.taskify.core.store.home.HomeShortcutRepository
+import com.rosyidputrar.taskify.core.store.search.SearchRepository
+import com.rosyidputrar.taskify.ui.shell.AppEvent
+import com.rosyidputrar.taskify.ui.shell.AppEvents
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flowOf
@@ -47,7 +60,34 @@ data class HomeUiState(
     val layout: HomeLayout = HomeLayout.Default,
     /** Kesehatan Digital & Notifikasi hari ini (null = belum ada data/izin). */
     val device: DeviceToday = DeviceToday(null, null),
+    /** Pintasan yang disematkan (termasuk yang sasarannya sudah tidak ada — untuk Susun Beranda). */
+    val pinned: List<HomeShortcut> = emptyList(),
+    /** "Lanjutkan" otomatis: isi yang terakhir diubah. */
+    val recent: List<HomeShortcut> = emptyList(),
+    /** Lembar "Tambah pintasan". */
+    val picker: ShortcutPickerUi = ShortcutPickerUi(),
+) {
+    /** Isi baris Pintasan sesuai susunan (sematan dulu, lalu Lanjutkan bila aktif). */
+    val shortcutRow: List<HomeShortcut> get() = HomeShortcuts.row(pinned, recent, layout.showRecent)
+}
+
+/** Isi lembar "Tambah pintasan": hasil cari (bila ada kata kunci) + daftar/dompet/tag. */
+data class ShortcutPickerUi(
+    val query: String = "",
+    val results: List<HomeShortcut> = emptyList(),
+    val collections: List<HomeShortcut> = emptyList(),
+    val pinnedKeys: Set<String> = emptySet(),
+    val searching: Boolean = false,
 )
+
+/** Aksi pintasan Hari ini — default tanpa efek supaya konten bisa dirender di tes. */
+interface HomeShortcutActions {
+    fun open(ref: ShortcutRef) {}
+    fun togglePin(shortcut: HomeShortcut) {}
+    fun move(ref: ShortcutRef, by: Int) {}
+    fun removeUnavailable() {}
+    fun setPickerQuery(query: String) {}
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
@@ -59,7 +99,9 @@ class HomeViewModel(
     private val calendar: CalendarRepository? = null,
     private val prefs: AppPreferences? = null,
     private val deviceSummary: DeviceSummary? = null,
-) : ViewModel() {
+    private val shortcuts: HomeShortcutRepository? = null,
+    private val search: SearchRepository? = null,
+) : ViewModel(), HomeShortcutActions {
     private val today = todayFlow().stateIn(viewModelScope, SharingStarted.Eagerly, Dates.today())
 
     private data class Parts(val focus: List<Task>, val progress: Map<String, Progress>, val summary: TodaySummary)
@@ -72,10 +114,57 @@ class HomeViewModel(
             prefs?.homeLayout ?: flowOf(HomeLayout.Default),
             deviceSummary?.watchToday() ?: flowOf(DeviceToday(null, null)),
         ) { r, w, l, d -> Extras(r, w, l, d) }
-        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), extras) { p, streak, activity, x ->
-            HomeUiState(t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = x.rejected, week = x.week, layout = x.layout, device = x.device)
+        combine(parts, home.watchJournalStreak(t), home.watchActivity(t), extras, shortcutParts()) { p, streak, activity, x, sc ->
+            HomeUiState(
+                t, p.focus, p.progress, p.summary, streak, activity, loaded = true, rejectedChanges = x.rejected, week = x.week,
+                layout = x.layout, device = x.device, pinned = sc.pinned, recent = sc.recent, picker = sc.picker,
+            )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    private data class ShortcutParts(val pinned: List<HomeShortcut>, val recent: List<HomeShortcut>, val picker: ShortcutPickerUi)
+
+    private val pickerQuery = MutableStateFlow("")
+
+    /** Hasil cari lembar "Tambah pintasan" — ditunda sebentar supaya tidak mencari tiap ketukan. */
+    @OptIn(FlowPreview::class)
+    private val pickerResults: Flow<Pair<String, List<HomeShortcut>>> = pickerQuery
+        .debounce { if (it.isBlank()) 0L else 200L }
+        .mapLatest { q -> q to if (q.isBlank()) emptyList() else runCatching { search?.search(q, 20).orEmpty() }.getOrDefault(emptyList()).mapNotNull { it.toShortcut() } }
+
+    private fun shortcutParts(): Flow<ShortcutParts> {
+        val repo = shortcuts ?: return flowOf(ShortcutParts(emptyList(), emptyList(), ShortcutPickerUi()))
+        val picker = combine(pickerQuery, pickerResults, repo.watchCollections(), repo.watchPinnedKeys()) { q, (forQuery, results), collections, keys ->
+            ShortcutPickerUi(q, if (forQuery == q) results else emptyList(), collections, keys, searching = q.isNotBlank() && forQuery != q)
+        }
+        return combine(repo.watchPinned(), repo.watchRecent(), picker) { pinned, recent, pk -> ShortcutParts(pinned, recent, pk) }
+    }
+
+    override fun open(ref: ShortcutRef) = AppEvents.send(AppEvent.OpenShortcut(ref))
+
+    override fun togglePin(shortcut: HomeShortcut) {
+        val repo = shortcuts ?: return
+        launchSafe {
+            when (repo.toggle(shortcut.ref, shortcut.title)) {
+                null -> messenger.show("Maksimal ${HomeShortcuts.MAX_PINNED} pintasan. Lepas salah satu dulu.")
+                false -> messenger.undoable("Dilepas dari Hari ini") { repo.pin(shortcut.ref, shortcut.title) }
+                true -> Unit
+            }
+        }
+    }
+
+    override fun move(ref: ShortcutRef, by: Int) {
+        val repo = shortcuts ?: return
+        launchSafe { repo.move(ref, by) }
+    }
+
+    override fun removeUnavailable() {
+        val repo = shortcuts ?: return
+        val gone = state.value.pinned.filterNot { it.available }.map { it.ref.key }
+        launchSafe { repo.removeUnavailable(gone) }
+    }
+
+    override fun setPickerQuery(query: String) { pickerQuery.value = query }
 
     /** Titik aktivitas pita minggu: jurnal/catatan/transaksi + tugas per tanggal jatuh tempo. */
     private fun weekActivity(today: String): Flow<Map<String, DayActivity>> {
@@ -118,3 +207,13 @@ class HomeViewModel(
 }
 
 private data class Extras(val rejected: Long, val week: Map<String, DayActivity>, val layout: HomeLayout, val device: DeviceToday)
+
+/** Hasil pencarian → calon pintasan (jenis entitas sama dengan kode pintasan). */
+internal fun EntityRow.toShortcut(): HomeShortcut? {
+    val type = ShortcutType.from(type.value) ?: return null
+    val sub = when (type) {
+        ShortcutType.Transaction -> subtitle?.substringBefore('|')
+        else -> subtitle
+    }
+    return HomeShortcut(ShortcutRef(type, id), title.ifBlank { type.label }, sub)
+}

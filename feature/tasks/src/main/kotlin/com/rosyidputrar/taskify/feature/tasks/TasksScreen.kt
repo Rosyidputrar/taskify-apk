@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -63,8 +66,11 @@ fun TasksScreen(
     /** Modifier tambahan per baris tugas (aplikasi memasang elemen bersama `task-{id}` di sini). */
     taskModifier: (taskId: String) -> Modifier = { Modifier },
     viewModel: TasksViewModel = koinViewModel(),
+    /** Tampilan awal dari pintasan: nama `SmartView` atau "list:<id>". */
+    initialView: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialView) { taskViewFrom(initialView)?.let(viewModel::setView) }
     TasksContent(state, viewModel, contentPadding, openTaskId, onBack, backButton, taskModifier)
 }
 
@@ -101,7 +107,8 @@ fun TasksContent(
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item {
-            val subtitle = buildString {
+            // Sebelum data lokal termuat, hitungan masih 0 — jangan klaim "0 aktif".
+            val subtitle = if (!state.loaded) "Memuat…" else buildString {
                 append("${state.counts.all} aktif")
                 if (state.counts.overdue > 0) append(" · ${state.counts.overdue} terlambat")
                 if (state.counts.today > 0) append(" · ${state.counts.today} hari ini")
@@ -125,7 +132,8 @@ fun TasksContent(
         }
         if (filter.segment == Segment.Active) {
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val chipsScroll = rememberLazyListState()
+                LazyRow(state = chipsScroll, modifier = Modifier.fadingEdges(chipsScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(SMART_CHIPS) { view ->
                         val count = when (view) {
                             SmartView.All -> state.counts.all
@@ -258,4 +266,11 @@ private class HapticTasksActions(private val a: TasksActions, private val h: Tas
     override fun setSegment(segment: Segment) { h.tick(); a.setSegment(segment) }
     override fun setView(view: TaskView) { h.tick(); a.setView(view) }
     override fun toggleHighPriority() { h.tick(); a.toggleHighPriority() }
+}
+
+/** "Overdue" → tampilan pintar; "list:<id>" → satu daftar; selain itu null (abaikan). */
+internal fun taskViewFrom(raw: String?): TaskView? {
+    if (raw.isNullOrBlank()) return null
+    if (raw.startsWith("list:")) return raw.removePrefix("list:").takeIf { it.isNotBlank() }?.let { TaskView.List(it) }
+    return SmartView.entries.firstOrNull { it.name == raw }?.let { TaskView.Smart(it) }
 }

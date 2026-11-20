@@ -104,7 +104,7 @@ private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: Notif
     var amount by rememberSaveable(d.id) { mutableStateOf(money.amount.toString()) }
     var kind by rememberSaveable(d.id) { mutableStateOf(money.kind) }
     var title by rememberSaveable(d.id) { mutableStateOf(NotificationsViewModel.defaultTitle(d)) }
-    var wallet by rememberSaveable(d.id) { mutableStateOf(state.walletFor(d)) }
+    var wallet by rememberSaveable(d.id) { mutableStateOf(state.suggestWallet(d)) }
     var category by rememberSaveable(d.id) { mutableStateOf(state.guessCategory(d)) }
     val parsed = Rupiah.parse(amount)
     IndexCard(TaskifyModule.Finance, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
@@ -134,6 +134,7 @@ private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: Notif
             prefix = { Text("Rp ") },
             singleLine = true,
             isError = parsed == null || parsed <= 0,
+            supportingText = if (parsed == null || parsed <= 0) ({ Text("Isi nominal lebih dari 0, mis. 35000 atau 35rb") }) else null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -145,6 +146,11 @@ private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: Notif
             state.wallets.forEach { w ->
                 FilterChip(selected = wallet == w.id, onClick = { haptics.tick(); wallet = w.id }, label = { Text(w.name) })
             }
+        }
+        // Tombol Simpan mati tanpa dompet — katakan alasannya, jangan biarkan pengguna menebak.
+        when {
+            state.wallets.isEmpty() -> Text("Belum ada dompet. Buat dulu di Keuangan → Kelola.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            wallet == null -> Text("Pilih dompet untuk menyimpan transaksi ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         if (state.settings.wallets[d.pkg] == null && wallet != null) {
             Text("Notifikasi ${money.source} berikutnya otomatis ke dompet ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

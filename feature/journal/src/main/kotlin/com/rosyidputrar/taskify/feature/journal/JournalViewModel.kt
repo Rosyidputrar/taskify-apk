@@ -58,6 +58,8 @@ interface JournalActions {
     fun toggleTrash()
     fun setRange(days: Int)
     fun restore(entry: JournalEntry)
+    /** Pindahkan ke Sampah (geser ke kiri) — bisa diurungkan dari snackbar. */
+    fun remove(entry: JournalEntry) {}
 }
 
 fun groupByMonth(entries: List<JournalEntry>): List<MonthGroup> =
@@ -112,6 +114,13 @@ class JournalViewModel(
         launchSafe {
             repo.restore(entry.id)
             messenger.show("Entri jurnal dipulihkan")
+        }
+    }
+
+    override fun remove(entry: JournalEntry) {
+        launchSafe {
+            repo.remove(entry.id)
+            messenger.undoable("Entri dipindahkan ke Sampah") { repo.restore(entry.id) }
         }
     }
 }

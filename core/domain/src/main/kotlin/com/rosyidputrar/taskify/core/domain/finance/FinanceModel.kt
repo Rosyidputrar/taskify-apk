@@ -84,6 +84,9 @@ data class Transaction(
     val categoryIcon: String? = null,
     val walletName: String? = null,
     val toWalletName: String? = null,
+    /** Aplikasi asal bila dicatat dari notifikasi (hanya di HP ini) — ikon aplikasinya dipakai di daftar. */
+    val sourcePackage: String? = null,
+    val sourceLabel: String? = null,
 ) {
     /** Judul tampilan: keterangan → kategori → jenis (port `txTitle`). */
     val displayTitle: String

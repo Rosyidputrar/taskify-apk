@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.finance.tab
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -66,7 +68,8 @@ fun LazyListScope.transactionsTab(state: FinanceUiState, actions: FinanceActions
         )
     }
     item(key = "tx-filters") {
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val filterScroll = rememberLazyListState()
+        LazyRow(state = filterScroll, modifier = Modifier.fadingEdges(filterScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(KIND_CHIPS, key = { it.second }) { (kind, label) ->
                 FilterChip(selected = f.kind == kind, onClick = { actions.setTxFilter(f.copy(kind = kind, categoryId = if (kind == TxKind.Transfer) null else f.categoryId)) }, label = { Text(label) })
             }
