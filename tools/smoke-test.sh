@@ -96,12 +96,34 @@ PY
 # yang dibuktikan di sini: layar daftar Asisten AI terbuka tanpa crash di APK R8
 # (aturan keep markdown/highlights ikut teruji lewat pembukaan layar). Render satu jawaban
 # markdown panjang di R8 masih butuh percakapan berisi — dicatat di status area E.
-tap_text "Ruang" "buka Ruang"
-settle 4 "Ruang"
-tap_text "Asisten AI" "buka Asisten AI"
-settle 5 "layar Asisten AI"
-"$ADB" exec-out screencap -p > "$OUT/ai.png" 2>/dev/null || true
-echo "ok: layar Asisten AI terbuka"
+#
+# APK uji asap dipasang baru tanpa akun → aplikasi berhenti di layar Masuk dan dok (Ruang)
+# belum ada. Langkah ini hanya jalan bila shell tampil; di layar Masuk dilewati dengan
+# catatan (bukan lulus palsu: layar lain yang tak dikenal tetap GAGAL).
+screen_has() {
+  "$ADB" shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || fail "uiautomator dump gagal (cek layar)"
+  "$ADB" pull /sdcard/ui.xml "$OUT/ui.xml" > /dev/null 2>&1 || fail "ambil dump UI gagal (cek layar)"
+  python3 - "$OUT/ui.xml" "$@" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+seen = {n.get("text") for n in root.iter("node")} | {n.get("content-desc") for n in root.iter("node")}
+sys.exit(0 if all(w in seen for w in sys.argv[2:]) else 1)
+PY
+}
+if screen_has "Ruang"; then
+  tap_text "Ruang" "buka Ruang"
+  settle 4 "Ruang"
+  tap_text "Asisten AI" "buka Asisten AI"
+  settle 5 "layar Asisten AI"
+  "$ADB" exec-out screencap -p > "$OUT/ai.png" 2>/dev/null || true
+  echo "ok: layar Asisten AI terbuka"
+elif screen_has "Email" "Password" "Masuk"; then
+  "$ADB" exec-out screencap -p > "$OUT/login.png" 2>/dev/null || true
+  echo "lewati: layar Asisten AI butuh akun — APK uji belum masuk (layar Masuk tampil tanpa crash)"
+else
+  "$ADB" exec-out screencap -p > "$OUT/unknown.png" 2>/dev/null || true
+  fail "layar tak dikenal: bukan shell (Ruang) dan bukan layar Masuk"
+fi
 
 # Putar layar (Activity dibuat ulang).
 "$ADB" shell settings put system accelerometer_rotation 0 > /dev/null 2>&1 || true
