@@ -196,7 +196,11 @@ jobs:
             echo "::error::APK rilis tidak ada — isi secret RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD."
             exit 1
           fi
-          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          VERSION=$(grep -oP 'versionName = .* \?: "\K[^"]+' app/build.gradle.kts || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Tidak bisa membaca versionName dari app/build.gradle.kts."
+            exit 1
+          fi
           TAG="v${VERSION}-build.${RUN}"
           NAME="taskify-${VERSION}-build${RUN}.apk"
           cp "$APK" "$NAME"
