@@ -1,11 +1,11 @@
-package com.rosyidputrar.taskify.core.domain.notes
+package com.rosyidputrar.taskify.core.domain.text
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class NoteExportTest {
+class DocExportTest {
     private val body = """
         ## Rencana
         Jalan kaki **30 menit**, lalu _menulis_ di [taskify](https://taskify.id).
@@ -30,14 +30,22 @@ class NoteExportTest {
     """.trimIndent()
 
     @Test fun markdownKeepsSourceAndAddsTitle() {
-        assertEquals("# Notulen\n\nisi\n", NoteExport.markdown("  Notulen ", "isi\n\n"))
-        assertEquals("isi\n", NoteExport.markdown(null, "isi"))
-        assertEquals("# Judul\n", NoteExport.markdown("Judul", "  "))
-        assertTrue(NoteExport.markdown("R", body).contains("- [x] Rapat sprint"))
+        assertEquals("# Notulen\n\nisi\n", DocExport.markdown("  Notulen ", "isi\n\n"))
+        assertEquals("isi\n", DocExport.markdown(null, "isi"))
+        assertEquals("# Judul\n", DocExport.markdown("Judul", "  "))
+        assertTrue(DocExport.markdown("R", body).contains("- [x] Rapat sprint"))
+        // Keterangan (tanggal/mood) jadi baris miring di bawah judul.
+        assertEquals("# Pagi\n\n_Jumat, 20 November 2026 · Mood Baik_\n\nisi\n", DocExport.markdown("Pagi", "isi", "Jumat, 20 November 2026 · Mood Baik"))
+        assertEquals("_Jumat_\n\nisi\n", DocExport.markdown(null, "isi", "Jumat"))
+    }
+
+    @Test fun plainTextWithMeta() {
+        assertEquals("Pagi\nJumat · Mood Baik\n\nisi\n", DocExport.plainText("Pagi", "isi", "Jumat · Mood Baik"))
+        assertEquals("Jumat\n\nisi\n", DocExport.plainText(" ", "isi", "Jumat"))
     }
 
     @Test fun plainTextDropsMarkdownSyntax() {
-        val t = NoteExport.plainText("Notulen", body)
+        val t = DocExport.plainText("Notulen", body)
         val expected = """
             Notulen
 
@@ -65,7 +73,7 @@ class NoteExportTest {
     }
 
     @Test fun htmlIsCompleteAndEscaped() {
-        val h = NoteExport.html("Rapat <tim> & \"kita\"", body, subtitle = "Ditempel ke Jumat")
+        val h = DocExport.html("Rapat <tim> & \"kita\"", body, meta = "Ditempel ke Jumat")
         assertTrue(h.startsWith("<!doctype html>"))
         assertTrue(h.contains("<title>Rapat &lt;tim&gt; &amp; &quot;kita&quot;</title>"))
         assertTrue(h.contains("<h1 class=\"title\">Rapat &lt;tim&gt;"))
@@ -84,7 +92,7 @@ class NoteExportTest {
     }
 
     @Test fun htmlNeverEmitsScriptOrUnsafeLinks() {
-        val h = NoteExport.html(null, "<script>alert(1)</script>\n\n[klik](javascript:alert(1)) [web](http://a.b)")
+        val h = DocExport.html(null, "<script>alert(1)</script>\n\n[klik](javascript:alert(1)) [web](http://a.b)")
         assertFalse(h.contains("<script>"))
         assertTrue(h.contains("&lt;script&gt;"))
         assertFalse(h.contains("href=\"javascript"))
@@ -93,11 +101,13 @@ class NoteExportTest {
     }
 
     @Test fun fileNamesAreSafe() {
-        assertEquals("Notulen rapat.pdf", NoteExport.fileName("Notulen rapat", "", NoteFormat.Pdf))
-        assertEquals("a b c d.md", NoteExport.fileName(" a/b:c*d? ", "", NoteFormat.Markdown))
-        assertEquals("Catatan.txt", NoteExport.fileName(null, "", NoteFormat.Text))
-        assertEquals("Catatan.html", NoteExport.fileName("...", "", NoteFormat.Html))
-        assertTrue(NoteExport.fileName(null, "Belanja mingguan: telur, susu", NoteFormat.Text).startsWith("Belanja mingguan"))
-        assertEquals(64, NoteExport.fileName("x".repeat(200), "", NoteFormat.Pdf).length) // 60 + ".pdf"
+        assertEquals("Notulen rapat.pdf", DocExport.fileName("Notulen rapat", "", ShareFormat.Pdf))
+        assertEquals("a b c d.md", DocExport.fileName(" a/b:c*d? ", "", ShareFormat.Markdown))
+        assertEquals("Catatan.txt", DocExport.fileName(null, "", ShareFormat.Text))
+        assertEquals("Catatan.html", DocExport.fileName("...", "", ShareFormat.Html))
+        assertTrue(DocExport.fileName(null, "Belanja mingguan: telur, susu", ShareFormat.Text).startsWith("Belanja mingguan"))
+        assertEquals(64, DocExport.fileName("x".repeat(200), "", ShareFormat.Pdf).length) // 60 + ".pdf"
+        assertEquals("Pagi.png", DocExport.fileName("Pagi", "", ShareFormat.Image))
+        assertEquals("snippet.kt", DocExport.fileName("", "", "kt", fallback = "snippet"))
     }
 }

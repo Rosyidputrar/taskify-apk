@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -186,14 +187,16 @@ private fun LazyStaggeredGridScope.heading(key: String, label: String, count: In
 
 private fun LazyStaggeredGridScope.noteItems(notes: List<Note>, state: NotesUiState, actions: NotesActions, onOpenNote: (String) -> Unit, prefix: String = "") {
     items(notes, key = { prefix + it.id }) { note ->
-        NoteCard(
-            note,
-            state.today,
-            onOpen = { onOpenNote(note.id) },
-            onTogglePin = { if (!state.filter.trash) actions.togglePin(note) },
-            onRestore = if (state.filter.trash) ({ actions.restore(note) }) else null,
-            modifier = Modifier.animateItem(),
-        )
+        // Geser ke kiri → Sampah (tidak berlaku di tampilan Sampah sendiri).
+        SwipeToDelete(onDelete = { actions.remove(note) }, enabled = !state.filter.trash, label = "Pindahkan ke Sampah", modifier = Modifier.animateItem()) {
+            NoteCard(
+                note,
+                state.today,
+                onOpen = { onOpenNote(note.id) },
+                onTogglePin = { if (!state.filter.trash) actions.togglePin(note) },
+                onRestore = if (state.filter.trash) ({ actions.restore(note) }) else null,
+            )
+        }
     }
 }
 
@@ -203,4 +206,5 @@ private class HapticNotesActions(private val a: NotesActions, private val h: Tas
     override fun toggleTrash() { h.tick(); a.toggleTrash() }
     override fun togglePin(note: Note) { h.toggle(!note.pinned); a.togglePin(note) }
     override fun restore(note: Note) { h.success(); a.restore(note) }
+    override fun remove(note: Note) { h.success(); a.remove(note) }
 }

@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -215,7 +216,12 @@ private fun LazyListScope.snippets(state: VaultUiState, actions: VaultActions, o
             )
         }
     }
-    items(state.snippets, key = { it.id }) { s -> SnippetCard(s, actions, onOpen = { onOpen(s.id) }, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).animateItem()) }
+    items(state.snippets, key = { it.id }) { s ->
+        // Geser ke kiri → Sampah (Urungkan di snackbar).
+        SwipeToDelete(onDelete = { actions.removeSnippet(s) }, label = "Pindahkan ke Sampah", modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).animateItem()) {
+            SnippetCard(s, actions, onOpen = { onOpen(s.id) })
+        }
+    }
 }
 
 @Composable
@@ -334,4 +340,5 @@ private class HapticVaultActions(private val a: VaultActions, private val h: Tas
     override fun toggleFavorite(snippet: Snippet) { h.toggle(!snippet.favorite); a.toggleFavorite(snippet) }
     override fun toggleFavorite(project: CodeProject) { h.toggle(!project.favorite); a.toggleFavorite(project) }
     override fun copied(snippet: Snippet) { h.success(); a.copied(snippet) }
+    override fun removeSnippet(snippet: Snippet) { h.success(); a.removeSnippet(snippet) }
 }

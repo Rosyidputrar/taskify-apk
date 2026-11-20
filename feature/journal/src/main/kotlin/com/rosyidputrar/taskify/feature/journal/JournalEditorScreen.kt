@@ -1,6 +1,29 @@
 package com.rosyidputrar.taskify.feature.journal
 
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
+import com.rosyidputrar.taskify.core.domain.text.DocExport
+import com.rosyidputrar.taskify.core.domain.text.ShareFormat
+import com.rosyidputrar.taskify.core.ui.share.ShareSheet
+import com.rosyidputrar.taskify.core.ui.share.confirmCopied
+import com.rosyidputrar.taskify.core.ui.share.docShareSections
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +110,8 @@ fun JournalEditorScreen(args: JournalEditorArgs, onBack: () -> Unit) {
             override fun restore() = vm.restore()
             override fun addTag(name: String) = vm.addTag(name)
             override fun removeTag(tag: TagRef) = vm.removeTag(tag)
+            override fun share(format: ShareFormat?) = vm.share(format)
+            override fun copyImage() = vm.copyImage()
         },
         attachments = { id -> AttachmentsSection(EntityType.JournalEntry, id); LinksSection(EntityType.JournalEntry, id) },
     )
@@ -104,6 +129,10 @@ interface JournalEditorActions {
     fun restore()
     fun addTag(name: String)
     fun removeTag(tag: TagRef)
+    /** Bagikan entri: [format] null = kirim sebagai teks. */
+    fun share(format: ShareFormat?) {}
+    /** Salin entri sebagai gambar. */
+    fun copyImage() {}
 }
 
 @Composable
@@ -113,7 +142,8 @@ fun JournalEditorContent(
     tags: List<TagRef>,
     allTags: List<TagRef>,
     actions: JournalEditorActions,
-    initialPreview: Boolean = false,
+    /** null = otomatis: entri yang sudah ada & berisi dibuka di mode Baca, entri baru di Tulis. */
+    initialPreview: Boolean? = null,
     today: String = Dates.today(),
     attachments: @Composable (entryId: String) -> Unit = {},
 ) {
@@ -128,11 +158,23 @@ fun JournalEditorContent(
         }
         return
     }
-    var preview by rememberSaveable { mutableStateOf(initialPreview) }
+    var preview by rememberSaveable { mutableStateOf(initialPreview ?: (ui.id != null && ui.body.text.isNotBlank())) }
     var picking by rememberSaveable { mutableStateOf(false) }
     var menu by rememberSaveable { mutableStateOf(false) }
+    var sharing by rememberSaveable { mutableStateOf(false) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Journal)
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val haptics = rememberHaptics()
+    val copy = { text: String, what: String ->
+        clipboard.setText(AnnotatedString(text))
+        haptics.tick()
+        confirmCopied(context, what)
+    }
+    val doc = ui.toShare()
+    val empty = ui.title.isBlank() && ui.body.text.isBlank()
 
+    Box(Modifier.fillMaxSize()) {
     PaperEditor(
         module = TaskifyModule.Journal,
         title = ui.title,
@@ -154,17 +196,37 @@ fun JournalEditorContent(
                         contentDescription = "Tanggal ${Dates.format(ui.date, "EEEE, d MMMM yyyy")}, ubah",
                     ) },
                 actions = {
-                    IconButton(onClick = actions::togglePin) {
-                        Icon(
-                            if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin,
-                            contentDescription = if (ui.pinned) "Lepas sematan" else "Sematkan",
-                            tint = if (ui.pinned) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    IconButton(onClick = { sharing = true }, enabled = !empty) {
+                        Icon(Icons.Outlined.Share, contentDescription = "Bagikan")
                     }
-                    if (ui.id != null && !ui.trashed) {
-                        Box {
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    Box {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (ui.pinned) "Lepas sematan" else "Sematkan") },
+                                leadingIcon = { Icon(if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (ui.pinned) accent else LocalContentColor.current) },
+                                onClick = { menu = false; actions.togglePin() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin teks") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(DocExport.plainText(doc.title, doc.markdown, doc.meta).trimEnd(), "Teks jurnal") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin sebagai Markdown") },
+                                leadingIcon = { Icon(Icons.Outlined.Code, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; copy(DocExport.markdown(doc.title, doc.markdown, doc.meta).trimEnd(), "Markdown") },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Salin sebagai gambar") },
+                                leadingIcon = { Icon(Icons.Outlined.Image, null) },
+                                enabled = !empty,
+                                onClick = { menu = false; haptics.tick(); actions.copyImage() },
+                            )
+                            if (ui.id != null && !ui.trashed) {
+                                HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("Pindahkan ke Sampah") },
                                     leadingIcon = { Icon(Icons.Outlined.Delete, null) },
@@ -203,6 +265,26 @@ fun JournalEditorContent(
         },
     )
 
+    // Mode Baca: tombol Ubah selalu terjangkau walau isi sudah digulir jauh.
+    AnimatedVisibility(
+        visible = preview && !ui.trashed,
+        enter = scaleIn(initialScale = 0.8f) + fadeIn(),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(),
+        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
+    ) {
+        ExtendedFloatingActionButton(
+            onClick = { preview = false },
+            icon = { Icon(Icons.Outlined.Edit, null) },
+            text = { Text("Ubah") },
+            containerColor = TaskifyTheme.modules.tint(TaskifyModule.Journal, MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    }
+
+    if (sharing) {
+        ShareSheet("Bagikan jurnal", TaskifyModule.Journal, docShareSections(), onPick = { format -> sharing = false; actions.share(format) }, onDismiss = { sharing = false })
+    }
     if (picking) {
         DatePickerSheet(ui.date, today, allowClear = false, onPick = { picked -> picked?.let(actions::date); picking = false }, onDismiss = { picking = false })
     }

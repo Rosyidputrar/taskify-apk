@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
 import com.rosyidputrar.taskify.core.domain.journal.JournalEntry
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
@@ -184,19 +185,23 @@ private fun LazyListScope.shelf(state: JournalUiState, actions: JournalActions, 
     if (state.pinned.isNotEmpty()) {
         stickyHeading("pinned", "Disematkan", state.pinned.size)
         items(state.pinned, key = { "p-${it.id}" }) { entry ->
-            JournalCard(entry, state.today, onOpen = { onOpenEntry(entry.id) }, modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).animateItem())
+            SwipeToDelete(onDelete = { actions.remove(entry) }, enabled = !trash, label = "Pindahkan ke Sampah", modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).animateItem()) {
+                JournalCard(entry, state.today, onOpen = { onOpenEntry(entry.id) })
+            }
         }
     }
     state.groups.forEach { group ->
         stickyHeading(group.key, group.label, group.entries.size)
         items(group.entries, key = { it.id }) { entry ->
-            JournalCard(
-                entry,
-                state.today,
-                onOpen = { onOpenEntry(entry.id) },
-                onRestore = if (trash) ({ actions.restore(entry) }) else null,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).animateItem(),
-            )
+            // Geser ke kiri → Sampah (tidak berlaku di tampilan Sampah sendiri).
+            SwipeToDelete(onDelete = { actions.remove(entry) }, enabled = !trash, label = "Pindahkan ke Sampah", modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).animateItem()) {
+                JournalCard(
+                    entry,
+                    state.today,
+                    onOpen = { onOpenEntry(entry.id) },
+                    onRestore = if (trash) ({ actions.restore(entry) }) else null,
+                )
+            }
         }
     }
 }
@@ -329,4 +334,5 @@ private class HapticJournalActions(private val a: JournalActions, private val h:
     override fun toggleTrash() { h.tick(); a.toggleTrash() }
     override fun setRange(days: Int) { h.tick(); a.setRange(days) }
     override fun restore(entry: JournalEntry) { h.success(); a.restore(entry) }
+    override fun remove(entry: JournalEntry) { h.success(); a.remove(entry) }
 }

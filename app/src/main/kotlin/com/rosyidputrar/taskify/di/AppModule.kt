@@ -141,6 +141,8 @@ private val deviceModule = module {
     single { get<TaskifyDatabase>().db }
     single<UserIdProvider> { UserIdProvider { get<DevicePrefs>().dbOwner } }
     single { Messenger() }
+    // Bagikan & salin (teks, berkas, gambar) untuk Catatan, Jurnal, dan Snippet.
+    single<com.rosyidputrar.taskify.core.ui.share.ShareService> { com.rosyidputrar.taskify.core.ui.share.AndroidShareService(androidContext()) }
     single { TaskRepository(get(), get()) }
     single { TagRepository(get(), get()) }
     single { HomeRepository(get()) }

@@ -231,6 +231,20 @@ disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi da
   daftar sesi. Jam pergantian hari bisa diatur (mis. 04.00); aplikasi bisa dikecualikan.
 - Disalin dari sistem tiap jam (WorkManager). Ubin di Beranda (Susun Beranda) & bagian di Review.
 
+### Catatan, Jurnal & Snippet: baca, bagikan, salin
+
+- Catatan, entri jurnal, dan snippet yang sudah ada **dibuka di mode Baca/Lihat**; tombol mengambang
+  **Ubah** untuk menulis. Item baru/kosong langsung di mode Tulis. Teks di mode Baca bisa diblok.
+- **Bagikan**: kirim sebagai teks, atau berkas Markdown (.md), teks biasa (.txt), halaman web (.html),
+  PDF A4 bertingkat halaman, dan **gambar PNG** (lembar kertas setinggi isi; isi sangat panjang dipotong
+  rapi dengan saran memakai PDF). Jurnal menyertakan tanggal & mood, catatan bertanggal menyertakan tanggalnya.
+- **Salin**: teks (tanpa simbol Markdown), Markdown, dan **gambar** — bisa ditempel di chat & dokumen.
+- **Snippet**: bagikan sebagai berkas kode dengan ekstensi sesuai bahasa (.kt, .py, .sql, …), Markdown
+  berpagar, atau **gambar kode** (jendela gelap, nomor baris, pewarnaan sintaks). Kode yang tampak berisi
+  rahasia (token, password, API key) meminta konfirmasi sebelum dibagikan; salinannya ditandai sensitif.
+- **Geser ke kiri** pada kartu catatan, jurnal, atau snippet → pindah ke Sampah, dengan **Urungkan**.
+- Berkas bagikan hanya disimpan sementara di cache aplikasi (FileProvider), tanpa izin penyimpanan.
+
 ### Asisten AI
 
 Pakai kunci API sendiri (*bring your own key*): pilih penyedia (OpenAI-compatible atau Anthropic),

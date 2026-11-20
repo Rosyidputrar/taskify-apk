@@ -1,37 +1,40 @@
-package com.rosyidputrar.taskify.core.domain.notes
+package com.rosyidputrar.taskify.core.domain.text
 
-import com.rosyidputrar.taskify.core.domain.text.Markdown
-import com.rosyidputrar.taskify.core.domain.text.MdBlock
-import com.rosyidputrar.taskify.core.domain.text.MdSpan
-
-/** Format berkas untuk membagikan catatan. */
-enum class NoteFormat(val label: String, val extension: String, val mime: String, val hint: String) {
+/** Format berkas untuk membagikan dokumen (catatan, jurnal). */
+enum class ShareFormat(val label: String, val extension: String, val mime: String, val hint: String) {
     Markdown("Markdown", "md", "text/markdown", "Format asli — rapi di Obsidian, Notion, GitHub"),
     Text("Teks biasa", "txt", "text/plain", "Tanpa simbol Markdown, terbaca di mana saja"),
     Html("Halaman web", "html", "text/html", "Dibuka di browser dengan format lengkap"),
     Pdf("PDF", "pdf", "application/pdf", "Siap dicetak atau dikirim sebagai dokumen"),
+    Image("Gambar", "png", "image/png", "Satu lembar gambar — pas untuk chat & story"),
 }
 
 /**
- * Ubah catatan (judul + isi Markdown) ke format bagikan. Murni & teruji JVM; PDF digambar di
- * Android dari [MdBlock] yang sama sehingga isinya konsisten antar format.
+ * Ubah dokumen (judul + keterangan + isi Markdown) ke format bagikan. Murni & teruji JVM; PDF &
+ * gambar digambar di Android dari [MdBlock] yang sama sehingga isinya konsisten antar format.
+ * [meta] = keterangan di bawah judul, mis. "Jumat, 20 November 2026 · Mood Baik".
  */
-object NoteExport {
-    /** Markdown utuh: judul jadi `# Judul` di baris pertama (bila ada). */
-    fun markdown(title: String?, content: String): String {
-        val t = title?.trim().orEmpty()
-        val body = content.trimEnd()
-        return when {
-            t.isEmpty() -> body
-            body.isEmpty() -> "# $t"
-            else -> "# $t\n\n$body"
-        } + "\n"
+object DocExport {
+    /** Markdown utuh: judul jadi `# Judul`, keterangan jadi baris miring di bawahnya. */
+    fun markdown(title: String?, content: String, meta: String? = null): String {
+        val parts = listOfNotNull(
+            title?.trim()?.takeIf { it.isNotEmpty() }?.let { "# $it" },
+            meta?.trim()?.takeIf { it.isNotEmpty() }?.let { "_${it}_" },
+            content.trimEnd().takeIf { it.isNotBlank() },
+        )
+        return parts.joinToString("\n\n") + "\n"
     }
 
     /** Teks polos: simbol Markdown dibuang, checklist jadi ☐/☑, tautan jadi "teks (url)". */
-    fun plainText(title: String?, content: String): String {
+    fun plainText(title: String?, content: String, meta: String? = null): String {
         val out = StringBuilder()
-        title?.trim()?.takeIf { it.isNotEmpty() }?.let { out.append(it).append("\n\n") }
+        val t = title?.trim()?.takeIf { it.isNotEmpty() }
+        val m = meta?.trim()?.takeIf { it.isNotEmpty() }
+        when {
+            t != null && m != null -> out.append(t).append('\n').append(m).append("\n\n")
+            t != null -> out.append(t).append("\n\n")
+            m != null -> out.append(m).append("\n\n")
+        }
         val blocks = Markdown.parseBlocks(content)
         blocks.forEachIndexed { i, b ->
             val prev = blocks.getOrNull(i - 1)
@@ -53,14 +56,14 @@ object NoteExport {
     }
 
     /** Dokumen HTML mandiri (CSS di dalam, tanpa skrip, semua teks di-escape). */
-    fun html(title: String?, content: String, subtitle: String? = null): String {
+    fun html(title: String?, content: String, meta: String? = null): String {
         val t = title?.trim()?.takeIf { it.isNotEmpty() }
         val sb = StringBuilder()
         sb.append("<!doctype html>\n<html lang=\"id\">\n<head>\n<meta charset=\"utf-8\">\n")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
         sb.append("<title>").append(esc(t ?: "Catatan")).append("</title>\n<style>\n").append(CSS).append("</style>\n</head>\n<body>\n<article>\n")
         t?.let { sb.append("<h1 class=\"title\">").append(esc(it)).append("</h1>\n") }
-        subtitle?.let { sb.append("<p class=\"meta\">").append(esc(it)).append("</p>\n") }
+        meta?.let { sb.append("<p class=\"meta\">").append(esc(it)).append("</p>\n") }
         val blocks = Markdown.parseBlocks(content)
         var i = 0
         while (i < blocks.size) {
@@ -98,13 +101,18 @@ object NoteExport {
     }
 
     /** Nama berkas aman dari judul (atau kalimat pertama isi); karakter terlarang dibuang. */
-    fun fileName(title: String?, content: String, format: NoteFormat): String {
+    fun fileName(title: String?, content: String, format: ShareFormat): String = fileName(title, content, format.extension)
+
+    fun fileName(title: String?, content: String, extension: String, fallback: String = "Catatan"): String {
         val base = title?.trim()?.takeIf { it.isNotEmpty() }
             ?: Markdown.plainExcerpt(content, 48).takeIf { it.isNotBlank() }
-            ?: "Catatan"
-        val clean = base.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().trimEnd('.').take(60).trim()
-        return "${clean.ifEmpty { "Catatan" }}.${format.extension}"
+            ?: fallback
+        return "${safeName(base).ifEmpty { fallback }}.$extension"
     }
+
+    /** Buang karakter terlarang di nama berkas, rapikan spasi, maksimal 60 karakter. */
+    fun safeName(raw: String): String =
+        raw.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().trimEnd('.').take(60).trim()
 
     // ------------------------------------------------------------------ bantu
 
