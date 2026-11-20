@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.tasks
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.remember
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -101,7 +103,8 @@ fun TasksContent(
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item {
-            val subtitle = buildString {
+            // Sebelum data lokal termuat, hitungan masih 0 — jangan klaim "0 aktif".
+            val subtitle = if (!state.loaded) "Memuat…" else buildString {
                 append("${state.counts.all} aktif")
                 if (state.counts.overdue > 0) append(" · ${state.counts.overdue} terlambat")
                 if (state.counts.today > 0) append(" · ${state.counts.today} hari ini")
@@ -125,7 +128,8 @@ fun TasksContent(
         }
         if (filter.segment == Segment.Active) {
             item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val chipsScroll = rememberLazyListState()
+                LazyRow(state = chipsScroll, modifier = Modifier.fadingEdges(chipsScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(SMART_CHIPS) { view ->
                         val count = when (view) {
                             SmartView.All -> state.counts.all

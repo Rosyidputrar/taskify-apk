@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.notifications
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -577,7 +578,8 @@ private fun HourBars(hourly: IntArray, color: androidx.compose.ui.graphics.Color
 @Composable
 private fun Filters(state: NotificationsUiState, actions: NotificationsActions) {
     val haptics = rememberHaptics()
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+    val filterScroll = rememberLazyListState()
+    LazyRow(state = filterScroll, contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp).fadingEdges(filterScroll)) {
         state.app?.let { pkg ->
             item(key = "app") {
                 InputChip(

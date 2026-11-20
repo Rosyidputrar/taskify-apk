@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
 import com.rosyidputrar.taskify.core.domain.finance.Debt
@@ -219,14 +220,14 @@ fun FinanceContent(
 /** Kartu saldo total + karusel dompet (ketuk dompet = filter transaksi). */
 @Composable
 private fun BalanceHero(state: FinanceUiState, actions: FinanceActions) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-        IndexCard(TaskifyModule.Finance, tinted = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+        IndexCard(TaskifyModule.Finance, tinted = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), contentPadding = 14.dp) {
             Text("SALDO SEMUA DOMPET", style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Finance))
             Text(
                 Rupiah.format(state.totalBalance),
                 style = TaskifyTextStyles.numeric,
                 color = if (state.totalBalance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 4.dp).semantics { contentDescription = "Saldo semua dompet ${Rupiah.format(state.totalBalance)}" },
+                modifier = Modifier.padding(top = 2.dp).semantics { contentDescription = "Saldo semua dompet ${Rupiah.format(state.totalBalance)}" },
             )
             val net = state.monthData.totals.net
             Text(
@@ -236,7 +237,8 @@ private fun BalanceHero(state: FinanceUiState, actions: FinanceActions) {
             )
         }
         if (state.activeWallets.isNotEmpty()) {
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val walletScroll = rememberLazyListState()
+            LazyRow(state = walletScroll, modifier = Modifier.fadingEdges(walletScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.activeWallets, key = { it.id }) { w ->
                     WalletCard(w, selected = state.walletId == w.id, onClick = { actions.setWallet(if (state.walletId == w.id) null else w.id) })
                 }

@@ -162,25 +162,29 @@ fun WalletCard(wallet: Wallet, selected: Boolean, onClick: () -> Unit, modifier:
         shape = MaterialTheme.shapes.large,
         color = TaskifyTheme.modules.tint(TaskifyModule.Finance, MaterialTheme.colorScheme.surfaceContainerLow),
         border = if (selected) BorderStroke(2.dp, accent) else null,
-        modifier = modifier.width(176.dp).semantics {
+        modifier = modifier.width(184.dp).semantics {
             contentDescription = "${wallet.name}, saldo ${Rupiah.format(wallet.balance)}" + if (selected) ", dipilih sebagai filter" else ""
         },
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CategoryBadge(wallet.icon ?: wallet.type.icon, wallet.color, size = 32.dp)
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(wallet.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(wallet.type.label.uppercase(), style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        // Ringkas (satu baris ikon + dua baris teks): karusel dompet setinggi ~64dp, bukan ~120dp,
+        // supaya tab & transaksi terlihat tanpa harus menggulir melewati hero.
+        Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(36.dp).background(accent.copy(alpha = 0.6f), CircleShape))
+            Spacer(Modifier.width(8.dp))
+            CategoryBadge(wallet.icon ?: wallet.type.icon, wallet.color, size = 28.dp)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    wallet.name + " · " + wallet.type.label,
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                FitText(
+                    Rupiah.format(wallet.balance),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = SerifFamily),
+                    color = if (wallet.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
             }
-            FitText(
-                Rupiah.format(wallet.balance),
-                style = MaterialTheme.typography.titleLarge.copy(fontFamily = SerifFamily),
-                color = if (wallet.balance < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = 0.6f)))
         }
     }
 }

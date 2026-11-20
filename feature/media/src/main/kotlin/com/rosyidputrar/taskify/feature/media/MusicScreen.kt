@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyMotion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -389,7 +390,8 @@ private fun LazyListScope.searchTab(state: MusicUiState, actions: MusicActions) 
                 keyboardActions = KeyboardActions(onSearch = { actions.search() }), modifier = Modifier.fillMaxWidth(),
             )
             if (s.suggestions.isNotEmpty()) Suggestions(s.suggestions, actions)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val filterScroll = rememberScrollState()
+            Row(Modifier.fadingEdges(filterScroll).horizontalScroll(filterScroll), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SearchFilter.entries.forEach { f -> FilterChip(s.filter == f, { actions.setFilter(f) }, label = { Text(f.label) }) }
             }
             if (!state.online) Text("Tidak ada koneksi — pencarian & pemutaran butuh internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)

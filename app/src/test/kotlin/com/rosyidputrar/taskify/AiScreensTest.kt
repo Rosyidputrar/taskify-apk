@@ -126,6 +126,8 @@ class AiScreensTest {
         override fun setDataAccess(on: Boolean) { calls += "access:$on" }
         override fun setModel(model: String) { calls += "model:$model" }
         override fun saveBaseUrl(raw: String) { calls += "url:$raw" }
+        override fun shareAnswer(text: String) { calls += "share:$text" }
+        override fun saveAnswerAsNote(text: String) { calls += "note:$text" }
     }
 
     private fun chat(state: ChatUiState, actions: Recorder = Recorder()) = compose.setContent {
@@ -174,6 +176,20 @@ class AiScreensTest {
         compose.onNodeWithText("Simpan").performScrollTo().performClick()
         compose.onNodeWithText("Batal").performScrollTo().performClick()
         assertEquals(listOf("decide:w1:true", "decide:w1:false"), actions.calls)
+    }
+
+    @Test fun finishedAnswerHasLabeledActions() {
+        val actions = Recorder()
+        chat(SampleAi.chat(items = listOf(
+            ChatItem.User("u1", "Halo", editable = false),
+            ChatItem.Assistant("a1", "Halo juga!", ChatState.Done, null, false, emptyList(), last = true),
+        )), actions)
+        compose.onNodeWithText("Salin").assertExists().performClick()
+        compose.onNodeWithText("Disalin").assertExists()
+        compose.onNodeWithText("Bagikan").performClick()
+        compose.onNodeWithText("Simpan ke Catatan").performClick()
+        compose.onNodeWithText("Jawab ulang").performClick()
+        assertEquals(listOf("share:Halo juga!", "note:Halo juga!", "retry"), actions.calls)
     }
 
     @Test fun errorCanBeRetried() {

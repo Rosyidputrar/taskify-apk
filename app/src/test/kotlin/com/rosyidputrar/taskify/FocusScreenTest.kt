@@ -96,7 +96,7 @@ class FocusScreenTest {
         compose.onNodeWithContentDescription("Jeda").performClick()
         compose.onNodeWithContentDescription("Lewati ke istirahat").performClick()
         compose.onNodeWithText("Tulis ringkasan").performClick()
-        compose.onNodeWithText("Tugas ini sudah selesai").performClick()
+        compose.onNodeWithText("Tandai tugas selesai").performClick()
         assertEquals(listOf("pause", "skip", "toggle:s2", "complete"), actions.calls)
     }
 

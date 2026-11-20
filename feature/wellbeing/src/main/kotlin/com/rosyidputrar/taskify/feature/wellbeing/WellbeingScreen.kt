@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.wellbeing
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -203,7 +205,10 @@ private fun WellbeingOnboarding() {
 private fun DayRibbon(state: WellbeingUiState, actions: WellbeingActions) {
     val haptics = rememberHaptics()
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Wellbeing)
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), reverseLayout = true, modifier = Modifier.padding(vertical = 6.dp)) {
+    val dayScroll = rememberLazyListState()
+    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), reverseLayout = true, state = dayScroll,
+        // reverseLayout: indeks naik ke KIRI, jadi "maju" = tepi kiri.
+        modifier = Modifier.padding(vertical = 6.dp).fadingEdges({ dayScroll.canScrollForward }, { dayScroll.canScrollBackward })) {
         items(state.days, key = { it }) { day ->
             val selected = day == state.day
             Surface(

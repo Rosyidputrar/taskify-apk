@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.ui.focus
 
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.OutlinedButton
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.core.animateFloatAsState
@@ -332,8 +334,12 @@ private fun FocusRunning(state: FocusUiState, run: FocusRun, now: Long, actions:
     val task = state.task
     if (task != null && task.status != TaskStatus.Done) {
         Spacer(Modifier.height(12.dp))
-        TextButton(onClick = { haptics.success(); actions.completeTask() }, modifier = Modifier.fillMaxWidth()) {
-            Text("Tugas ini sudah selesai")
+        // Tombol bergaris + ikon centang + kata kerja: jelas sebuah AKSI ("tandai"), bukan
+        // keterangan status — teks "Tugas ini sudah selesai" dulu terbaca seperti label.
+        OutlinedButton(onClick = { haptics.success(); actions.completeTask() }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Rounded.Check, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Tandai tugas selesai")
         }
     }
     if (state.subtasks.isNotEmpty()) {

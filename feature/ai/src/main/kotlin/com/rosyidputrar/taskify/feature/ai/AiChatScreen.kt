@@ -1,5 +1,11 @@
 package com.rosyidputrar.taskify.feature.ai
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Check
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -384,18 +390,33 @@ private fun AssistantMessage(item: ChatItem.Assistant, running: Boolean, actions
         }
         val finished = !item.streaming && item.state == ChatState.Done && item.text.isNotBlank()
         AnimatedVisibility(finished, enter = fadeIn(tween(240))) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                SmallAction(Icons.Outlined.ContentCopy, "Salin jawaban") { clipboard.setText(AnnotatedString(item.text)); haptics.success() }
-                if (item.last && !running) SmallAction(Icons.Outlined.Refresh, "Jawab ulang") { actions.retry() }
+            // Aksi BERLABEL (bukan ikon samar): apa yang bisa dilakukan dengan jawaban ini terbaca
+            // tanpa menebak. FlowRow supaya di layar sempit turun ke baris kedua, tidak terpotong.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.offset(x = (-10).dp)) {
+                var copied by remember(item.id) { mutableStateOf(false) }
+                LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1_800); copied = false } }
+                AnswerAction(if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy, if (copied) "Disalin" else "Salin") {
+                    clipboard.setText(AnnotatedString(item.text)); haptics.success(); copied = true
+                }
+                AnswerAction(Icons.Outlined.Share, "Bagikan") { actions.shareAnswer(item.text) }
+                AnswerAction(Icons.AutoMirrored.Outlined.NoteAdd, "Simpan ke Catatan") { haptics.success(); actions.saveAnswerAsNote(item.text) }
+                if (item.last && !running) AnswerAction(Icons.Outlined.Refresh, "Jawab ulang") { actions.retry() }
             }
         }
     }
 }
 
 @Composable
-private fun SmallAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-        Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun AnswerAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        modifier = Modifier.heightIn(min = 36.dp),
+    ) {
+        Icon(icon, null, Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -550,7 +571,8 @@ private fun Composer(
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp, top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.widthIn(max = ChatMaxWidth).fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val chipScroll = rememberScrollState()
+            Row(Modifier.fillMaxWidth().fadingEdges(chipScroll).horizontalScroll(chipScroll), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 AssistChip(
                     onClick = onModel,
                     label = { Text(model.ifBlank { "Pilih model" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp)) },

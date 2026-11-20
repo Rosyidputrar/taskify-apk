@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.ai
 
+import com.rosyidputrar.taskify.core.ui.share.ShareDoc
+import com.rosyidputrar.taskify.core.ui.share.ShareService
+import com.rosyidputrar.taskify.feature.ai.tools.AiData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.ai.AiClient
@@ -53,6 +56,10 @@ interface ChatActions {
     fun rename(title: String) {}
     fun setSystemPrompt(text: String) {}
     fun delete(onDone: () -> Unit) {}
+    /** Bagikan satu jawaban asisten sebagai teks (lembar bagikan Android). */
+    fun shareAnswer(text: String) {}
+    /** Simpan satu jawaban asisten sebagai catatan baru. */
+    fun saveAnswerAsNote(text: String) {}
 }
 
 /** Provider yang dipakai `setModel`: provider sesi bila ada, kalau tidak provider pengaturan. */
@@ -67,6 +74,9 @@ class AiChatViewModel(
     private val engine: ChatEngine,
     private val settingsStore: AiSettingsStore,
     private val toolbox: AiToolbox,
+    private val data: AiData,
+    private val sharer: ShareService,
+    private val messenger: Messenger,
 ) : ViewModel(), ChatActions {
     private val sessionId = MutableStateFlow(initialId)
     /** Pilihan untuk chat baru (sebelum sesi ada). */
@@ -111,6 +121,19 @@ class AiChatViewModel(
                 repo.createSession(s.provider.name, draftModel.value ?: s.model, s.systemPrompt, draftAccess.value).also { sessionId.value = it }
             }
             engine.send(id, text)
+        }
+    }
+
+    override fun shareAnswer(text: String) {
+        if (text.isBlank()) return
+        sharer.shareText(ShareDoc(title = null, meta = null, markdown = text, label = "Jawaban Asisten"))
+    }
+
+    override fun saveAnswerAsNote(text: String) {
+        if (text.isBlank()) return
+        launchSafe {
+            data.createNote(date = null, title = answerNoteTitle(text), content = text)
+            messenger.show("Disimpan ke Catatan")
         }
     }
 
@@ -294,4 +317,22 @@ class AiSettingsViewModel(
             messenger.show("Semua percakapan dihapus")
         }
     }
+}
+
+/**
+ * Judul catatan dari jawaban asisten: baris pertama yang berisi teks, tanpa penanda markdown
+ * (#, -, *, >, angka daftar, **tebal**, `kode`), dipotong 60 karakter di batas kata.
+ */
+internal fun answerNoteTitle(text: String): String {
+    val line = text.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("```") }
+        .map { it.replace(Regex("""^(#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)+"""), "").replace(Regex("""[*_`~]"""), "").trim().trimEnd(':') }
+        // Baris tanpa huruf/angka (mis. "---" atau "#" kosong) bukan judul.
+        .firstOrNull { l -> l.any { it.isLetterOrDigit() } }
+        ?: return "Jawaban Asisten"
+    if (line.length <= 60) return line
+    val cut = line.take(60)
+    val space = cut.lastIndexOf(' ')
+    return (if (space >= 30) cut.take(space) else cut).trimEnd(',', ';', '.', ' ') + "…"
 }

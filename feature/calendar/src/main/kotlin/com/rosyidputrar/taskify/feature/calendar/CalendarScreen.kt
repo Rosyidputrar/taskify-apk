@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.calendar
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.ListSkeleton
@@ -201,7 +202,8 @@ fun CalendarContent(
 
 @Composable
 private fun Legend(visible: Set<CalendarKind>, onToggle: (CalendarKind) -> Unit) {
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val legendScroll = rememberLazyListState()
+    LazyRow(state = legendScroll, modifier = Modifier.fadingEdges(legendScroll), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(CalendarKind.entries) { kind ->
             val accent = TaskifyTheme.modules.accent(kind.module())
             FilterChip(

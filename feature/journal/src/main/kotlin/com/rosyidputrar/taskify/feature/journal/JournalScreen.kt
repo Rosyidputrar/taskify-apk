@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
 import com.rosyidputrar.taskify.core.domain.journal.JournalEntry
 import androidx.compose.runtime.remember
@@ -150,7 +152,8 @@ private fun LazyListScope.shelf(state: JournalUiState, actions: JournalActions, 
         )
     }
     item(key = "moods") {
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val moodScroll = rememberLazyListState()
+        LazyRow(state = moodScroll, modifier = Modifier.fadingEdges(moodScroll), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 FilterChip(selected = state.filter.mood == null, onClick = { actions.setMood(null) }, label = { Text("Semua mood") }, leadingIcon = { Icon(Icons.Outlined.Mood, null, Modifier.size(18.dp)) })
             }

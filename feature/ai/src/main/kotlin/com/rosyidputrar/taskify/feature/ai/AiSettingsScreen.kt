@@ -62,7 +62,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rosyidputrar.taskify.core.ai.AiEndpoint
 import com.rosyidputrar.taskify.core.ai.AiPrompt
 import com.rosyidputrar.taskify.core.ai.AiProvider
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
@@ -126,10 +125,6 @@ fun AiSettingsContent(
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         BaseUrlPresets.forEach { (name, preset) -> SuggestionChip(onClick = { url = preset }, label = { Text(name) }) }
                     }
-                }
-                // HTTP hanya diizinkan untuk host privat/lokal — peringatkan dengan jelas.
-                if (AiEndpoint.isInsecure(s.baseUrl)) {
-                    Hint("HTTP tanpa enkripsi — hanya untuk server lokal di jaringanmu sendiri. Kunci API bisa disadap siapa pun di jaringan ini.")
                 }
                 AnimatedVisibility(url.trim().trimEnd('/') != s.baseUrl) {
                     FilledTonalButton(onClick = { actions.saveBaseUrl(url) }) { Text("Simpan alamat") }

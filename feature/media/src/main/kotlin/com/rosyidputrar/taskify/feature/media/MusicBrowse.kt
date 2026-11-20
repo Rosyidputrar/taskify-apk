@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.media
 
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -185,7 +186,8 @@ fun LazyListScope.exploreTab(state: MusicUiState, actions: MusicActions) {
         item(key = "x-mood-$gi") {
             Column {
                 SectionTitle(group.title.ifBlank { "Mood & genre" })
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val moodScroll = rememberScrollState()
+                Row(Modifier.fadingEdges(moodScroll).horizontalScroll(moodScroll).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     group.items.forEach { m -> AssistChip(onClick = { actions.open(BrowseTarget.Mood(m.params, m.title)) }, label = { Text(m.title) }) }
                 }
             }
