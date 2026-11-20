@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.ModuleHeader
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
-import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyLogo
+import com.rosyidputrar.taskify.core.designsystem.component.LivingLogo
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.store.ai.ChatSession
@@ -237,7 +237,7 @@ private fun SetupCard(onSettings: () -> Unit) {
 @Composable
 private fun EmptySessions() {
     Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(TaskifyLogo.Full, null, tint = Color.Unspecified, modifier = Modifier.size(44.dp))
+        LivingLogo(Modifier.size(48.dp))
         Text("Belum ada percakapan", style = MaterialTheme.typography.titleMedium)
         Text("Percakapan tersimpan di perangkat ini saja dan tidak ikut sinkron.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
@@ -246,7 +246,7 @@ private fun EmptySessions() {
 @Composable
 private fun PaneHint(onNew: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(TaskifyLogo.Full, null, tint = Color.Unspecified, modifier = Modifier.size(56.dp))
+        LivingLogo(Modifier.size(64.dp))
         Spacer(Modifier.size(12.dp))
         Text("Pilih percakapan atau mulai yang baru", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.size(12.dp))

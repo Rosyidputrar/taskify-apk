@@ -113,6 +113,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyLogo
+import com.rosyidputrar.taskify.core.designsystem.component.LivingLogo
+import com.rosyidputrar.taskify.core.designsystem.component.LogoMood
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.store.ai.ChatState
@@ -389,22 +391,16 @@ private fun SmallAction(icon: androidx.compose.ui.graphics.vector.ImageVector, l
     }
 }
 
-/** Tiga titik berdenyut berurutan — "sedang berpikir". */
+/** Logo Taskify dalam mode "berpikir": centang ditulis berulang, kartu bernapas. */
 @Composable
 private fun Thinking() {
-    val t = rememberInfiniteTransition(label = "berpikir")
-    val accent = TaskifyTheme.modules.accent(TaskifyModule.Assistant)
     Row(
-        Modifier.padding(vertical = 8.dp).semantics { contentDescription = "Asisten sedang menyiapkan jawaban" },
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.padding(vertical = 6.dp).semantics(mergeDescendants = true) { contentDescription = "Asisten sedang menyiapkan jawaban" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        repeat(3) { i ->
-            val a by t.animateFloat(
-                0.25f, 1f,
-                infiniteRepeatable(tween(560, delayMillis = i * 160), RepeatMode.Reverse), label = "titik$i",
-            )
-            Box(Modifier.size(8.dp).alpha(a).background(accent, CircleShape))
-        }
+        LivingLogo(Modifier.size(30.dp), mood = LogoMood.Thinking, intro = false)
+        Text("Sedang berpikir…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -500,7 +496,7 @@ private fun EmptyChat(state: ChatUiState, onPick: (String) -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        Icon(TaskifyLogo.Full, null, tint = Color.Unspecified, modifier = Modifier.size(64.dp))
+        LivingLogo(Modifier.size(72.dp))
         Spacer(Modifier.size(16.dp))
         Text("Mau dibantu apa?", style = MaterialTheme.typography.headlineSmall.copy(fontFamily = SerifFamily))
         Spacer(Modifier.size(6.dp))
