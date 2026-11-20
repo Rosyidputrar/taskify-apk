@@ -17,14 +17,28 @@ class MfaTrustStore(devicePrefs: DevicePrefs) {
         return DeviceTrust(user, until)
     }
 
-    fun trust(userId: String, now: Long = System.currentTimeMillis()) =
+    fun trust(userId: String, now: Long = System.currentTimeMillis()) {
         prefs.edit { putString(KEY_USER, userId).putLong(KEY_UNTIL, now + TRUST_MILLIS) }
+        recordVerified(now)
+    }
 
-    fun clear() = prefs.edit { remove(KEY_USER).remove(KEY_UNTIL) }
+    /**
+     * Waktu terakhir perangkat ini lolos verifikasi (kode authenticator / ingat perangkat).
+     * Dipakai gerbang MFA untuk masa tenggang offline (D-02): hanya dicatat saat verifikasi
+     * benar-benar terjadi, TIDAK saat gerbang dilewati lewat tenggang itu sendiri (supaya tenggang
+     * tidak memperpanjang dirinya sendiri selamanya).
+     */
+    fun lastVerifiedAt(): Long? = prefs.getLong(KEY_LAST_VERIFIED, 0L).takeIf { it > 0 }
+
+    fun recordVerified(now: Long = System.currentTimeMillis()) =
+        prefs.edit { putLong(KEY_LAST_VERIFIED, now) }
+
+    fun clear() = prefs.edit { remove(KEY_USER).remove(KEY_UNTIL).remove(KEY_LAST_VERIFIED) }
 
     private companion object {
         const val KEY_USER = "mfa_trust_user"
         const val KEY_UNTIL = "mfa_trust_until"
+        const val KEY_LAST_VERIFIED = "mfa_last_verified_at"
     }
 }
 

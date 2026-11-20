@@ -28,9 +28,9 @@ import com.rosyidputrar.taskify.core.designsystem.theme.namedColor
 import com.rosyidputrar.taskify.core.domain.tags.normalizeTagName
 import com.rosyidputrar.taskify.core.store.tasks.TagRef
 
-/** Tag picker: chip tag terpasang (hapus dengan ✕), kotak tambah, dan saran dari tag yang ada. */
+/** Tag picker: chip tag terpasang (hapus dengan ✕), kotak tambah, dan saran dari tag yang ada. [enabled] = false (mode Baca) → chip tampil tanpa ✕, kotak tambah & saran disembunyikan. */
 @Composable
-fun TagPicker(selected: List<TagRef>, all: List<TagRef>, onAdd: (String) -> Unit, onRemove: (TagRef) -> Unit) {
+fun TagPicker(selected: List<TagRef>, all: List<TagRef>, onAdd: (String) -> Unit, onRemove: (TagRef) -> Unit, enabled: Boolean = true) {
     var input by rememberSaveable { mutableStateOf("") }
     val query = normalizeTagName(input)
     val chosen = selected.map { it.id }.toSet()
@@ -42,33 +42,36 @@ fun TagPicker(selected: List<TagRef>, all: List<TagRef>, onAdd: (String) -> Unit
                     InputChip(
                         selected = true,
                         onClick = { onRemove(tag) },
+                        enabled = enabled,
                         label = { Text("#${tag.name}") },
-                        trailingIcon = { Icon(Icons.Rounded.Close, contentDescription = "Lepas tag ${tag.name}", modifier = Modifier.size(16.dp)) },
+                        trailingIcon = if (enabled) ({ Icon(Icons.Rounded.Close, contentDescription = "Lepas tag ${tag.name}", modifier = Modifier.size(16.dp)) }) else null,
                         colors = InputChipDefaults.inputChipColors(selectedLabelColor = namedColor(tag.color)),
                     )
                 }
             }
         }
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            placeholder = { Text("Tambah tag…") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = {
-                if (query.isNotEmpty()) onAdd(query)
-                input = ""
-            }),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (suggestions.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                suggestions.forEach { tag ->
-                    SuggestionChip(onClick = { onAdd(tag.name); input = "" }, label = { Text("#${tag.name}", color = namedColor(tag.color)) })
+        if (enabled) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                placeholder = { Text("Tambah tag…") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    if (query.isNotEmpty()) onAdd(query)
+                    input = ""
+                }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (suggestions.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    suggestions.forEach { tag ->
+                        SuggestionChip(onClick = { onAdd(tag.name); input = "" }, label = { Text("#${tag.name}", color = namedColor(tag.color)) })
+                    }
                 }
+            } else if (query.isNotEmpty()) {
+                Text("Tekan selesai untuk membuat #$query", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else if (query.isNotEmpty()) {
-            Text("Tekan selesai untuk membuat #$query", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

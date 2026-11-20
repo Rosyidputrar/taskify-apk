@@ -69,21 +69,66 @@ class ChatEngineTest {
 
     @Test fun serverErrorKeepsPartialTextAndRetryReplacesIt() = runTest {
         store.newSession()
+        // Galat TAK-dapat-diulang (404): tidak ada percobaan ulang otomatis — jalur
+        // "Coba lagi" manual yang diuji di sini. (429/5xx diuji di tes percobaan ulang.)
         val client = ScriptedClient(
-            { emit(AiEvent.Text("Sebagian")); throw AiException(AiErrorKind.RateLimit, "Terlalu banyak permintaan (429).") },
+            { emit(AiEvent.Text("Sebagian")); throw AiException(AiErrorKind.NotFound, "Model tidak ditemukan (404).") },
             { emit(AiEvent.Text("Jawaban utuh.")); emit(AiEvent.Done("stop")) },
         )
         val e = engine(client)
         e.send("s1", "hai")
         advanceUntilIdle()
         assertEquals(ChatState.Error to "Sebagian", store.list.last().state to store.list.last().content)
-        assertEquals("Terlalu banyak permintaan (429).", store.list.last().error)
+        assertEquals("Model tidak ditemukan (404).", store.list.last().error)
+        assertEquals(1, client.requests.size)
         e.retry("s1")
         advanceUntilIdle()
         assertEquals(listOf(ChatRole.User to ChatState.Done, ChatRole.Assistant to ChatState.Done), store.roles())
         assertEquals("Jawaban utuh.", store.list.last().content)
         // Jawaban gagal tidak ikut dikirim ulang.
         assertEquals(listOf(AiRole.User), client.requests[1].messages.map { it.role })
+    }
+
+    @Test fun rateLimitMidStreamRetriesAutomaticallyAndKeepsPartialText() = runTest {
+        store.newSession()
+        val client = ScriptedClient(
+            { emit(AiEvent.Text("Halo ")); throw AiException(AiErrorKind.RateLimit, "Terlalu banyak permintaan (429).") },
+            { emit(AiEvent.Text("Halo dunia.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "hai")
+        advanceUntilIdle()
+        assertFalse(e.isRunning("s1"))
+        assertEquals(2, client.requests.size) // percobaan ulang otomatis, tanpa ketuk "Coba lagi"
+        assertEquals(ChatState.Done to "Halo dunia.", store.list.last().state to store.list.last().content)
+        assertTrue(!store.list.last().content.contains("Halo Halo")) // awalan tidak ganda
+    }
+
+    @Test fun nonRetryableErrorIsNotRetried() = runTest {
+        store.newSession()
+        val client = ScriptedClient(
+            { throw AiException(AiErrorKind.Auth, "API key ditolak (401).") },
+            { emit(AiEvent.Text("Seharusnya tidak sampai sini.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "hai")
+        advanceUntilIdle()
+        assertEquals(1, client.requests.size)
+        assertEquals(ChatState.Error, store.list.last().state)
+    }
+
+    @Test fun truncatedAnswerIsMarkedWithNote() = runTest {
+        store.newSession()
+        val client = ScriptedClient(
+            { emit(AiEvent.Text("Jawaban panjang")); emit(AiEvent.Done("length")) },
+        )
+        val e = engine(client)
+        e.send("s1", "cerita panjang")
+        advanceUntilIdle()
+        val answer = store.list.last()
+        assertEquals(ChatState.Done, answer.state)
+        assertTrue(answer.content.endsWith(ChatEngine.TRUNCATED_NOTE))
+        assertTrue(answer.content.startsWith("Jawaban panjang"))
     }
 
     @Test fun stopKeepsWhatWasReceived() = runTest {
@@ -119,7 +164,9 @@ class ChatEngineTest {
         val second = client.requests[1].messages
         assertEquals(listOf(AiRole.User, AiRole.Assistant, AiRole.Tool), second.map { it.role })
         assertEquals("c1", second[2].toolCallId)
-        assertEquals("hasil baca", second[2].content)
+        // Hasil alat dibungkus pembatas data (E-M2) — isi asli tetap ada di dalamnya.
+        assertTrue(second[2].content.startsWith(ChatHistory.TOOL_RESULT_HEADER))
+        assertTrue(second[2].content.contains("hasil baca"))
     }
 
     @Test fun writeToolWaitsForApproval() = runTest {
@@ -164,7 +211,7 @@ class ChatEngineTest {
         assertTrue(tools.ran.isEmpty())
         val tool = store.list.single { it.role == ChatRole.Tool }
         assertEquals(ChatState.Stopped, tool.state)
-        assertTrue(client.requests[1].messages.last().content.startsWith("Pengguna menolak"))
+        assertTrue(client.requests[1].messages.last().content.contains("Pengguna menolak"))
     }
 
     @Test fun newMessageWhilePendingCancelsThePendingWrite() = runTest {
@@ -215,6 +262,59 @@ class ChatEngineTest {
         assertFalse(e.isRunning("s1"))
         assertEquals(ChatEngine.MAX_ROUNDS + 2, client.requests.size)
         assertEquals(ChatEngine.MAX_ROUNDS, tools.ran.size) // setelah batas, alat tidak dijalankan lagi
+    }
+
+    @Test fun toolRoundsBudgetSurvivesApprovals() = runTest {
+        store.newSession(dataAccess = true)
+        // Dua giliran tulis (masing-masing butuh persetujuan) lalu 10 alat baca.
+        // Tanpa anggaran lintas decide(), tiap persetujuan me-reset hitungan ke 1.
+        val scripts = mutableListOf<suspend kotlinx.coroutines.flow.FlowCollector<AiEvent>.() -> Unit>()
+        scripts += { emit(AiEvent.ToolCalls(listOf(AiToolCall("w1", "simpan", "{}")))); emit(AiEvent.Done("tool_calls")) }
+        scripts += { emit(AiEvent.ToolCalls(listOf(AiToolCall("w2", "simpan", "{}")))); emit(AiEvent.Done("tool_calls")) }
+        repeat(10) { i ->
+            scripts += { emit(AiEvent.ToolCalls(listOf(AiToolCall("r$i", "baca", "{}")))); emit(AiEvent.Done("tool_calls")) }
+        }
+        val client = ScriptedClient(*scripts.toTypedArray())
+        val e = engine(client)
+        e.send("s1", "kerjakan banyak")
+        advanceUntilIdle()
+        assertEquals(ChatState.Awaiting, store.list.last().state)
+        e.decide("s1", "w1", approve = true)
+        advanceUntilIdle()
+        assertEquals(ChatState.Awaiting, store.list.last().state)
+        e.decide("s1", "w2", approve = true)
+        advanceUntilIdle()
+        assertFalse(e.isRunning("s1"))
+        // Anggaran total = MAX_ROUNDS putaran: 2 tulis + 4 baca = 6 alat yang jalan.
+        assertEquals(6, tools.ran.size)
+        assertEquals(listOf("simpan", "simpan", "baca", "baca", "baca", "baca"), tools.ran.map { it.first })
+        assertEquals(ChatEngine.MAX_ROUNDS + 2, client.requests.size)
+    }
+
+    @Test fun secondDecisionWhileFirstRunsIsQueuedNotLost() = runTest {
+        store.newSession(dataAccess = true)
+        val client = ScriptedClient(
+            { emit(AiEvent.ToolCalls(listOf(AiToolCall("w1", "simpan", "{}"), AiToolCall("w2", "simpan", "{}")))); emit(AiEvent.Done("tool_calls")) },
+            { emit(AiEvent.Text("Selesai.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "simpan dua")
+        advanceUntilIdle()
+        assertEquals(ChatState.Awaiting, store.list.last().state)
+        // Keputusan pertama dibuat lambat (DB sibuk) — ketukan kedua datang saat masih berjalan.
+        tools.runBlocker = kotlinx.coroutines.CompletableDeferred()
+        e.decide("s1", "w1", approve = true)
+        advanceUntilIdle()
+        assertTrue(e.isRunning("s1"))
+        assertTrue(tools.ran.isEmpty())
+        e.decide("s1", "w2", approve = true) // dulu: hilang tanpa jejak
+        advanceUntilIdle()
+        assertTrue(tools.ran.isEmpty())
+        tools.runBlocker!!.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(e.isRunning("s1"))
+        assertEquals(listOf("simpan", "simpan"), tools.ran.map { it.first })
+        assertEquals("Selesai.", store.list.last().content)
     }
 
     @Test fun editLastReplacesQuestionAndAnswer() = runTest {
@@ -292,7 +392,7 @@ class ChatEngineTest {
             listOf(ChatRole.User to ChatState.Done, ChatRole.Assistant to ChatState.Done, ChatRole.Tool to ChatState.Error, ChatRole.Assistant to ChatState.Done),
             store.roles(),
         )
-        assertEquals("Dompet \"BCA\" tidak ada.", client.requests[1].messages.last().content)
+        assertTrue(client.requests[1].messages.last().content.contains("Dompet \"BCA\" tidak ada."))
     }
 
     @Test fun preparedArgumentsAreWhatTheUserApprovesAndWhatRuns() = runTest {

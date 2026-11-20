@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 
 /** Membaca / menghapus berkas dari pemilih berkas (Storage Access Framework). */
 interface SandiDocuments {
-    /** @throws ImportException bila lebih dari [maxBytes]. */
-    suspend fun read(uri: String, maxBytes: Int): String
+    /** Isi mentah berkas (byte), supaya batas ukuran dihitung dari byte (D-14). @throws ImportException bila lebih dari [maxBytes]. */
+    suspend fun read(uri: String, maxBytes: Int): ByteArray
 
     /** true = terhapus; false = penyedia tidak mengizinkan / gagal. */
     suspend fun delete(uri: String): Boolean
@@ -87,7 +87,13 @@ class SandiImporter(
         if (uri == null) return
         forget()
         val parsed = try {
-            SandiImport.read(documents.read(uri, SandiImport.MAX_BYTES))
+            // Byte dibaca sekali, dicek batasnya dalam byte, lalu dinolkan setelah diurai.
+            val bytes = documents.read(uri, SandiImport.MAX_BYTES)
+            try {
+                SandiImport.readBytes(bytes)
+            } finally {
+                bytes.fill(0)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ImportException) {

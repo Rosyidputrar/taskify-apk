@@ -17,6 +17,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
+    // C M-2: cookie/PoToken/dataSyncId di EncryptedSharedPreferences.
+    implementation(libs.androidx.security.crypto)
     api(libs.androidx.media3.exoplayer)
     api(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)

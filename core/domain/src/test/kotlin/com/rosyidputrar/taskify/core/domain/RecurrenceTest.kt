@@ -141,4 +141,22 @@ class RecurrenceTest {
         assertEquals(emptyList(), occurrencesBetween("FREQ=MONTHLY;BYDAY=1MO", "2026-01-01", "2026-01-01", "2026-12-31"))
         assertNull(nextOccurrence("bukan rule", "2026-01-01", "2026-01-01"))
     }
+
+    @Test fun duplicateKeysAndBrokenDatesDoNotCrash() {
+        // Kunci duplikat (dulu: IllegalArgumentException dari associate) — yang terakhir menang.
+        assertEquals(RecurrenceFreq.Weekly, parseRule("FREQ=DAILY;FREQ=WEEKLY;BYDAY=MO").freq)
+        assertEquals(RecurrenceFreq.Daily, parseRule("FREQ=WEEKLY;FREQ=DAILY").freq)
+        assertEquals(listOf(1), parseRule("FREQ=WEEKLY;BYDAY=MO;BYDAY=TU").byDay) // TU = indeks 1
+        // UNTIL dengan bulan/hari tidak valid diabaikan, bukan crash saat deskripsi dibaca.
+        assertEquals("Setiap hari", describeRule("FREQ=DAILY;INTERVAL=1;UNTIL=20261345T000000Z"))
+        // Tanggal rusak di jalur baca data eksternal → null / kosong, bukan DateTimeParseException.
+        assertNull(nextOccurrence("FREQ=DAILY;INTERVAL=1", "bukan-tanggal", "2026-10-07"))
+        assertNull(nextOccurrence("FREQ=DAILY;INTERVAL=1", "2026-10-07", "bukan-tanggal"))
+        assertEquals(emptyList(), occurrencesBetween("FREQ=DAILY;INTERVAL=1", "bukan-tanggal", "2026-10-07", "2026-10-14"))
+        assertEquals(emptyList(), occurrencesBetween("FREQ=DAILY;INTERVAL=1", "2026-10-07", "bukan-tanggal", "2026-10-14"))
+        assertNull(nextDueAfterCompletion("FREQ=DAILY;INTERVAL=1", "bukan-tanggal", "2026-10-07"))
+        assertNull(buildRule(monthly(), "bukan-tanggal"))
+        assertEquals("Setiap hari", describeRule("FREQ=DAILY;INTERVAL=1", "bukan-tanggal"))
+        assertEquals("Setiap tahun", describeRule("FREQ=YEARLY;INTERVAL=1", "bukan-tanggal"))
+    }
 }

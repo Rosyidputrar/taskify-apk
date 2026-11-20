@@ -109,7 +109,7 @@ class LogoutCleanupTest {
     @Test fun leftoversAreClearedOnLogout() = runBlocking {
         val prefs = DevicePrefs(context)
         val lock = LockManager(prefs, PinMac { Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(ByteArray(32) { 3 }, "HmacSHA256")) }.doFinal(it) })
-        lock.enable("1234", 5)
+        lock.enable("123456", 5)
         assertTrue(lock.state.value.config != null)
 
         val inbox = ShareInbox(context)

@@ -78,6 +78,21 @@ import kotlin.coroutines.resumeWithException
  *   reused for all videos until the engine expires or the session changes.
  * - **Background cleanup** — [onAppBackgrounded] releases the WebView to free memory.
  *   The engine is recreated on the next [mintToken] call.
+ *
+ * ## Tentang kunci di bawah (E-S6)
+ *
+ * `REQUEST_KEY` dan `API_KEY` di sini adalah kunci klien web YouTube yang bersifat PUBLIK
+ * (dipakai luas oleh klien pihak ketiga, nilainya sama di semua instalasi dan bisa dibaca
+ * siapa pun dari APK). Keduanya SENGAJA tidak dipindah ke BuildConfig/secret build:
+ * memindahnya tidak menyembunyikan apa pun (APK bisa di-decompile) dan tidak memberi
+ * jalur rotasi yang lebih cepat — rotasi tetap butuh rilis baru — sementara build debug
+ * dan pemutaran yang sudah terbukti jalan akan bergantung pada secret tambahan.
+ *
+ * Rencana cadangan bila Google membatasi kunci ini: pemutaran tidak langsung mati total —
+ * sebagian endpoint youtubei bekerja tanpa kunci (lihat `InnerTube`), dan kegagalan mint
+ * PoToken sudah ditangani anggun oleh pemanggil (`PoTokenEnsurer.ensure` lanjut tanpa
+ * token). Bila pembatasan terbukti, ganti kunci lewat rilis baru dan pantau laporan
+ * pemutaran; jangan menganggap rotasi kunci ini sebagai perbaikan keamanan.
  */
 object BotGuardTokenGenerator {
     private const val TAG = "BotGuardTokenGen"

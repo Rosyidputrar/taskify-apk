@@ -701,6 +701,10 @@ async function resolveWithClient(youtube, request, client, preparedInfo) {
       ? audioConfig.perceptual_loudness_db
       : null,
     playbackTrackingUrl: playbackTrackingUrl(info),
+    // C S-2: klien InnerTube yang benar-benar dipakai resolve ini
+    // ("MWEB" anonim / "WEB_CREATOR" login) — Kotlin tidak boleh lagi
+    // menebaknya dari ada/tidaknya cookie login.
+    client,
   };
 }
 

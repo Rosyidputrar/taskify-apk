@@ -62,6 +62,47 @@ sleep 3
 "$ADB" shell am start -W -n "$PKG/com.rosyidputrar.taskify.MainActivity" > /dev/null || fail "kembali dari latar"
 settle 4 "kembali dari latar"
 
+# Ketuk simpul UI yang teks / content-desc-nya sama dengan $1 (uiautomator dump + python3).
+# Dipakai untuk membuka layar lewat dok/daftar, tanpa koordinat hardcode.
+tap_text() {
+  local want="$1" what="$2"
+  "$ADB" shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || fail "uiautomator dump gagal ($what)"
+  "$ADB" pull /sdcard/ui.xml "$OUT/ui.xml" > /dev/null 2>&1 || fail "ambil dump UI gagal ($what)"
+  local xy
+  xy=$(python3 - "$OUT/ui.xml" "$want" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+want = sys.argv[2]
+root = ET.parse(sys.argv[1]).getroot()
+parent = {c: p for p in root.iter() for c in p}
+for node in root.iter("node"):
+    if node.get("text") == want or node.get("content-desc") == want:
+        # Naik sampai simpul yang bisa diketuk (label dok/baris daftar sendiri tidak klikabel).
+        n = node
+        while n is not None and n.get("clickable") != "true":
+            n = parent.get(n)
+        if n is None:
+            continue
+        m = re.findall(r"\d+", n.get("bounds", ""))
+        if len(m) == 4:
+            print((int(m[0]) + int(m[2])) // 2, (int(m[1]) + int(m[3])) // 2)
+            break
+PY
+)
+  [ -n "$xy" ] || fail "\"$want\" tidak ditemukan di layar ($what)"
+  "$ADB" shell input tap $xy > /dev/null || fail "ketuk \"$want\" ($what)"
+}
+
+# Layar Asisten AI (R8): Ruang → Asisten AI. Instalasi baru belum punya percakapan, jadi
+# yang dibuktikan di sini: layar daftar Asisten AI terbuka tanpa crash di APK R8
+# (aturan keep markdown/highlights ikut teruji lewat pembukaan layar). Render satu jawaban
+# markdown panjang di R8 masih butuh percakapan berisi — dicatat di status area E.
+tap_text "Ruang" "buka Ruang"
+settle 4 "Ruang"
+tap_text "Asisten AI" "buka Asisten AI"
+settle 5 "layar Asisten AI"
+"$ADB" exec-out screencap -p > "$OUT/ai.png" 2>/dev/null || true
+echo "ok: layar Asisten AI terbuka"
+
 # Putar layar (Activity dibuat ulang).
 "$ADB" shell settings put system accelerometer_rotation 0 > /dev/null 2>&1 || true
 "$ADB" shell settings put system user_rotation 1 > /dev/null 2>&1 || true

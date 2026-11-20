@@ -71,6 +71,16 @@ class SandiImportTest {
         assertEquals(1, p.noSecret) // catatan Bitwarden
     }
 
+    /** D-14: batas dihitung dari byte — 2 juta karakter CJK = 6 MB byte, ditolak walau jumlah karakternya di bawah 5 juta. */
+    @Test fun readBytesEnforcesByteLimitNotCharCount() {
+        val header = "name,url,username,password\n"
+        val big = header + "x".repeat(100) + "," + "https://a.example.com" + ",u," + "あ".repeat(2_000_000)
+        assertFailsWith<ImportException> { SandiImport.readBytes(big.toByteArray(Charsets.UTF_8)) }
+        val ok = header + "GitHub,https://github.com,u,p\n" + "あ".repeat(100_000)
+        // 100 ribu CJK ≈ 300 KB byte: tetap diterima.
+        assertEquals(1, SandiImport.readBytes(ok.toByteArray(Charsets.UTF_8)).rows.size)
+    }
+
     @Test fun rejectsFilesThatAreNotPasswordCsv() {
         assertEquals("Berkas kosong.", assertFailsWith<ImportException> { SandiImport.read("") }.message)
         assertTrue(assertFailsWith<ImportException> { SandiImport.read("Tanggal;Nominal\n2026-11-01;5000") }.message!!.startsWith("Ini bukan berkas sandi"))

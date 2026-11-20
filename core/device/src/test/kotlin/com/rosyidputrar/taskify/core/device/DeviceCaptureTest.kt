@@ -15,8 +15,8 @@ class DeviceCaptureTest {
     private val own = "com.rosyidputrar.taskify"
     private val t = 1_763_280_000_000L // 2025-11-16 15.00 WIB
 
-    private fun raw(pkg: String = "com.whatsapp", title: String? = "Budi", text: String? = "Kode OTP 482913 jangan dibagikan", ongoing: Boolean = false, summary: Boolean = false, cat: String? = null) =
-        RawNotif(pkg, "k", title, null, text, cat, t, ongoing, summary)
+    private fun raw(pkg: String = "com.whatsapp", title: String? = "Budi", text: String? = "Kode OTP 482913 jangan dibagikan", conversation: String? = null, ongoing: Boolean = false, summary: Boolean = false, cat: String? = null) =
+        RawNotif(pkg, "k", title, conversation, text, cat, t, ongoing, summary)
 
     @Test fun filtersOwnSystemExcludedOngoingAndSummaries() {
         val s = NotifSettings(excluded = setOf("com.instagram.android"))
@@ -29,6 +29,26 @@ class DeviceCaptureTest {
         assertEquals(CaptureDecision.Ignore, NotificationCapture.decide(raw(title = " ", text = null), s, own, "x"))
         // Notifikasi berjalan boleh dicatat bila pengguna mematikan saringannya.
         assertIs<CaptureDecision.Log>(NotificationCapture.decide(raw(ongoing = true), s.copy(ignoreOngoing = false), own, "x"))
+    }
+
+    @Test fun conversationIsRedactedAndCapped() {
+        val long = "Grup Verifikasi " + "x".repeat(300)
+        val d = NotificationCapture.decide(
+            raw(conversation = "Kode OTP 482913 jangan dibagikan", title = "Budi", text = "halo"),
+            NotifSettings(), own, "WhatsApp",
+        ) as CaptureDecision.Log
+        assertEquals("Kode OTP •••••• jangan dibagikan", d.notif.conversation)
+        val capped = NotificationCapture.decide(
+            raw(conversation = long, title = "Budi", text = "halo"),
+            NotifSettings(), own, "WhatsApp",
+        ) as CaptureDecision.Log
+        assertEquals(200, capped.notif.conversation?.length)
+        // TitleOnly: percakapan (isi) tidak disimpan, seperti teks.
+        val titleOnly = NotificationCapture.decide(
+            raw(conversation = "rahasia", title = "Budi", text = "halo"),
+            NotifSettings(level = NotifStorageLevel.TitleOnly), own, "WhatsApp",
+        ) as CaptureDecision.Log
+        assertNull(titleOnly.notif.conversation)
     }
 
     @Test fun storageLevelsAndOtp() {

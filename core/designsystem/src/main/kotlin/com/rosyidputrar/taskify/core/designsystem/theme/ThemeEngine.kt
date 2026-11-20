@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify.core.designsystem.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
@@ -69,14 +70,20 @@ data class ThemeSpec(
     val effectivePaper: Boolean get() = if (palette == ThemePalette.Kustom) paper else palette.paper
 
     /**
-     * Kontras yang benar-benar dipakai mesin tema. Kertas & Tinta diracik manual pada kontras
-     * Standar: menaikkan kontras tidak boleh me-regenerasi paletnya lewat HCT (itu mengganti
-     * tema bawaan tanpa pemberitahuan), jadi kontrasnya terkunci di Standar. Palet lain dan
-     * Kustom memakai kontras apa adanya.
+     * Kontras yang benar-benar dipakai mesin tema untuk ME-REGENERASI palet lewat HCT.
+     * Kertas & Tinta diracik manual pada kontras Standar: menaikkan kontras tidak boleh
+     * me-regenerasi paletnya lewat HCT (itu mengganti tema bawaan tanpa pemberitahuan), jadi
+     * kontrasnya terkunci di Standar untuk jalur itu. Kontras Sedang/Tinggi untuk Kertas &
+     * Tinta tetap berlaku, tapi lewat penguat teks/garis di [ThemeEngine.scheme] (A10),
+     * bukan lewat regenerasi — lihat [ThemeSpec.contrast] yang dipilih pengguna.
      */
     val effectiveContrast: ThemeContrast get() = if (palette == ThemePalette.KertasTinta) ThemeContrast.Standard else contrast
 
-    /** Desain asli tanpa perubahan apa pun (kontras standar — terkunci untuk Kertas & Tinta). */
+    /**
+     * Desain asli: palet tidak di-regenerasi (kontras efektif terkunci untuk Kertas & Tinta).
+     * Kontras Sedang/Tinggi tidak membatalkan ini — ia hanya memperkuat teks/garis lewat
+     * [ThemeEngine.scheme], warna racikan manualnya tetap sama.
+     */
     val isHandcrafted: Boolean get() = palette == ThemePalette.KertasTinta && effectiveContrast == ThemeContrast.Standard
 
     companion object {
@@ -95,7 +102,12 @@ object ThemeEngine {
         // menyediakan skema yang sama dengan tingkat kontras lain, jadi kontras tidak
         // berlaku di sini (kontrol kontras dimatikan untuk Dinamis di ThemePaletteSettings).
         if (spec.palette == ThemePalette.Dinamis && dynamic != null) return dynamic
-        if (spec.isHandcrafted) return if (dark) DarkScheme else LightScheme
+        // A10: Kertas & Tinta + kontras Sedang/Tinggi — palet TIDAK di-regenerasi, hanya
+        // teks/garis netral yang diperkuat (lihat withHandcraftedContrast).
+        if (spec.isHandcrafted) {
+            val base = if (dark) DarkScheme else LightScheme
+            return if (spec.contrast == ThemeContrast.Standard) base else base.withHandcraftedContrast(spec.contrast, dark)
+        }
         val ds = dynamicScheme(spec.effectiveSeed, spec.effectiveStyle, dark, spec.effectiveContrast.level)
         val generated = ds.toColorScheme(dark)
         return if (spec.effectivePaper) generated.withPaper(dark, ds) else generated
@@ -160,11 +172,15 @@ object ThemeEngine {
         return listOf(ds.primaryPalette, ds.secondaryPalette, ds.tertiaryPalette, ds.neutralPalette).map { p -> steps.map { Color(p.tone(it)) } }
     }
 
-    /** Semua peran diisi eksplisit dari skema (gelap/terang sudah ditentukan oleh [DynamicScheme]). */
-    @Suppress("UNUSED_PARAMETER")
+    /**
+     * Semua peran diisi eksplisit dari skema (gelap/terang sudah ditentukan oleh [DynamicScheme]).
+     * Builder dipilih sesuai [dark] (A9): hari ini hasilnya sama persis karena semua peran
+     * diisi eksplisit, tapi siapa pun yang nanti menambah peran tidak akan mendapat default
+     * terang di tema gelap.
+     */
     private fun DynamicScheme.toColorScheme(dark: Boolean): ColorScheme {
         fun c(argb: Int) = Color(argb)
-        return lightColorScheme(
+        return (if (dark) darkColorScheme(
             primary = c(primary), onPrimary = c(onPrimary), primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
             inversePrimary = c(inversePrimary),
             secondary = c(secondary), onSecondary = c(onSecondary), secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
@@ -180,6 +196,52 @@ object ThemeEngine {
             primaryFixed = c(primaryFixed), primaryFixedDim = c(primaryFixedDim), onPrimaryFixed = c(onPrimaryFixed), onPrimaryFixedVariant = c(onPrimaryFixedVariant),
             secondaryFixed = c(secondaryFixed), secondaryFixedDim = c(secondaryFixedDim), onSecondaryFixed = c(onSecondaryFixed), onSecondaryFixedVariant = c(onSecondaryFixedVariant),
             tertiaryFixed = c(tertiaryFixed), tertiaryFixedDim = c(tertiaryFixedDim), onTertiaryFixed = c(onTertiaryFixed), onTertiaryFixedVariant = c(onTertiaryFixedVariant),
+        ) else lightColorScheme(
+            primary = c(primary), onPrimary = c(onPrimary), primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
+            inversePrimary = c(inversePrimary),
+            secondary = c(secondary), onSecondary = c(onSecondary), secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
+            tertiary = c(tertiary), onTertiary = c(onTertiary), tertiaryContainer = c(tertiaryContainer), onTertiaryContainer = c(onTertiaryContainer),
+            background = c(background), onBackground = c(onBackground), surface = c(surface), onSurface = c(onSurface),
+            surfaceVariant = c(surfaceVariant), onSurfaceVariant = c(onSurfaceVariant), surfaceTint = c(surfaceTint),
+            inverseSurface = c(inverseSurface), inverseOnSurface = c(inverseOnSurface),
+            error = c(error), onError = c(onError), errorContainer = c(errorContainer), onErrorContainer = c(onErrorContainer),
+            outline = c(outline), outlineVariant = c(outlineVariant), scrim = c(scrim),
+            surfaceBright = c(surfaceBright), surfaceContainer = c(surfaceContainer), surfaceContainerHigh = c(surfaceContainerHigh),
+            surfaceContainerHighest = c(surfaceContainerHighest), surfaceContainerLow = c(surfaceContainerLow),
+            surfaceContainerLowest = c(surfaceContainerLowest), surfaceDim = c(surfaceDim),
+            primaryFixed = c(primaryFixed), primaryFixedDim = c(primaryFixedDim), onPrimaryFixed = c(onPrimaryFixed), onPrimaryFixedVariant = c(onPrimaryFixedVariant),
+            secondaryFixed = c(secondaryFixed), secondaryFixedDim = c(secondaryFixedDim), onSecondaryFixed = c(onSecondaryFixed), onSecondaryFixedVariant = c(onSecondaryFixedVariant),
+            tertiaryFixed = c(tertiaryFixed), tertiaryFixedDim = c(tertiaryFixedDim), onTertiaryFixed = c(onTertiaryFixed), onTertiaryFixedVariant = c(onTertiaryFixedVariant),
+        ))
+    }
+
+    /**
+     * A10 — penguat kontras untuk skema racikan manual (Kertas & Tinta). Palet tidak
+     * di-regenerasi: warna utama, sekunder, permukaan, dan kontainer tetap sama persis.
+     * Hanya peran teks/latar netral dan garis yang digeser menuju hitam (tema terang) atau
+     * putih (tema gelap), supaya pengguna low-vision bisa menaikkan kontras tanpa kehilangan
+     * identitas tema bawaan. Standar = skema asli tanpa perubahan.
+     */
+    private fun ColorScheme.withHandcraftedContrast(contrast: ThemeContrast, dark: Boolean): ColorScheme {
+        val amount = when (contrast) {
+            ThemeContrast.Standard -> 0f
+            ThemeContrast.Medium -> 0.30f
+            ThemeContrast.High -> 0.55f
+        }
+        if (amount <= 0f) return this
+        val target = if (dark) Color.White else Color.Black
+        fun strengthen(c: Color): Color = Color(
+            red = c.red + (target.red - c.red) * amount,
+            green = c.green + (target.green - c.green) * amount,
+            blue = c.blue + (target.blue - c.blue) * amount,
+            alpha = c.alpha,
+        )
+        return copy(
+            onBackground = strengthen(onBackground),
+            onSurface = strengthen(onSurface),
+            onSurfaceVariant = strengthen(onSurfaceVariant),
+            outline = strengthen(outline),
+            outlineVariant = strengthen(outlineVariant),
         )
     }
 

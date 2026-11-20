@@ -68,15 +68,81 @@ class ThemeEngineTest {
         }
     }
 
-    /** KertasTinta + Sedang/Tinggi: kontras terkunci di Standar, palet TIDAK di-regenerasi. */
-    @Test fun kertasTintaContrastLocksToStandard() {
+    /**
+     * KertasTinta + Sedang/Tinggi: palet TIDAK di-regenerasi (kontras efektif tetap Standar),
+     * tapi teks/garis netral diperkuat (A10) — bukan lagi skema yang sama persis seperti dulu.
+     */
+    @Test fun kertasTintaContrastBoostsTextWithoutRegeneratingPalette() {
         for (c in listOf(ThemeContrast.Medium, ThemeContrast.High)) for (dark in listOf(false, true)) {
             val spec = ThemeSpec(palette = ThemePalette.KertasTinta, contrast = c)
-            assertEquals(ThemeContrast.Standard, spec.effectiveContrast, "kontras KertasTinta terkunci di Standar")
+            assertEquals(ThemeContrast.Standard, spec.effectiveContrast, "kontras KertasTinta terkunci di Standar untuk regenerasi palet")
             assertTrue(spec.isHandcrafted, "KertasTinta/$c tetap desain asli")
-            assertEquals(if (dark) DarkScheme else LightScheme, ThemeEngine.scheme(spec, dark), "KertasTinta/$c tidak me-regenerasi palet")
-            val modules = ModuleColors(dark, spec, (if (dark) DarkScheme else LightScheme).primary)
+            val base = if (dark) DarkScheme else LightScheme
+            val s = ThemeEngine.scheme(spec, dark)
+            // Selain lima peran teks/garis, skema harus sama persis dengan racikan manual.
+            val unboosted = s.copy(
+                onBackground = base.onBackground, onSurface = base.onSurface, onSurfaceVariant = base.onSurfaceVariant,
+                outline = base.outline, outlineVariant = base.outlineVariant,
+            )
+            assertSameScheme(base, unboosted, "KertasTinta/$c: hanya teks/garis yang boleh berubah")
+            // ...dan kelima peran itu memang diperkuat (rasio naik, bukan sekadar berbeda).
+            assertTrue(ratio(s.onSurfaceVariant, s.surface) > ratio(base.onSurfaceVariant, base.surface), "KertasTinta/$c onSurfaceVariant harus lebih kontras")
+            assertTrue(ratio(s.outline, s.surface) > ratio(base.outline, base.surface), "KertasTinta/$c outline harus lebih kontras")
+            assertTrue(ratio(s.onBackground, s.background) >= ratio(base.onBackground, base.background), "KertasTinta/$c onBackground tidak boleh melemah")
+            val modules = ModuleColors(dark, spec, base.primary)
             assertEquals(if (dark) TaskifyModule.Tasks.dark else TaskifyModule.Tasks.light, modules.accent(TaskifyModule.Tasks), "aksen modul KertasTinta/$c tetap racikan manual")
+        }
+        // Standar = skema asli tanpa perubahan apa pun.
+        for (dark in listOf(false, true)) {
+            assertEquals(if (dark) DarkScheme else LightScheme, ThemeEngine.scheme(ThemeSpec(palette = ThemePalette.KertasTinta, contrast = ThemeContrast.Standard), dark))
+        }
+    }
+
+    /**
+     * A9 — skema hasil regenerasi HCT: tiap peran harus sama persis dengan DynamicScheme-nya,
+     * di terang DAN gelap. Ini pengaman jebakan lama: toColorScheme dulu selalu memakai
+     * lightColorScheme, jadi bila satu peran luput dari daftar eksplisit, tema gelap
+     * diam-diam mendapat default terang. Palet non-kertas dipakai supaya withPaper tidak
+     * menimpa peran permukaan/teks (peran itu diuji lewat withPaper di tes lain).
+     */
+    @Test fun generatedSchemeRolesMatchDynamicSchemeInBothModes() {
+        val specs = listOf(
+            ThemeSpec(palette = ThemePalette.Grafit),
+            ThemeSpec(ThemePalette.Kustom, 0xFF1D5867.toInt(), ThemeStyle.TonalSpot, paper = false),
+        )
+        for (spec in specs) for (dark in listOf(false, true)) {
+            val ds = ThemeEngine.dynamicScheme(spec.effectiveSeed, spec.effectiveStyle, dark, spec.effectiveContrast.level)
+            val s = ThemeEngine.scheme(spec, dark)
+            val label = "${spec.palette.name}/dark=$dark"
+            val pairs: List<Pair<Color, Int>> = listOf(
+                s.primary to ds.primary, s.onPrimary to ds.onPrimary,
+                s.primaryContainer to ds.primaryContainer, s.onPrimaryContainer to ds.onPrimaryContainer,
+                s.inversePrimary to ds.inversePrimary,
+                s.secondary to ds.secondary, s.onSecondary to ds.onSecondary,
+                s.secondaryContainer to ds.secondaryContainer, s.onSecondaryContainer to ds.onSecondaryContainer,
+                s.tertiary to ds.tertiary, s.onTertiary to ds.onTertiary,
+                s.tertiaryContainer to ds.tertiaryContainer, s.onTertiaryContainer to ds.onTertiaryContainer,
+                s.background to ds.background, s.onBackground to ds.onBackground,
+                s.surface to ds.surface, s.onSurface to ds.onSurface,
+                s.surfaceVariant to ds.surfaceVariant, s.onSurfaceVariant to ds.onSurfaceVariant,
+                s.surfaceTint to ds.surfaceTint,
+                s.inverseSurface to ds.inverseSurface, s.inverseOnSurface to ds.inverseOnSurface,
+                s.error to ds.error, s.onError to ds.onError,
+                s.errorContainer to ds.errorContainer, s.onErrorContainer to ds.onErrorContainer,
+                s.outline to ds.outline, s.outlineVariant to ds.outlineVariant, s.scrim to ds.scrim,
+                s.surfaceBright to ds.surfaceBright, s.surfaceContainer to ds.surfaceContainer,
+                s.surfaceContainerHigh to ds.surfaceContainerHigh,
+                s.surfaceContainerHighest to ds.surfaceContainerHighest,
+                s.surfaceContainerLow to ds.surfaceContainerLow,
+                s.surfaceContainerLowest to ds.surfaceContainerLowest, s.surfaceDim to ds.surfaceDim,
+                s.primaryFixed to ds.primaryFixed, s.primaryFixedDim to ds.primaryFixedDim,
+                s.onPrimaryFixed to ds.onPrimaryFixed, s.onPrimaryFixedVariant to ds.onPrimaryFixedVariant,
+                s.secondaryFixed to ds.secondaryFixed, s.secondaryFixedDim to ds.secondaryFixedDim,
+                s.onSecondaryFixed to ds.onSecondaryFixed, s.onSecondaryFixedVariant to ds.onSecondaryFixedVariant,
+                s.tertiaryFixed to ds.tertiaryFixed, s.tertiaryFixedDim to ds.tertiaryFixedDim,
+                s.onTertiaryFixed to ds.onTertiaryFixed, s.onTertiaryFixedVariant to ds.onTertiaryFixedVariant,
+            )
+            for ((actual, expected) in pairs) assertEquals(Color(expected), actual, "$label: peran harus sama dengan DynamicScheme")
         }
     }
 

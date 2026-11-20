@@ -233,6 +233,37 @@ internal fun SettingsSheet(state: SandiUiState, actions: SandiActions, onDismiss
     // Dialog ditutup otomatis setelah rotasi berhasil (kunci pemulihan baru tampil) atau ekspor siap.
     if (state.recoveryToShow != null && dialog != null) dialog = null
     if ((state.pendingExport != null || state.migration != null) && dialog?.startsWith("export:") == true) dialog = null
+    // D-11: peringatan baris tertinggal — tampil di atas dialog ganti kunci / putar pemulihan.
+    state.rotationWarning?.let { RotationWarningDialog(it, actions) }
+}
+
+/**
+ * D-11: konfirmasi eksplisit sebelum rotasi menghapus baris yang tidak bisa dibuka. Dipakai
+ * dari [SettingsSheet] (ganti master password / putar kunci pemulihan) dan dari [UnlockPanel]
+ * (pemulihan brankas terkunci). Judul baris tidak bisa ditampilkan — isinya terenkripsi.
+ */
+@Composable
+internal fun RotationWarningDialog(warning: RotationWarning, actions: SandiActions) {
+    AlertDialog(
+        onDismissRequest = { actions.dismissRotation() },
+        title = { Text("Ada data yang tidak bisa dibuka") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Dengan kunci saat ini, ${warning.items} sandi, ${warning.log} riwayat kode, dan ${warning.configs} versi konfigurasi tidak bisa dibuka. " +
+                        "Bila rotasi dilanjutkan, baris-baris itu akan hilang permanen.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Judul barisnya tidak bisa ditampilkan karena isinya terenkripsi. Batalkan dan periksa dulu bila ada data penting di brankas ini.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { actions.confirmRotation() }) { Text("Lanjutkan, hapus yang tertinggal") } },
+        dismissButton = { TextButton(onClick = { actions.dismissRotation() }) { Text("Batalkan") } },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

@@ -160,6 +160,26 @@ fun LazyListScope.exploreTab(state: MusicUiState, actions: MusicActions) {
                 }
             }
         }
+        // C S-1: gagal TOTAL — seksi disembunyikan (dulu blok error tampil
+        // bersamaan dengan konten Jelajah). Stasiun fallback lokal pun
+        // disembunyikan, konsisten dengan cabang offline di atas.
+        return
+    }
+    // C S-1: gagal SEBAGIAN — pemberitahuan ringkas di atas seksi yang
+    // berhasil dimuat, bukan blok error besar.
+    e.partialError?.let { msg ->
+        item(key = "x-partial-err") {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f).padding(end = 12.dp))
+                    OutlinedButton(onClick = { actions.loadExplore(true) }) { Text("Coba lagi") }
+                }
+            }
+        }
     }
     e.moods.forEachIndexed { gi, group ->
         item(key = "x-mood-$gi") {

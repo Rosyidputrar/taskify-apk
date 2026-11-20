@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify
 
 import com.rosyidputrar.taskify.core.designsystem.component.LocalHapticsEnabled
+import android.annotation.SuppressLint
 import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Intent
 import android.os.Bundle
@@ -140,10 +141,19 @@ class MainActivity : FragmentActivity() {
             ReminderNotifier.ACTION_OPEN_TASK -> intent.getStringExtra(ReminderNotifier.EXTRA_TASK_ID)?.let { AppEvents.send(AppEvent.OpenTask(it)) }
             com.rosyidputrar.taskify.widget.EntityShortcuts.ACTION_OPEN_ENTITY ->
                 com.rosyidputrar.taskify.widget.EntityShortcuts.entityOf(intent)?.let { (type, id) -> AppEvents.send(AppEvent.OpenEntity(type, id)) }
+            // A5: tautan taskify://task|note|journal (lihat navDeepLink di TaskifyApp).
+            // Dilewatkan AppEvents supaya gerbang (login/PIN) yang masih tertutup tetap
+            // menahannya seperti intent lain, bukan membuangnya.
+            Intent.ACTION_VIEW -> intent.data?.let { uri -> com.rosyidputrar.taskify.navigation.parseTaskifyDeepLink(uri)?.let { AppEvents.send(it) } }
         }
     }
 
     /** Ctrl/⌘ + K dari keyboard fisik (tablet, Chromebook, DeX) membuka Spotlight di layar mana pun. */
+    // Supresi terarah: memanggil super.dispatchKeyEvent dari override adalah
+    // pola yang didokumentasikan (tombol selain Ctrl/⌘+K harus diteruskan ke
+    // hierarki Activity); RestrictedApi di sini false positive karena
+    // dispatchKeyEvent adalah API publik Activity yang di-override.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN &&
             event.keyCode == KeyEvent.KEYCODE_K &&

@@ -495,7 +495,11 @@ class InnerTube(
                 parameter("potc", "1")
                 parameter("c", client.clientId)
             }
-            ytClient(client)
+            // C S-6: authState eksplisit diteruskan ke header (dulu
+            // `ytClient(client)` tanpa authState — badan konteks memakai
+            // authState parameter, tapi header memakai state internal
+            // transport yang bisa basi).
+            ytClient(client, authState = authState)
             jsonBody(
                 GetTranscriptBody(
                     context = client.toContext(locale, authState.visitorData, null),

@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -78,6 +79,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
 import androidx.navigation.toRoute
 import com.rosyidputrar.taskify.core.designsystem.component.DockDestination
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyDock
@@ -204,18 +206,6 @@ fun TaskifyApp(
         captureOpen = true
     }
 
-    fun openEntity(type: EntityType, id: String) {
-        spotlight.close()
-        when (type) {
-            EntityType.Task -> navController.navigate(TasksRoute(id)) { launchSingleTop = true }
-            EntityType.JournalEntry -> navController.navigate(JournalEntryRoute(id = id))
-            EntityType.Note -> navController.navigate(NoteEditRoute(id = id))
-            EntityType.Transaction -> navController.navigate(TransactionRoute(id = id))
-            EntityType.Snippet -> navController.navigate(SnippetRoute(id))
-            EntityType.CodeProject -> navController.navigate(ProjectRoute(id))
-        }
-    }
-
     // Dibagikan saat gerbang (login/PIN) masih tertutup: event-nya terlewat, isinya tetap di kotak masuk.
     LaunchedEffect(Unit) {
         val pending = runCatching { org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.rosyidputrar.taskify.ui.share.ShareInbox>() }.getOrNull()
@@ -225,7 +215,7 @@ fun TaskifyApp(
     LaunchedEffect(Unit) {
         AppEvents.events.collect { event ->
             when (event) {
-                is AppEvent.OpenEntity -> openEntity(event.type, event.id)
+                is AppEvent.OpenEntity -> { spotlight.close(); navController.openEntity(event.type, event.id) }
                 is AppEvent.OpenModule -> { spotlight.close(); navController.navigate(event.module.route()) { launchSingleTop = true } }
                 AppEvent.OpenShare -> { spotlight.close(); navController.navigate(ShareRoute) { launchSingleTop = true } }
                 is AppEvent.OpenFocus -> { spotlight.close(); navController.navigate(FocusRoute(event.taskId)) { launchSingleTop = true } }
@@ -241,15 +231,15 @@ fun TaskifyApp(
                 }
                 is AppEvent.OpenJournal -> {
                     spotlight.close()
-                    navController.navigate(JournalEntryRoute(event.id, event.date))
+                    navController.navigate(JournalEntryRoute(event.id, event.date)) { launchSingleTop = true }
                 }
                 is AppEvent.OpenNote -> {
                     spotlight.close()
-                    navController.navigate(NoteEditRoute(event.id, event.date))
+                    navController.navigate(NoteEditRoute(event.id, event.date)) { launchSingleTop = true }
                 }
                 is AppEvent.OpenTransaction -> {
                     spotlight.close()
-                    navController.navigate(TransactionRoute(event.id, event.date))
+                    navController.navigate(TransactionRoute(event.id, event.date)) { launchSingleTop = true }
                 }
             }
         }
@@ -259,40 +249,13 @@ fun TaskifyApp(
     val destination = backStackEntry?.destination
     val pinned = preferences.pinnedModule
     val shortcutContext = androidx.compose.ui.platform.LocalContext.current
-    val currentModule: TaskifyModule? = when {
-        destination == null -> null
-        destination.hasRoute<HomeRoute>() -> TaskifyModule.Home
-        destination.hasRoute<CalendarRoute>() -> TaskifyModule.Calendar
-        destination.hasRoute<SettingsRoute>() -> TaskifyModule.Settings
-        destination.hasRoute<TasksRoute>() -> TaskifyModule.Tasks
-        destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
-        destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
-        destination.hasRoute<FinanceRoute>() || destination.hasRoute<TransactionRoute>() -> TaskifyModule.Finance
-        destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() ||
-            destination.hasRoute<ConfigFileRoute>() || destination.hasRoute<ConfigEditRoute>() -> TaskifyModule.Vault
-        destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
-        destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
-        destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
-        destination.hasRoute<NotificationsRoute>() -> TaskifyModule.Notifications
-        destination.hasRoute<WellbeingRoute>() -> TaskifyModule.Wellbeing
-        destination.hasRoute<AiRoute>() || destination.hasRoute<AiChatRoute>() || destination.hasRoute<AiSettingsRoute>() -> TaskifyModule.Assistant
-        destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
-        destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
-        destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
-        destination.hasRoute<TikTokRoute>() -> TaskifyModule.TikTok
-        destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
-        else -> null
-    }
+    val currentModule: TaskifyModule? = moduleForDestination(destination, backStackEntry)
     LaunchedEffect(currentModule) { currentModule?.let { com.rosyidputrar.taskify.widget.ModuleShortcuts.report(shortcutContext, it) } }
     // Editor layar penuh: dok disembunyikan agar bilah format di atas keyboard tidak tertutup.
     val immersive = destination?.isFullScreenEditor() == true
-    val selectedKey = when (currentModule) {
-        TaskifyModule.Home -> KEY_HOME
-        TaskifyModule.Calendar -> KEY_CALENDAR
-        null -> KEY_ROOM
-        pinned -> KEY_PIN
-        else -> KEY_ROOM
-    }
+    // A1: tidak ada yang terpilih bila modul aktif bukan tujuan dok (dulu semua modul
+    // non-dok salah menampilkan "Ruang" sebagai terpilih).
+    val selectedKey: String? = selectedKeyFor(destination, currentModule, pinned)
 
     val openModule: (TaskifyModule) -> Unit = { module ->
         spotlight.close()
@@ -347,11 +310,13 @@ fun TaskifyApp(
             Row(Modifier.fillMaxSize()) {
                 TaskifyRail(
                     selectedKey = selectedKey,
+                    pinned = pinned,
                     onCapture = { openCapture() },
                     onSearch = { spotlight.open() },
                     onHome = { navController.navigateTopLevel(HomeRoute) },
                     onCalendar = { navController.navigateTopLevel(CalendarRoute()) },
                     onRoom = { navController.navigateTopLevel(RoomRoute) },
+                    onPinned = { pinned?.let { navController.navigateTopLevel(it.route()) } },
                 )
                 host(Modifier.weight(1f).imePadding())
             }
@@ -402,7 +367,8 @@ fun TaskifyApp(
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = if (expanded) 16.dp else 92.dp, start = 16.dp, end = 16.dp)
-                .widthIn(max = 560.dp),
+                .widthIn(max = 560.dp)
+                .testTag("mini-player"),
         ) {
             MiniPlayer(onOpen = { navController.navigate(MusicRoute()) { launchSingleTop = true } })
         }
@@ -422,6 +388,8 @@ fun TaskifyApp(
             }
         }
         // Selalu di atas keyboard, dok, dan pemutar mini — "Urungkan" tidak pernah tertutup.
+        // testTag diletakkan SETELAH padding supaya bounds yang diukur tes adalah
+        // snackbar yang terlihat (bukan kotak host beserta paddingnya).
         SnackbarHost(
             snackbar,
             modifier = Modifier
@@ -436,7 +404,8 @@ fun TaskifyApp(
                     },
                     start = 16.dp,
                     end = 16.dp,
-                ),
+                )
+                .testTag("snackbar"),
         )
 
         Spotlight(
@@ -445,7 +414,7 @@ fun TaskifyApp(
             onCapture = { text -> openCapture(text) },
             themeMode = preferences.themeMode,
             onThemeModeChange = onThemeModeChange,
-            onOpenEntity = ::openEntity,
+            onOpenEntity = { type, id -> spotlight.close(); navController.openEntity(type, id) },
             onOpenTag = { id -> spotlight.close(); navController.navigate(TagRoute(id)) },
             onOpenNotifications = { pkg -> spotlight.close(); navController.navigate(NotificationsRoute(app = pkg)) },
         )
@@ -458,6 +427,61 @@ fun TaskifyApp(
             startWithTypePicker = capturePickType,
             onDismiss = { captureOpen = false },
         )
+    }
+}
+
+/** Modul yang sedang aktif untuk tujuan [destination] (null bila tujuannya bukan modul / belum ada). */
+internal fun moduleForDestination(destination: NavDestination?, backStackEntry: NavBackStackEntry?): TaskifyModule? = when {
+    destination == null -> null
+    destination.hasRoute<HomeRoute>() -> TaskifyModule.Home
+    destination.hasRoute<CalendarRoute>() -> TaskifyModule.Calendar
+    destination.hasRoute<SettingsRoute>() -> TaskifyModule.Settings
+    destination.hasRoute<TasksRoute>() -> TaskifyModule.Tasks
+    destination.hasRoute<JournalRoute>() || destination.hasRoute<JournalEntryRoute>() -> TaskifyModule.Journal
+    destination.hasRoute<NotesRoute>() || destination.hasRoute<NoteEditRoute>() -> TaskifyModule.Notes
+    destination.hasRoute<FinanceRoute>() || destination.hasRoute<TransactionRoute>() -> TaskifyModule.Finance
+    destination.hasRoute<VaultRoute>() || destination.hasRoute<SnippetRoute>() || destination.hasRoute<ProjectRoute>() || destination.hasRoute<ZipRoute>() ||
+        destination.hasRoute<ConfigFileRoute>() || destination.hasRoute<ConfigEditRoute>() -> TaskifyModule.Vault
+    destination.hasRoute<SandiRoute>() -> TaskifyModule.Sandi
+    destination.hasRoute<FilesRoute>() -> TaskifyModule.Files
+    destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
+    destination.hasRoute<NotificationsRoute>() -> TaskifyModule.Notifications
+    destination.hasRoute<WellbeingRoute>() -> TaskifyModule.Wellbeing
+    destination.hasRoute<AiRoute>() || destination.hasRoute<AiChatRoute>() || destination.hasRoute<AiSettingsRoute>() -> TaskifyModule.Assistant
+    destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
+    destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
+    destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
+    destination.hasRoute<TikTokRoute>() -> TaskifyModule.TikTok
+    destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
+    else -> null
+}
+
+/**
+ * Kunci dok/rail yang terpilih untuk tujuan saat ini, atau null bila tidak ada tujuan dok yang
+ * aktif. Ruang adalah tujuan dok (bukan modul), jadi ia dipetakan dari tujuannya langsung —
+ * modul yang tidak ada di dok (Tugas, Keuangan, Pengaturan, …) tidak boleh menyorot "Ruang".
+ * Dok/rail merender null sebagai "tidak ada yang terpilih".
+ */
+internal fun selectedKeyFor(destination: NavDestination?, currentModule: TaskifyModule?, pinned: TaskifyModule?): String? = when {
+    destination?.hasRoute<RoomRoute>() == true -> KEY_ROOM
+    currentModule == TaskifyModule.Home -> KEY_HOME
+    currentModule == TaskifyModule.Calendar -> KEY_CALENDAR
+    currentModule != null && currentModule == pinned -> KEY_PIN
+    else -> null
+}
+
+/**
+ * Buka satu entitas (dari Spotlight, notifikasi, tag, tautan): selalu satu salinan di atas
+ * tumpukan (A6 — tanpa `launchSingleTop`, ketuk ganda menumpuk editor yang sama persis).
+ */
+internal fun NavHostController.openEntity(type: EntityType, id: String) {
+    when (type) {
+        EntityType.Task -> navigate(TasksRoute(id)) { launchSingleTop = true }
+        EntityType.JournalEntry -> navigate(JournalEntryRoute(id = id)) { launchSingleTop = true }
+        EntityType.Note -> navigate(NoteEditRoute(id = id)) { launchSingleTop = true }
+        EntityType.Transaction -> navigate(TransactionRoute(id = id)) { launchSingleTop = true }
+        EntityType.Snippet -> navigate(SnippetRoute(id)) { launchSingleTop = true }
+        EntityType.CodeProject -> navigate(ProjectRoute(id)) { launchSingleTop = true }
     }
 }
 
@@ -498,7 +522,10 @@ private fun TaskifyNavHost(
         composable<HomeRoute> {
             Screen { home(contentPadding, displayName, onOpenModule) { id -> navController.navigate(TasksRoute(id)) { launchSingleTop = true } } }
         }
-        composable<TasksRoute> { entry ->
+        composable<TasksRoute>(
+            // A5: tautan taskify://task/{id} (dipakai widget/notifikasi sebagai data intent).
+            deepLinks = listOf(navDeepLink { uriPattern = "taskify://task/{taskId}" }),
+        ) { entry ->
             Screen {
                 val route = entry.toRoute<TasksRoute>()
                 TasksScreen(
@@ -724,7 +751,13 @@ private fun TaskifyNavHost(
                 )
             }
         }
-        composable<JournalEntryRoute> { entry ->
+        composable<JournalEntryRoute>(
+            // A5: taskify://journal/{id} membuka entri; ?date= membuka draf baru di tanggal itu.
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "taskify://journal/{id}" },
+                navDeepLink { uriPattern = "taskify://journal?date={date}" },
+            ),
+        ) { entry ->
             Screen {
                 val route = entry.toRoute<JournalEntryRoute>()
                 val template = when (route.template) { "week" -> ReflectionKind.Week; "month" -> ReflectionKind.Month; else -> null }
@@ -742,7 +775,13 @@ private fun TaskifyNavHost(
                 )
             }
         }
-        composable<NoteEditRoute> { entry ->
+        composable<NoteEditRoute>(
+            // A5: taskify://note/{id} membuka catatan; ?date= membuka catatan baru di tanggal itu.
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "taskify://note/{id}" },
+                navDeepLink { uriPattern = "taskify://note?date={date}" },
+            ),
+        ) { entry ->
             Screen {
                 val route = entry.toRoute<NoteEditRoute>()
                 NoteEditorScreen(NoteEditorArgs(route.id, route.date), onBack = { navController.popBackStack() })
@@ -776,9 +815,20 @@ private fun TaskifyNavHost(
             }
         }
         composable<ModuleRoute> { entry ->
-            Screen {
-                val route = entry.toRoute<ModuleRoute>()
-                ModulePlaceholderScreen(route.module, contentPadding, onBack = navController.backIfPossible())
+            val route = entry.toRoute<ModuleRoute>()
+            val module = route.module
+            if (module == null) {
+                // A8: shortcut launcher basi (modul sudah diganti nama/dihapus) — kembali ke
+                // Ruang, bukan crash seperti valueOf mentah sebelumnya.
+                LaunchedEffect(route.moduleName) {
+                    navController.popBackStack()
+                    navController.navigate(RoomRoute) { launchSingleTop = true }
+                }
+                Screen { }
+            } else {
+                Screen {
+                    ModulePlaceholderScreen(module, contentPadding, onBack = navController.backIfPossible())
+                }
             }
         }
     }
@@ -801,7 +851,11 @@ internal fun NavBackStackEntry.isTopLevel(pinned: TaskifyModule?): Boolean {
     val d = destination
     if (d.hasRoute<HomeRoute>() || d.hasRoute<CalendarRoute>() || d.hasRoute<RoomRoute>()) return true
     val route = pinned?.route() ?: return false
-    return d.hasRoute(route::class)
+    if (!d.hasRoute(route::class)) return false
+    // A2: TasksRoute dipakai untuk daftar DAN detail (taskId nullable). Detail bukan top-level,
+    // supaya transisinya tetap push/pop seperti detail modul lain, apa pun status pin-nya.
+    if (d.hasRoute<TasksRoute>() && toRoute<TasksRoute>().taskId != null) return false
+    return true
 }
 
 /**
@@ -862,12 +916,14 @@ private fun NavHostController.navigateTopLevel(route: Any, restore: Boolean = tr
 
 @Composable
 private fun TaskifyRail(
-    selectedKey: String,
+    selectedKey: String?,
+    pinned: TaskifyModule?,
     onCapture: () -> Unit,
     onSearch: () -> Unit,
     onHome: () -> Unit,
     onCalendar: () -> Unit,
     onRoom: () -> Unit,
+    onPinned: () -> Unit,
 ) {
     NavigationRail(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -879,8 +935,10 @@ private fun TaskifyRail(
         },
     ) {
         RailItem("Hari Ini", TaskifyModule.Home.icon, selectedKey == KEY_HOME, onHome)
+        // A3: modul sematan tampil di rail (dulu tidak ada jalannya dari navigasi utama tablet).
+        if (pinned != null) RailItem(pinned.label, pinned.icon, selectedKey == KEY_PIN, onPinned)
         RailItem("Kalender", TaskifyModule.Calendar.icon, selectedKey == KEY_CALENDAR, onCalendar)
-        RailItem("Ruang", Icons.Outlined.SpaceDashboard, selectedKey == KEY_ROOM || selectedKey == KEY_PIN, onRoom)
+        RailItem("Ruang", Icons.Outlined.SpaceDashboard, selectedKey == KEY_ROOM, onRoom)
         RailItem("Cari  ⌘K", Icons.Outlined.Search, false, onSearch)
     }
 }

@@ -28,6 +28,7 @@ import android.content.Context
 import android.util.Log
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.innertube.PlaybackAuthState
+import com.rosyidputrar.taskify.core.innertube.SharedHttpClient
 import com.rosyidputrar.taskify.core.media.ResolvedStreamRegistry
 import com.rosyidputrar.taskify.core.youtubei.YoutubeiAudioQuality
 import com.rosyidputrar.taskify.core.youtubei.YoutubeiException
@@ -66,15 +67,21 @@ open class YoutubeiStreamResolver(
         YoutubeiResolver(
             context = appContext,
             diagnostics = { Log.d(TAG, it) },
-            // Jaringan youtubei.js memakai klien OkHttp sendiri (seperti
-            // ArchiveTune); tanpa proxy khusus dan DNS sistem — JANGAN paksa
-            // IPv4 di sini (hipotesis IP sudah dilemahkan penyelidikan).
+            // C M-1: jaringan youtubei.js diturunkan dari klien bersama
+            // ([SharedHttpClient.client]) — connection pool, DNS, dan socket
+            // factory yang SAMA dengan InnerTube/media, supaya request
+            // `player` youtubei dan request media keluar lewat jalur yang
+            // sama (ikatan IP URL stream, perbaikan 403). Yang tetap khas
+            // youtubei dan JANGAN diubah: tanpa proxy (`Proxy.NO_PROXY` di
+            // `YoutubeiHttpClient`) dan DNS sistem — JANGAN paksa IPv4 di
+            // sini (hipotesis IP sudah dilemahkan penyelidikan).
             networkConfigurationProvider = {
                 YoutubeiNetworkConfiguration(
                     proxy = null,
                     proxyUsername = null,
                     proxyPassword = null,
                     dns = Dns.SYSTEM,
+                    baseClient = SharedHttpClient.client,
                 )
             },
         )
@@ -100,6 +107,8 @@ open class YoutubeiStreamResolver(
         pinnedItag: Int? = null,
         /** Jaringan metered (Tahap 8, C2-25): `AUTO` turun ke `HIGH` di bundle. */
         networkMetered: Boolean = false,
+        /** C M-3: prefetch memakai BACKGROUND supaya antreannya tidak menahan resolve foreground. */
+        priority: YoutubeiResolutionPriority = YoutubeiResolutionPriority.FOREGROUND,
     ): Result<DirectStream> {
         // Gate konteks login yang sama dengan jalur direct (C2-12): cookie
         // login tanpa dataSyncId ditolak sebelum memanggil resolver JS.
@@ -129,7 +138,7 @@ open class YoutubeiStreamResolver(
                     location = "ID",
                     timezone = TimeZone.getDefault().id,
                 ),
-                priority = YoutubeiResolutionPriority.FOREGROUND,
+                priority = priority,
                 videoPoTokenProvider = videoPoTokenProvider ?: { replacementId ->
                     // Tahap 5: JS minta token video pengganti (mis. saat
                     // resolvePrepared pindah video) — mint lewat ensurer.
@@ -139,7 +148,10 @@ open class YoutubeiStreamResolver(
                 },
             )
             val direct = resolved.toDirectStream(
-                clientName = if (effectiveAuth.hasLoginCookie) "WEB_CREATOR" else "MWEB",
+                // C S-2: nama klien dari JS (yang benar-benar dipakai
+                // resolve); tebakan lama hanya fallback bila bundle lama
+                // tidak mengembalikan field `client`.
+                clientName = resolved.effectiveClientName(effectiveAuth.hasLoginCookie),
             )
             direct.contentLength?.let { length ->
                 ResolvedStreamRegistry.put(direct.url, length, resolved.requestHeaders)
@@ -175,6 +187,15 @@ internal fun MusicQuality.toYoutubeiQuality(): YoutubeiAudioQuality =
         MusicQuality.Low -> YoutubeiAudioQuality.LOW
         MusicQuality.Highest -> YoutubeiAudioQuality.HIGHEST
     }
+
+/**
+ * C S-2: nama klien yang dipakai resolve ini — dari JS bila ada; tebakan
+ * lama (login → WEB_CREATOR, anonim → MWEB) hanya fallback untuk bundle
+ * lama yang belum mengembalikan field `client`. Murni supaya bisa dites
+ * tanpa QuickJS/jaringan.
+ */
+internal fun YoutubeiResolvedStream.effectiveClientName(hasLoginCookie: Boolean): String =
+    clientName ?: if (hasLoginCookie) "WEB_CREATOR" else "MWEB"
 
 /**
  * Pemetaan murni [YoutubeiResolvedStream] → [DirectStream] (bisa diuji tanpa

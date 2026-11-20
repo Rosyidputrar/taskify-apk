@@ -39,12 +39,15 @@
 package com.rosyidputrar.taskify.core.media
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import java.io.EOFException
 
+@OptIn(UnstableApi::class)
 internal class ChunkedDataSource(
     private val upstream: DataSource,
     private val chunkLength: Long,

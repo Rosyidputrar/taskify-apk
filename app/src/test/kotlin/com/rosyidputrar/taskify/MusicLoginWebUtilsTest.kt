@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify
 
+import com.rosyidputrar.taskify.feature.media.isTrustedLoginJsOrigin
 import com.rosyidputrar.taskify.feature.media.isWebViewLoadableUrl
 import com.rosyidputrar.taskify.feature.media.isYouTubeMusicStoreListingUrl
 import com.rosyidputrar.taskify.feature.media.isYouTubeUrl
@@ -51,6 +52,20 @@ class MusicLoginWebUtilsTest {
         assertFalse("https://accounts.google.com/ServiceLogin".isYouTubeUrl())
         assertFalse("https://notyoutube.com".isYouTubeUrl())
         assertFalse((null as String?).isYouTubeUrl())
+    }
+
+    // C S-3: JS interface "Android" hanya menerima dari origin login tepercaya.
+    @Test fun isTrustedLoginJsOrigin() {
+        assertTrue("https://music.youtube.com/watch".isTrustedLoginJsOrigin())
+        assertTrue("https://www.youtube.com/".isTrustedLoginJsOrigin())
+        assertTrue("https://youtube.com".isTrustedLoginJsOrigin())
+        assertTrue("https://accounts.google.com/ServiceLogin".isTrustedLoginJsOrigin())
+        assertFalse("https://evil.youtube.com.evil.test/".isTrustedLoginJsOrigin())
+        assertFalse("https://notyoutube.com".isTrustedLoginJsOrigin())
+        assertFalse("https://sub.accounts.google.com.evil.test/".isTrustedLoginJsOrigin())
+        assertFalse("https://mail.google.com/".isTrustedLoginJsOrigin())
+        assertFalse((null as String?).isTrustedLoginJsOrigin())
+        assertFalse("".isTrustedLoginJsOrigin())
     }
 
     @Test fun isWebViewLoadableUrl() {

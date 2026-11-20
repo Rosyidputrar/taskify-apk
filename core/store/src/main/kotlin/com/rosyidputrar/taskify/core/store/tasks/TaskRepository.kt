@@ -86,14 +86,16 @@ class TaskRepository(private val db: PowerSyncDatabase, private val users: UserI
     // ------------------------------------------------------------------ baca
 
     fun watchView(view: TaskView, today: String): Flow<List<Task>> {
+        // Daftar dibatasi 1000 baris (sama seperti Catatan/Jurnal): akun dengan ribuan tugas
+        // tidak lagi memuat seluruh tabel ke memori + recomposition besar di LazyColumn.
         val base = "SELECT $TASK_COLUMNS FROM tasks WHERE parent_id IS NULL"
         val (sql, params) = when (view) {
-            is TaskView.List -> "$base AND deleted_at IS NULL AND $ACTIVE AND list_id = ? ORDER BY $ACTIVE_ORDER" to listOf(view.listId)
+            is TaskView.List -> "$base AND deleted_at IS NULL AND $ACTIVE AND list_id = ? ORDER BY $ACTIVE_ORDER LIMIT 1000" to listOf(view.listId)
             is TaskView.Smart -> when (view.view) {
-                SmartView.Today -> "$base AND deleted_at IS NULL AND status <> 'cancelled' AND due_date = ? ORDER BY status = 'done', $ACTIVE_ORDER" to listOf(today)
-                SmartView.Upcoming -> "$base AND deleted_at IS NULL AND $ACTIVE AND due_date > ? ORDER BY $ACTIVE_ORDER" to listOf(today)
-                SmartView.Overdue -> "$base AND deleted_at IS NULL AND $ACTIVE AND due_date < ? ORDER BY $ACTIVE_ORDER" to listOf(today)
-                SmartView.All -> "$base AND deleted_at IS NULL AND $ACTIVE ORDER BY $ACTIVE_ORDER" to emptyList()
+                SmartView.Today -> "$base AND deleted_at IS NULL AND status <> 'cancelled' AND due_date = ? ORDER BY status = 'done', $ACTIVE_ORDER LIMIT 1000" to listOf(today)
+                SmartView.Upcoming -> "$base AND deleted_at IS NULL AND $ACTIVE AND due_date > ? ORDER BY $ACTIVE_ORDER LIMIT 1000" to listOf(today)
+                SmartView.Overdue -> "$base AND deleted_at IS NULL AND $ACTIVE AND due_date < ? ORDER BY $ACTIVE_ORDER LIMIT 1000" to listOf(today)
+                SmartView.All -> "$base AND deleted_at IS NULL AND $ACTIVE ORDER BY $ACTIVE_ORDER LIMIT 1000" to emptyList()
                 SmartView.Done -> "$base AND deleted_at IS NULL AND status IN ('done','cancelled') ORDER BY COALESCE(completed_at, updated_at) DESC LIMIT 300" to emptyList()
                 SmartView.Trash -> "$base AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 300" to emptyList()
             }
@@ -174,6 +176,10 @@ class TaskRepository(private val db: PowerSyncDatabase, private val users: UserI
      */
     suspend fun update(id: String, patch: Map<String, Any?>) {
         if (patch.isEmpty()) return
+        // Allowlist kolom (sama seperti Note/Journal): kunci di luar ini ditolak dengan pesan
+        // yang jelas, bukan error SQL mentah — nama kolom diinterpolasi ke SQL di bawah.
+        val allowed = setOf("title", "notes", "priority", "list_id", "rrule", "due_date", "due_time", "remind_at")
+        patch.keys.firstOrNull { it !in allowed }?.let { throw IllegalArgumentException("Kolom tugas tidak dikenal: $it") }
         val values = LinkedHashMap(patch)
         (values["title"] as? String)?.let { values["title"] = Limits.clip(it.trim(), Limits.TASK_TITLE) }
         if (values.containsKey("due_time")) values["due_time"] = Dates.toDbTime(values["due_time"] as String?)

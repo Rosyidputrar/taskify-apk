@@ -9,6 +9,7 @@ import com.rosyidputrar.taskify.core.domain.finance.FinanceException
 import com.rosyidputrar.taskify.core.domain.finance.TxInput
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.finance.WalletType
+import com.rosyidputrar.taskify.core.domain.finance.debtOpenTxId
 import com.rosyidputrar.taskify.core.domain.finance.debtSettleTxId
 import com.rosyidputrar.taskify.core.domain.finance.recurringTxId
 import com.rosyidputrar.taskify.core.domain.tasks.RecurrenceFreq
@@ -208,6 +209,71 @@ class FinanceRepositoryTest {
 
         finance.setRecurringActive(afterPost, false, today)
         assertFalse(finance.watchRecurring().first().first { it.title == "Gaji" }.active)
+    }
+
+    @Test fun editingDebtTransactionSyncsDebtAndSettleTransaction() = runBlocking {
+        val (cash, bank, _) = setup()
+        val id = finance.createDebt(DebtInput(DebtDirection.Lent, "Andi", 500_000, null, null, cash), today)
+        val openId = debtOpenTxId(id)
+        assertEquals(500_000, finance.getTransaction(openId)!!.amount)
+
+        // Ubah nominal transaksi pembuka → baris hutang ikut berubah.
+        finance.updateTx(openId, TxInput(TxKind.Expense, 300_000, cash, occurredOn = today, title = "Pinjamkan ke Andi"))
+        assertEquals(300_000, finance.watchDebts().first().single().amount)
+        assertEquals(300_000, finance.getTransaction(openId)!!.amount)
+
+        // Lunas memakai nominal BARU (300 rb, bukan 500 rb lama).
+        finance.settleDebt(finance.watchDebts().first().single(), cash, today)
+        assertEquals(300_000, finance.getTransaction(debtSettleTxId(id))!!.amount)
+        assertEquals(100_000, finance.watchWallets().first().first { it.id == cash }.balance)
+        assertEquals(1_000_000, finance.watchWallets().first().first { it.id == bank }.balance)
+
+        // Ubah nominal transaksi pelunasan → hutang + transaksi pembuka ikut berubah.
+        finance.updateTx(debtSettleTxId(id), TxInput(TxKind.Income, 250_000, cash, occurredOn = today, title = "Pelunasan dari Andi"))
+        assertEquals(250_000, finance.watchDebts().first().single().amount)
+        assertEquals(250_000, finance.getTransaction(openId)!!.amount)
+        assertEquals(100_000 - 250_000 + 250_000L, finance.watchWallets().first().first { it.id == cash }.balance)
+
+        // Jenis transaksi hutang tidak bisa diubah (ditentukan arah hutang).
+        assertFailsWith<FinanceException> {
+            finance.updateTx(openId, TxInput(TxKind.Income, 250_000, cash, occurredOn = today, title = "Pinjamkan ke Andi"))
+        }
+
+        // Round-trip: batal lunas → lunas lagi → hapus hutang, saldo kembali seperti semula.
+        finance.unsettleDebt(finance.watchDebts().first().single())
+        assertEquals(0L, db.get("SELECT COUNT(*) FROM transactions WHERE id = ? AND deleted_at IS NULL", listOf(debtSettleTxId(id))) { it.getLong(0)!! })
+        assertEquals(100_000 - 250_000L, finance.watchWallets().first().first { it.id == cash }.balance)
+        finance.settleDebt(finance.watchDebts().first().single(), cash, today)
+        assertEquals(250_000, finance.getTransaction(debtSettleTxId(id))!!.amount)
+        finance.removeDebt(finance.watchDebts().first().single())
+        assertTrue(finance.watchDebts().first().isEmpty())
+        assertEquals(0L, db.get("SELECT COUNT(*) FROM transactions WHERE debt_id = ? AND deleted_at IS NULL", listOf(id)) { it.getLong(0)!! })
+        assertEquals(100_000, finance.watchWallets().first().first { it.id == cash }.balance)
+    }
+
+    @Test fun saveBudgetRejectsDuplicateCategory() = runBlocking {
+        val (_, _, food) = setup()
+        finance.saveBudget(null, food, 100_000, 80, "2026-10-01")
+        assertFailsWith<FinanceException> { finance.saveBudget(null, food, 50_000, 90, "2026-10-01") }
+        finance.saveBudget(null, null, 1_000_000, 80, "2026-10-01")
+        assertFailsWith<FinanceException> { finance.saveBudget(null, null, 2_000_000, 80, "2026-10-01") }
+        assertEquals(2, finance.watchBudgets("2026-10-01", "2026-10-31").first().size)
+        // Setelah anggaran lama dihapus, membuat baru untuk kategori yang sama boleh lagi.
+        val foodBudget = finance.watchBudgets("2026-10-01", "2026-10-31").first().first { it.categoryId == food }
+        finance.removeBudget(foodBudget.id)
+        finance.saveBudget(null, food, 50_000, 90, "2026-10-01")
+        assertEquals(2, finance.watchBudgets("2026-10-01", "2026-10-31").first().size)
+    }
+
+    @Test fun backfillSkipsScanWhenNoCandidateButStillCleansOrphans() = runBlocking {
+        val (cash, _, _) = setup()
+        // Asal yatim dibersihkan walau tidak ada transaksi yang butuh backfill.
+        db.execute("INSERT INTO tx_sources (id, package, app_label) VALUES ('hilang', 'x', 'X')")
+        assertEquals(0, finance.backfillNotificationSources())
+        assertEquals(0L, db.get("SELECT COUNT(*) FROM tx_sources WHERE id = 'hilang'") { it.getLong(0)!! })
+        // Transaksi manual tanpa catatan notifikasi tidak memicu pemindaian.
+        finance.createTx(TxInput(TxKind.Expense, 10_000, cash, occurredOn = today))
+        assertEquals(0, finance.backfillNotificationSources())
     }
 
     @Test fun debtsOpenSettleUnsettleRemove() = runBlocking {

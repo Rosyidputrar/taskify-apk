@@ -304,8 +304,8 @@ Tidak ada kredensial di repo. Nilai dibaca dari `local.properties` (lokal) atau 
 ke `BuildConfig`:
 
 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `POWERSYNC_URL` (wajib) ·
-`MUSIC_API_URL`, `TIKTOK_API_URL`, `PUBLIC_WEB_ORIGIN` (opsional — kosong = fiturnya disembunyikan) ·
-`RELEASE_KEYSTORE_*` (tanda tangan APK rilis).
+`TIKTOK_API_URL`, `PUBLIC_WEB_ORIGIN` (opsional — kosong = fiturnya disembunyikan) ·
+`RELEASE_KEYSTORE_*` (tanda tangan APK rilis). Musik kini direct (tanpa Worker), jadi tidak ada lagi `MUSIC_API_URL`.
 
 ## 7. Risiko & hal yang perlu dicek
 

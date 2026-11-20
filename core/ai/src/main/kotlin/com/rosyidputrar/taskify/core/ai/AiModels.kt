@@ -47,7 +47,23 @@ sealed interface AiEvent {
 enum class AiErrorKind { Config, Auth, Forbidden, NotFound, RateLimit, Server, Network, BadResponse }
 
 /** Galat dengan pesan siap tampil + teks mentah (dipotong) untuk diagnosis. */
-class AiException(val kind: AiErrorKind, message: String, val status: Int? = null, val raw: String? = null) : Exception(message)
+class AiException(
+    val kind: AiErrorKind,
+    message: String,
+    val status: Int? = null,
+    val raw: String? = null,
+    /** `Retry-After` server (milidetik) bila ada — dipakai backoff percobaan ulang. */
+    val retryAfterMs: Long? = null,
+) : Exception(message) {
+    /** Galat sementara yang layak dicoba ulang otomatis (bukan salah konfigurasi/pengguna). */
+    val isRetryable: Boolean get() = kind in setOf(AiErrorKind.RateLimit, AiErrorKind.Server, AiErrorKind.Network)
+
+    /** Jeda sebelum percobaan ulang ke-[attempt] (1-based): hormati `Retry-After`, lalu backoff 1s/2s/4s. */
+    fun retryDelayMs(attempt: Int): Long {
+        retryAfterMs?.let { return it.coerceIn(0, 60_000) }
+        return (1_000L shl (attempt - 1).coerceIn(0, 3)).coerceAtMost(8_000)
+    }
+}
 
 interface AiClient {
     /** Daftar id model dari penyedia (urut abjad). */
@@ -59,8 +75,11 @@ interface AiClient {
 
 object AiEndpoint {
     /**
-     * Normalkan base URL: wajib HTTPS (Android memblokir HTTP biasa), tanpa garis miring di akhir,
-     * tanpa query. Untuk Anthropic, akhiran "/v1" dibuang (ditambahkan sendiri saat memanggil).
+     * Normalkan base URL: tanpa garis miring di akhir, tanpa query. HTTPS wajib, KECUALI host
+     * privat/lokal (RFC1918, loopback) yang boleh HTTP — untuk server AI lokal seperti
+     * Ollama/LM Studio di LAN. HTTP ke host publik tetap ditolak: Android memblokir
+     * cleartext ke internet dan kunci API tidak boleh lewat jalur tak terenkripsi.
+     * Layar Pengaturan memperingatkan saat base URL HTTP aktif.
      * @throws AiException [AiErrorKind.Config] dengan pesan jelas.
      */
     fun normalize(raw: String, provider: AiProvider): String {
@@ -69,13 +88,36 @@ object AiEndpoint {
         val uri = try { URI(text) } catch (_: Exception) { throw AiException(AiErrorKind.Config, "Base URL tidak valid.") }
         when (uri.scheme?.lowercase()) {
             "https" -> Unit
-            "http" -> throw AiException(AiErrorKind.Config, "Base URL harus HTTPS. Android memblokir koneksi HTTP biasa.")
+            "http" -> if (!isPrivateHost(uri.host)) throw AiException(
+                AiErrorKind.Config,
+                "Base URL harus HTTPS. HTTP hanya diizinkan untuk server lokal (localhost atau IP privat 10.x / 172.16-31.x / 192.168.x).",
+            )
             else -> throw AiException(AiErrorKind.Config, "Base URL harus diawali https://")
         }
         if (uri.host.isNullOrBlank()) throw AiException(AiErrorKind.Config, "Base URL tidak punya nama host.")
         if (uri.rawQuery != null || uri.rawFragment != null) throw AiException(AiErrorKind.Config, "Base URL tidak boleh memuat ? atau #.")
         return if (provider == AiProvider.Anthropic) text.removeSuffix("/v1") else text
     }
+
+    /** Benar bila host jelas lokal/privat: `localhost`, loopback, atau RFC1918 (10/8, 172.16/12, 192.168/16). */
+    fun isPrivateHost(host: String?): Boolean {
+        val h = host?.trim()?.lowercase() ?: return false
+        if (h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]") return true
+        val parts = h.split('.')
+        if (parts.size != 4) return false
+        val nums = parts.map { it.toIntOrNull() ?: return false }
+        if (nums.any { it !in 0..255 }) return false
+        return when {
+            nums[0] == 10 -> true
+            nums[0] == 172 && nums[1] in 16..31 -> true
+            nums[0] == 192 && nums[1] == 168 -> true
+            else -> false
+        }
+    }
+
+    /** Benar bila base URL memakai HTTP (hanya mungkin untuk host privat — lihat [normalize]). */
+    fun isInsecure(baseUrl: String): Boolean =
+        runCatching { URI(baseUrl.trim()).scheme?.lowercase() == "http" }.getOrDefault(false)
 
     /** "https://api.openai.com/v1" → "api.openai.com" (untuk penanda "data dikirim ke …"). */
     fun host(baseUrl: String): String = runCatching { URI(baseUrl.trim()).host }.getOrNull().orEmpty()

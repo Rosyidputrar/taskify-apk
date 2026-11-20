@@ -102,8 +102,30 @@ fun copyToClipboard(context: Context, label: String, text: String, sensitive: Bo
     clipboard.setPrimaryClip(clip)
 }
 
-/** Kode tampak berisi rahasia (token/kunci/password) → salinan ditandai sensitif. */
-fun looksSecret(code: String) = Regex("(?i)(api[_-]?key|secret|token|password|passwd|private[_-]?key)\\s*[:=]").containsMatchIn(code)
+/**
+ * Kode tampak berisi rahasia (token/kunci/password) → salinan ditandai sensitif + jalur keluar
+ * (salin/bagikan) meminta konfirmasi dulu.
+ *
+ * Selain pasangan kunci=nilai, ditangkap juga token telanjang yang polanya khas (tanpa `=`/`:`):
+ * header `Authorization: Bearer …`, awalan token layanan umum (GitHub, OpenAI, Slack, AWS,
+ * GitLab, DigitalOcean, Stripe), dan JWT (`eyJ.…`). Sengaja TIDAK ada heuristik entropi umum:
+ * string acak panjang di kode biasa (hash, UUID, base64) akan jadi false positive.
+ */
+fun looksSecret(code: String): Boolean {
+    if (SECRET_KEY_VALUE.containsMatchIn(code)) return true
+    val bearer = BEARER_TOKEN.find(code)?.groupValues?.getOrNull(1)?.trimEnd('\'', '"', ',', ';', ')')
+    if (bearer != null && bearer.length >= 10 && bearer.none { it == '<' || it == '>' } &&
+        bearer.any { it.isLowerCase() || it.isDigit() }
+    ) return true // placeholder seperti <token> / YOUR_TOKEN_HERE tidak dihitung
+    if (KNOWN_TOKEN_PREFIX.containsMatchIn(code)) return true
+    if (JWT_LIKE.containsMatchIn(code)) return true
+    return false
+}
+
+private val SECRET_KEY_VALUE = Regex("(?i)(api[_-]?key|secret|token|password|passwd|private[_-]?key)\\s*[:=]")
+private val BEARER_TOKEN = Regex("(?i)authorization\\s*:\\s*['\"]?\\s*bearer\\s+(\\S+)")
+private val KNOWN_TOKEN_PREFIX = Regex("(?i)\\b(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_|sk-proj-[a-z0-9_-]{8,}|sk-[a-z0-9]{8,}|sk_(live|test)_[a-z0-9]{8,}|xox[baprs]-[a-z0-9-]{8,}|AKIA[0-9A-Z]{16}|glpat-[a-z0-9_-]{8,}|dop_v1_[a-f0-9]{8,})")
+private val JWT_LIKE = Regex("\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b")
 
 /** Dialog isi variabel template {{nama}} sebelum menyalin. */
 @Composable

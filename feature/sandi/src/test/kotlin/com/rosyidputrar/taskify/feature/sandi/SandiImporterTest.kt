@@ -38,7 +38,7 @@ class SandiImporterTest {
         val importer = SandiImporter(
             scope = scope,
             documents = object : SandiDocuments {
-                override suspend fun read(uri: String, maxBytes: Int): String = if (failRead) throw IOException("izin dicabut") else text!!
+                override suspend fun read(uri: String, maxBytes: Int): ByteArray = if (failRead) throw IOException("izin dicabut") else text!!.toByteArray(Charsets.UTF_8)
                 override suspend fun delete(uri: String): Boolean { deleted += uri; return canDelete }
             },
             save = { items -> saved += items; SandiService.ImportResult(items.size - tooLarge.size, tooLarge) },

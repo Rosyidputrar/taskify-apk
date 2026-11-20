@@ -128,6 +128,9 @@ class MfaViewModel(private val auth: AuthRepository, private val network: Networ
 
     fun skipOffline() = auth.skipReverifyOffline()
 
+    /** Tombol "Lewati (offline)" hanya ada bila perangkat pernah lolos dalam 24 jam terakhir. */
+    val canSkipOffline: Boolean get() = auth.canSkipReverifyOffline()
+
     fun signOut() {
         launchSafe { runCatching { auth.signOut() } }
     }
@@ -161,6 +164,7 @@ fun MfaScreen(status: GateStatus, viewModel: MfaViewModel = koinViewModel()) {
             skipOffline = viewModel::skipOffline,
             signOut = viewModel::signOut,
         ),
+        canSkipOffline = viewModel.canSkipOffline,
     )
 }
 
@@ -174,7 +178,7 @@ class MfaActions(
 )
 
 @Composable
-fun MfaContent(status: GateStatus, state: MfaUiState, online: Boolean, actions: MfaActions) {
+fun MfaContent(status: GateStatus, state: MfaUiState, online: Boolean, actions: MfaActions, canSkipOffline: Boolean = true) {
     val haptics = rememberHaptics()
     // Kode authenticator salah → getar penolakan.
     LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
@@ -196,8 +200,16 @@ fun MfaContent(status: GateStatus, state: MfaUiState, online: Boolean, actions: 
         if (!online) {
             Text(AuthMessages.OFFLINE_MFA, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             if (status == GateStatus.Reverify) {
-                OutlinedButton(onClick = actions.skipOffline, modifier = Modifier.fillMaxWidth()) {
-                    Text("Lewati untuk sekarang (offline)")
+                if (canSkipOffline) {
+                    OutlinedButton(onClick = actions.skipOffline, modifier = Modifier.fillMaxWidth()) {
+                        Text("Lewati untuk sekarang (offline)")
+                    }
+                } else {
+                    // Tanpa jejak verifikasi dalam 24 jam terakhir: tetap terkunci sampai online.
+                    Text(
+                        "Perangkat ini belum pernah lolos verifikasi dalam 24 jam terakhir, jadi tetap terkunci sampai ada internet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
         }

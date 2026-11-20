@@ -142,8 +142,9 @@ internal fun ImportHost(state: SandiUiState, actions: SandiActions) {
         if (picking == null || picking.launched) return@LaunchedEffect
         actions.importLaunched()
         try {
-            // Penyedia memberi tipe CSV berbeda-beda (text/csv, text/comma-separated-values, octet-stream).
-            picker.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "application/octet-stream"))
+            // D-14: utamakan text/csv; penyedia memberi tipe CSV berbeda-beda, jadi daftar
+            // berikutnya adalah fallback (text/*, application/csv, ...).
+            picker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/*", "application/csv", "application/vnd.ms-excel", "application/octet-stream"))
         } catch (_: ActivityNotFoundException) {
             actions.importPicked(null)
         }

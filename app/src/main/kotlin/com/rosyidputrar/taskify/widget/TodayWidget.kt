@@ -52,6 +52,17 @@ sealed interface TodayWidgetState {
     /** PIN aktif: judul tugas tidak ditampilkan di layar utama. */
     data class Locked(val count: Int) : TodayWidgetState
     data class Ready(val tasks: List<Task>, val today: String) : TodayWidgetState
+    /** Gagal memuat (bukan "tidak ada tugas"): jangan meyakinkan pengguna bahwa harinya kosong. */
+    data object Error : TodayWidgetState
+}
+
+/**
+ * Putuskan state widget dari hasil muat: galat dibedakan dari kosong (A7). Dipisah supaya
+ * bisa diuji tanpa Koin/database.
+ */
+internal fun resolveWidgetState(result: Result<List<Task>>, today: String, locked: Boolean): TodayWidgetState {
+    val tasks = result.getOrNull() ?: return TodayWidgetState.Error
+    return if (locked) TodayWidgetState.Locked(tasks.size) else TodayWidgetState.Ready(tasks, today)
 }
 
 /**
@@ -68,8 +79,8 @@ class TodayWidget : GlanceAppWidget() {
         val koin = GlobalContext.getOrNull() ?: return TodayWidgetState.SignedOut
         if (koin.get<DevicePrefs>().dbOwner == null) return TodayWidgetState.SignedOut
         val today = Dates.today()
-        val tasks = runCatching { koin.get<TaskRepository>().watchFocus(today, 6).first() }.getOrDefault(emptyList())
-        return if (koin.get<LockManager>().state.value.config != null) TodayWidgetState.Locked(tasks.size) else TodayWidgetState.Ready(tasks, today)
+        val result = runCatching { koin.get<TaskRepository>().watchFocus(today, 6).first() }
+        return resolveWidgetState(result, today, koin.get<LockManager>().state.value.config != null)
     }
 
     @Composable
@@ -89,8 +100,9 @@ class TodayWidget : GlanceAppWidget() {
             Spacer(GlanceModifier.height(8.dp))
             when (state) {
                 TodayWidgetState.SignedOut -> Message("Masuk ke Taskify untuk melihat tugas hari ini.", open)
+                TodayWidgetState.Error -> Message("Tidak dapat memuat tugas. Ketuk untuk membuka aplikasi.", open)
                 is TodayWidgetState.Locked -> Message(if (state.count == 0) "Tidak ada tugas mendesak. Taskify terkunci PIN." else "${state.count} tugas menunggu · buka Taskify untuk melihat (terkunci PIN).", open)
-                is TodayWidgetState.Ready -> if (state.tasks.isEmpty()) Message("Semua beres untuk hari ini. 🎉", open) else LazyColumn {
+                is TodayWidgetState.Ready -> if (state.tasks.isEmpty()) Message("Semua beres untuk hari ini.", open) else LazyColumn {
                     items(state.tasks, itemId = { it.id.hashCode().toLong() }) { t -> TaskLine(context, t, state.today) }
                 }
             }

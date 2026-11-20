@@ -23,7 +23,6 @@ Dibaca saat build dari environment variable (CI: GitHub Secrets) atau `local.pro
 | `SUPABASE_URL` | ya | Auth & database |
 | `SUPABASE_PUBLISHABLE_KEY` | ya | Kunci publik Supabase |
 | `POWERSYNC_URL` | ya | Sinkronisasi offline |
-| `MUSIC_API_URL` | tidak | Pemutar musik (kosong = disembunyikan) |
 | `TIKTOK_API_URL` | tidak | Unduh TikTok (kosong = disembunyikan) |
 | `PUBLIC_WEB_ORIGIN` | tidak | Tautan publik Berkas & header `Origin` ke Worker |
 

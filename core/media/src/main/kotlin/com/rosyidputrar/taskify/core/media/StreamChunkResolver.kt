@@ -76,14 +76,35 @@ private fun String?.requiresOpenEndedRead(): Boolean {
  * 60 detik, termasuk variasi VBR.
  *
  * Dijepit ke [MIN_BITRATE_CHUNK_BYTES, MAX_BITRATE_CHUNK_BYTES]; bila
- * `clen`/`dur` hilang, pakai [FALLBACK_BITRATE_CHUNK_BYTES] (32 KB ≈ 5,3
- * detik pada bitrate audio terendah ~48 kbps). Murni (tanpa jaringan)
+ * `clen`/`dur` hilang, pakai bitrate nominal itag dari param `itag` (C S-13),
+ * dan bila itag pun tak dikenal pakai [FALLBACK_BITRATE_CHUNK_BYTES] (32 KB ≈
+ * 5,3 detik pada bitrate audio terendah ~48 kbps). Murni (tanpa jaringan)
  * supaya bisa diuji di JVM.
  */
 internal const val TARGET_CHUNK_MEDIA_SECONDS = 6.0
 internal const val MIN_BITRATE_CHUNK_BYTES = 32L * 1024L
 internal const val MAX_BITRATE_CHUNK_BYTES = 1024L * 1024L
 internal const val FALLBACK_BITRATE_CHUNK_BYTES = 32L * 1024L
+
+/**
+ * Bitrate nominal (bps) per itag audio, untuk fallback chunk bila `clen`/`dur`
+ * tidak tersedia. Angka dari format YouTube yang umum (opus/AAC); dipakai
+ * HANYA untuk ukuran chunk ~6 detik, bukan untuk memilih format.
+ */
+private val ITAG_BITRATES_BPS = mapOf(
+    139 to 48_000L, // AAC 48 kbps
+    140 to 128_000L, // AAC 128 kbps
+    141 to 256_000L, // AAC 256 kbps
+    171 to 128_000L, // Vorbis 128 kbps
+    172 to 256_000L, // Vorbis 256 kbps
+    249 to 50_000L, // Opus ~50 kbps
+    250 to 70_000L, // Opus ~70 kbps
+    251 to 160_000L, // Opus ~160 kbps
+    256 to 192_000L, // AAC 192 kbps
+    258 to 384_000L, // AAC 384 kbps
+    599 to 32_000L, // AAC 32 kbps
+    600 to 48_000L, // Opus ~48 kbps
+)
 
 internal fun resolveBitrateAwareChunkLength(uri: Uri): Long {
     val url = uri.toString()
@@ -92,7 +113,16 @@ internal fun resolveBitrateAwareChunkLength(uri: Uri): Long {
     val computed = if (clen != null && durSeconds != null) {
         (clen / durSeconds * TARGET_CHUNK_MEDIA_SECONDS).toLong()
     } else {
-        FALLBACK_BITRATE_CHUNK_BYTES
+        // C S-13: fallback lama 32 KB untuk SEMUA format membuang-buang
+        // request pada itag bitrate tinggi (140/251 butuh ~120 KB per 6
+        // detik — 32 KB = chunk ~1,5 detik, 4x lebih banyak request + 4x
+        // peluang 403 di tengah lagu). Fallback baru memakai bitrate nominal
+        // itag dari param `itag` URL (selalu ada di URL googlevideo),
+        // dijepit seperti jalur utama; itag tak dikenal tetap 32 KB.
+        val itag = urlQueryParam(url, "itag")?.toIntOrNull()
+        val bitrate = itag?.let(ITAG_BITRATES_BPS::get)
+        if (bitrate != null) bitrate * TARGET_CHUNK_MEDIA_SECONDS.toLong() / 8
+        else FALLBACK_BITRATE_CHUNK_BYTES
     }
     return computed.coerceIn(MIN_BITRATE_CHUNK_BYTES, MAX_BITRATE_CHUNK_BYTES)
 }

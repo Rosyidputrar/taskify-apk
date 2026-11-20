@@ -20,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -39,6 +40,17 @@ class TaskRepositoryTest {
     @After fun tearDown() = runBlocking {
         db.close()
         scope.cancel()
+    }
+
+    @Test fun watchViewIsCappedAt1000() = runBlocking {
+        repeat(1005) { i ->
+            db.execute(
+                "INSERT INTO tasks (id, user_id, title, status, priority, created_at, updated_at, position) VALUES (?, ?, ?, 'todo', 0, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', ?)",
+                listOf("t$i", "user-1", "Tugas $i", i.toDouble()),
+            )
+        }
+        assertEquals(1000, tasks.watchView(TaskView.Smart(SmartView.All), today).first().size)
+        assertEquals(1005, tasks.watchCounts(today).first().all, "hitungan tetap memakai seluruh data")
     }
 
     @Test fun createdTaskAppearsInTodayAndQueuesUpload() = runBlocking {
@@ -90,6 +102,21 @@ class TaskRepositoryTest {
         assertNull(tasks.get(next))
         assertEquals(rule, tasks.get(id)!!.rrule)
         assertEquals(TaskStatus.Todo, tasks.get(id)!!.status)
+    }
+
+    @Test fun updateRejectsUnknownColumns() = runBlocking {
+        val id = tasks.create(NewTask("Rapat", dueDate = today, priority = 1))
+        // Kolom yang salah ketik / di luar allowlist ditolak dengan pesan jelas, bukan error SQL.
+        assertFailsWith<IllegalArgumentException> { tasks.update(id, mapOf("titel" to "Salah ketik")) }
+        assertFailsWith<IllegalArgumentException> { tasks.update(id, mapOf("deleted_at" to "2026-01-01T00:00:00Z")) }
+        assertFailsWith<IllegalArgumentException> { tasks.update(id, mapOf("status" to "done")) }
+        // Semua kolom yang dipakai pemanggil tetap jalan.
+        tasks.update(id, mapOf("title" to "Rapat tim", "notes" to "bawa laptop", "priority" to 2, "list_id" to null, "rrule" to null, "due_date" to today, "due_time" to "10:00", "remind_at" to null))
+        val t = tasks.get(id)!!
+        assertEquals("Rapat tim", t.title)
+        assertEquals("bawa laptop", t.notes)
+        assertEquals(2, t.priority)
+        assertEquals("10:00:00", t.dueTime)
     }
 
     @Test fun clearingDateClearsTimeRuleAndReminder() = runBlocking {

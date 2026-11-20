@@ -94,6 +94,14 @@ private fun SqlCursor.toTx() = Transaction(
     walletName = getString(17), toWalletName = getString(18), sourcePackage = getString(19)?.takeIf { it.isNotBlank() }, sourceLabel = getString(20),
 )
 
+private const val TX_WHERE = """WHERE t.deleted_at IS NULL
+     AND t.occurred_on BETWEEN ?1 AND ?2
+     AND (?3 IS NULL OR t.kind = ?3)
+     AND (?4 IS NULL OR t.wallet_id = ?4 OR t.to_wallet_id = ?4)
+     AND (?5 IS NULL OR t.category_id = ?5)
+     AND (?6 = '' OR LOWER(COALESCE(t.title, '') || ' ' || COALESCE(t.note, '') || ' ' ||
+                           COALESCE(c.name, '')) LIKE '%' || ?6 || '%' ESCAPE '\')"""
+
 private const val RECURRING_SELECT = """
   SELECT r.id, r.kind, r.amount, r.wallet_id, r.to_wallet_id, r.category_id, r.title, r.note, r.rrule, r.start_on,
          r.end_on, r.next_run_on, r.auto_post, r.is_active, c.name, c.color, c.icon, w.name
@@ -157,16 +165,18 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
 
     fun watchTransactions(f: TxFilter): Flow<List<Transaction>> = db.watch(
         """$TX_SELECT
-           WHERE t.deleted_at IS NULL
-             AND t.occurred_on BETWEEN ?1 AND ?2
-             AND (?3 IS NULL OR t.kind = ?3)
-             AND (?4 IS NULL OR t.wallet_id = ?4 OR t.to_wallet_id = ?4)
-             AND (?5 IS NULL OR t.category_id = ?5)
-             AND (?6 = '' OR LOWER(COALESCE(t.title, '') || ' ' || COALESCE(t.note, '') || ' ' ||
-                                   COALESCE(c.name, '')) LIKE '%' || ?6 || '%' ESCAPE '\')
+           $TX_WHERE
            ORDER BY t.occurred_on DESC, COALESCE(t.occurred_time, '99') DESC, t.created_at DESC
            LIMIT ?7""",
         listOf(f.from, f.to, f.kind?.value, f.walletId, f.categoryId, escapeLike(f.search.trim().lowercase()), f.limit),
+    ) { it.toTx() }
+
+    /** Transaksi untuk ekspor CSV: filter yang sama seperti [watchTransactions], tanpa LIMIT. */
+    suspend fun exportTransactions(f: TxFilter): List<Transaction> = db.getAll(
+        """$TX_SELECT
+           $TX_WHERE
+           ORDER BY t.occurred_on DESC, COALESCE(t.occurred_time, '99') DESC, t.created_at DESC""",
+        listOf(f.from, f.to, f.kind?.value, f.walletId, f.categoryId, escapeLike(f.search.trim().lowercase())),
     ) { it.toTx() }
 
     fun watchTransaction(id: String): Flow<Transaction?> = db.watch("$TX_SELECT WHERE t.id = ?", listOf(id)) { it.toTx() }.map { it.firstOrNull() }
@@ -257,6 +267,15 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
     suspend fun backfillNotificationSources(): Int {
         // Asal milik transaksi yang sudah dihapus permanen tidak berguna lagi.
         db.execute("DELETE FROM tx_sources WHERE id NOT IN (SELECT id FROM transactions)")
+        // Jalur cepat: transaksi baru dari notifikasi sudah menyimpan asalnya saat dibuat
+        // (NotificationsViewModel.save), jadi backfill hanya relevan untuk transaksi lama
+        // yang catatannya "Dari notifikasi …" tapi belum punya asal. Bila tidak ada kandidat,
+        // pemindaian penuh notif_log tidak perlu diulang tiap kali Keuangan dibuka.
+        val candidates = db.get(
+            """SELECT COUNT(*) FROM transactions t WHERE t.deleted_at IS NULL AND t.note LIKE 'Dari notifikasi %'
+               AND NOT EXISTS (SELECT 1 FROM tx_sources s WHERE s.id = t.id)""",
+        ) { it.getLong(0) ?: 0L }
+        if (candidates == 0L) return 0
         val rows = db.getAll(
             """SELECT t.id, MIN(n.package), MIN(n.app_label)
                  FROM transactions t
@@ -275,13 +294,49 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
         return rows.count { it.second.isNotBlank() }
     }
 
+    /**
+     * Ubah transaksi. Bila transaksi ini milik hutang (transaksi pembuka atau pelunasan),
+     * nominalnya ikut menjadi nominal hutang: baris `debts` dan transaksi saudaranya
+     * (pembuka ↔ pelunasan) diperbarui dalam transaksi yang sama, supaya tab Hutang,
+     * saldo dompet, dan gerakan pelunasan tidak pernah berselisih. Jenis transaksi hutang
+     * tidak bisa diubah (jenis ditentukan arah hutang: meminjamkan = keluar, meminjam = masuk).
+     */
     suspend fun updateTx(id: String, input: TxInput) {
         val v = normalizeTx(input)
-        db.execute(
-            """UPDATE transactions SET kind = ?, amount = ?, wallet_id = ?, to_wallet_id = ?, category_id = ?, occurred_on = ?,
+        val now = Timestamps.nowIso()
+        // Cek jenis DI LUAR transaksi tulis: FinanceException yang dilempar di dalam
+        // writeTransactionAsync dibungkus PowerSync menjadi PowerSyncException, sehingga
+        // tidak lagi tertangkap sebagai IllegalArgumentException di TxEditorViewModel.save
+        // (pesan error tidak tampil di form). Pembaruan nominal + hutang + saudara tetap
+        // dalam satu transaksi di bawah.
+        val existing = db.getAll("SELECT debt_id, kind FROM transactions WHERE id = ?", listOf(id)) {
+            it.getString(0) to it.getString(1)
+        }.firstOrNull()
+        val debtId = existing?.first
+        if (debtId != null && existing.second != null && existing.second != v.kind.value) {
+            throw FinanceException("Jenis transaksi hutang tidak bisa diubah")
+        }
+        db.writeTransactionAsync { tx ->
+            tx.executeAsync(
+                """UPDATE transactions SET kind = ?, amount = ?, wallet_id = ?, to_wallet_id = ?, category_id = ?, occurred_on = ?,
                       occurred_time = ?, title = ?, note = ?, task_id = ?, updated_at = ? WHERE id = ?""",
-            listOf(v.kind.value, v.amount, v.walletId, v.toWalletId, v.categoryId, v.occurredOn, v.occurredTime, v.title, v.note, v.taskId, Timestamps.nowIso(), id),
-        )
+                listOf(v.kind.value, v.amount, v.walletId, v.toWalletId, v.categoryId, v.occurredOn, v.occurredTime, v.title, v.note, v.taskId, now, id),
+            )
+            if (debtId != null) {
+                tx.executeAsync("UPDATE debts SET amount = ?, updated_at = ? WHERE id = ?", listOf(v.amount, now, debtId))
+                val sibling = when (id) {
+                    debtOpenTxId(debtId) -> debtSettleTxId(debtId)
+                    debtSettleTxId(debtId) -> debtOpenTxId(debtId)
+                    else -> null
+                }
+                if (sibling != null) {
+                    tx.executeAsync(
+                        "UPDATE transactions SET amount = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+                        listOf(v.amount, now, sibling),
+                    )
+                }
+            }
+        }
     }
 
     suspend fun removeTx(id: String) = softDelete("transactions", id)
@@ -340,12 +395,22 @@ class FinanceRepository(private val db: PowerSyncDatabase, private val users: Us
 
     // ================================================================== anggaran
 
+    /**
+     * Simpan anggaran. Bila membuat baru untuk kategori yang sudah punya anggaran aktif,
+     * ditolak (sama seperti [restoreBudget]) — penjaga duplikat tidak boleh hanya di UI,
+     * karena sinkronisasi dari perangkat lain bisa membuat anggaran ganda.
+     */
     suspend fun saveBudget(id: String?, categoryId: String?, amount: Long, alertPct: Int, startMonth: String) {
         if (amount <= 0) throw FinanceException("Anggaran harus lebih dari 0")
         val now = Timestamps.nowIso()
         if (id != null) {
             db.execute("UPDATE budgets SET amount = ?, alert_pct = ?, updated_at = ? WHERE id = ?", listOf(amount, alertPct, now, id))
         } else {
+            val clash = db.get(
+                "SELECT COUNT(*) FROM budgets WHERE deleted_at IS NULL AND COALESCE(category_id, '') = ?",
+                listOf(categoryId ?: ""),
+            ) { it.int(0) }
+            if (clash > 0) throw FinanceException("Sudah ada anggaran untuk kategori ini")
             db.execute(
                 """INSERT INTO budgets (id, user_id, created_at, updated_at, category_id, amount, start_month, end_month, alert_pct)
                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)""",

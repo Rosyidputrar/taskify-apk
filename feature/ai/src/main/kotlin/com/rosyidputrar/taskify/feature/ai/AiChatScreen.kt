@@ -361,9 +361,17 @@ private fun AssistantMessage(item: ChatItem.Assistant, running: Boolean, actions
         }
         item.tools.forEach { t ->
             if (t.status == ToolStatus.Awaiting && t.preview != null) {
-                ConfirmCard(t, onDecide = { approve -> if (approve) haptics.success() else haptics.tap(); actions.decide(t.callId, approve) })
+                // Selama satu keputusan diproses, tombol kartu dikunci (mesin mengantrekan
+                // ketukan berikutnya) supaya ketukan tidak hilang tanpa jejak.
+                ConfirmCard(t, busy = running, onDecide = { approve -> if (approve) haptics.success() else haptics.tap(); actions.decide(t.callId, approve) })
             } else {
                 ToolRow(t)
+            }
+        }
+        if (item.truncated && item.last && !running) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Jawaban terpotong karena batas token.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { actions.send("Lanjutkan jawaban yang terpotong.") }) { Text("Lanjutkan") }
             }
         }
         when (item.state) {
@@ -441,7 +449,7 @@ private fun ToolRow(t: ToolActivity) {
 }
 
 @Composable
-private fun ConfirmCard(t: ToolActivity, onDecide: (Boolean) -> Unit) {
+private fun ConfirmCard(t: ToolActivity, busy: Boolean = false, onDecide: (Boolean) -> Unit) {
     val p = t.preview ?: return
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -457,11 +465,11 @@ private fun ConfirmCard(t: ToolActivity, onDecide: (Boolean) -> Unit) {
                     Text(v, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 }
             }
-            Text("Belum tersimpan sebelum kamu setujui.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (busy) "Memproses keputusan…" else "Belum tersimpan sebelum kamu setujui.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { onDecide(false) }) { Text("Batal") }
+                TextButton(onClick = { onDecide(false) }, enabled = !busy) { Text("Batal") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { onDecide(true) }) { Text("Simpan") }
+                Button(onClick = { onDecide(true) }, enabled = !busy) { Text("Simpan") }
             }
         }
     }

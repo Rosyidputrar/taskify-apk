@@ -27,6 +27,11 @@ import com.rosyidputrar.taskify.core.domain.vault.TokenType
  */
 object CodeImage {
     const val MAX_LINES = 220
+    /**
+     * Batas piksel total bitmap (≈ 32 MB ARGB_8888). Gambar 220 baris tanpa batas ini bisa
+     * ~57 MB; bila terlampaui, gambar diperkecil (downscale, isi tetap lengkap) bukan dipotong.
+     */
+    const val MAX_PIXELS = 8_000_000
     private const val MIN_COLS = 40
     private const val MAX_COLS = 100
 
@@ -83,9 +88,17 @@ object CodeImage {
         val footer = if (truncated) 54f else 0f
         val windowH = BAR + INNER * 0.6f + codeH + INNER + footer
         val height = (windowH + PAD * 2).toInt()
+        // Batas piksel total (lihat MAX_PIXELS): skala mengecil bila perlu, isi tetap lengkap.
+        val pixels = width.toLong() * height
+        val scale = if (pixels > MAX_PIXELS) kotlin.math.sqrt(MAX_PIXELS.toDouble() / pixels).toFloat() else 1f
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = try {
+            Bitmap.createBitmap((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        } catch (e: OutOfMemoryError) {
+            throw IllegalStateException("Gambar kode terlalu besar untuk perangkat ini — bagikan sebagai berkas.")
+        }
         val c = Canvas(bitmap)
+        if (scale != 1f) c.scale(scale, scale)
         // Latar: gradasi lembut dari warna aksen modul.
         val bg = Paint().apply { shader = LinearGradient(0f, 0f, width.toFloat(), height.toFloat(), accent, darken(accent, 0.55f), Shader.TileMode.CLAMP) }
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bg)

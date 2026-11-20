@@ -153,6 +153,8 @@ internal fun UnlockPanel(state: SandiUiState, actions: SandiActions, onQuickChec
     var recover by rememberSaveable { mutableStateOf(false) }
     if (recover) {
         RecoverPanel(state, actions, onCancel = { recover = false; actions.clearError() })
+        // D-11: peringatan baris tertinggal pada alur pemulihan brankas terkunci.
+        state.rotationWarning?.let { RotationWarningDialog(it, actions) }
         return
     }
     GateCard(Icons.Outlined.Lock, "Brankas terkunci", "Masukkan master password untuk membuka. Brankas terkunci lagi otomatis saat aplikasi ditinggal.") {

@@ -37,6 +37,8 @@ media3 = "1.11.1"
 coil = "3.6.3"
 glance = "1.2.0"
 quickjsKt = "1.0.15"
+# AndroidX Security — EncryptedSharedPreferences untuk kredensial musik (C M-2).
+securityCrypto = "1.1.0"
 
 [libraries]
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
@@ -106,6 +108,7 @@ androidx-test-runner = { module = "androidx.test:runner", version = "1.7.0" }
 androidx-test-core = { module = "androidx.test:core", version = "1.7.0" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 quickjs-kt = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjsKt" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = "roborazzi" }
 roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }

@@ -99,10 +99,10 @@ class ResolvingMediaDataSourceTest {
         assertEquals("https://music.youtube.com/", first.header("Referer"))
     }
 
-    @Test fun `URL googlevideo tanpa contentLength tetap Range 32KB lewat cap ChunkedDataSource`() {
-        // F2 (INVESTIGASI-A §5) + F3 (§7): tanpa registry DAN tanpa `clen`/`dur`,
+    @Test fun `URL googlevideo tanpa contentLength tetap Range 120KB lewat cap ChunkedDataSource`() {
+        // F2 (INVESTIGASI-A §5) + F3 (§7) + C S-13: tanpa registry DAN tanpa `clen`/`dur`,
         // request pertama googlevideo TETAP membawa Range berbatas —
-        // ChunkedDataSource membatasi chunk pertama ke fallback 32 KB.
+        // ChunkedDataSource membatasi chunk pertama ke fallback per-itag 251 (120 KB).
         // Sebelumnya tes ini meng-assert tanpa Range (perilaku lama yang
         // menyebabkan 403), lalu sempat 8 MB (juga 403, lihat §7).
         val url = "https://rr1---sn-cccc.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251"
@@ -115,21 +115,22 @@ class ResolvingMediaDataSourceTest {
         }
         assertEquals(1, cap.requests.size)
         val first = cap.requests[0]
-        assertEquals("bytes=0-32767", first.header("Range"))
+        assertEquals("bytes=0-119999", first.header("Range"))
         assertTrue(first.header("User-Agent")!!.contains("Chrome/141.0.0.0"))
         assertEquals("https://www.youtube.com", first.header("Origin"))
     }
 
     @Test fun `URL googlevideo dengan clen tanpa registry tetap Range dari fallback clen`() {
         // F1 (INVESTIGASI-A §5): `resolvePlaybackDataSpec` jatuh ke `clen`.
-        // Tanpa `dur`, chunk memakai fallback 32 KB → 100.000 byte = 4 chunk.
+        // Tanpa `dur`, chunk memakai fallback per-itag 251 (120 KB, C S-13)
+        // → 100.000 byte = 1 chunk; Range dijepit oleh panjang DataSpec
+        // (dari `clen`) sehingga permintaannya `bytes=0-99999`.
         val url = "https://rr1---sn-eeee.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251&clen=100000"
         val cap = CapturingClient(100_000)
         val read = openAndReadAllWithoutRegistry(url, cap.client)
         assertEquals(100_000L, read)
-        assertEquals(4, cap.requests.size)
-        assertEquals("bytes=0-32767", cap.requests[0].header("Range"))
-        assertEquals("bytes=98304-99999", cap.requests[3].header("Range"))
+        assertEquals(1, cap.requests.size)
+        assertEquals("bytes=0-99999", cap.requests[0].header("Range"))
     }
 
     /** Seperti [openAndReadAll] tapi tanpa mendaftarkan URL ke registry. */

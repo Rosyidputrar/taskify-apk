@@ -108,26 +108,26 @@ val linksFeatureModule = module {
     viewModel { p -> LinksViewModel(p.get(), p.get(), get(), get(), get(), get()) }
 }
 
-/** Bagian "Tertaut" di detail tugas / editor jurnal / catatan / transaksi. */
+/** Bagian "Tertaut" di detail tugas / editor jurnal / catatan / transaksi. [readOnly] = true (mode Baca) → tombol Tautkan & Lepas disembunyikan, baris tetap bisa dibuka. */
 @Composable
-fun LinksSection(type: EntityType, id: String, modifier: Modifier = Modifier) {
+fun LinksSection(type: EntityType, id: String, modifier: Modifier = Modifier, readOnly: Boolean = false) {
     val vm: LinksViewModel = koinViewModel(key = "links-${type.value}-$id") { parametersOf(type, id) }
     val links by vm.links.collectAsStateWithLifecycle()
-    LinksContent(links, vm, modifier)
+    LinksContent(links, vm, modifier, readOnly = readOnly)
 }
 
 @Composable
-fun LinksContent(links: List<LinkedEntity>, actions: LinksActions, modifier: Modifier = Modifier) {
+fun LinksContent(links: List<LinkedEntity>, actions: LinksActions, modifier: Modifier = Modifier, readOnly: Boolean = false) {
     var picking by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Tertaut", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            TextButton(onClick = { picking = true }) { Icon(Icons.Outlined.AddLink, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Tautkan") }
+            if (!readOnly) TextButton(onClick = { picking = true }) { Icon(Icons.Outlined.AddLink, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Tautkan") }
         }
         if (links.isEmpty()) Text("Hubungkan dengan tugas, jurnal, catatan, transaksi, atau Vault yang berkaitan.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         links.forEach { l -> EntityLine(l.entity, onClick = { actions.open(l.entity) }, trailing = {
-            IconButton(onClick = { actions.unlink(l) }) { Icon(Icons.Outlined.LinkOff, contentDescription = "Lepas tautan ${l.entity.title}") }
+            if (!readOnly) IconButton(onClick = { actions.unlink(l) }) { Icon(Icons.Outlined.LinkOff, contentDescription = "Lepas tautan ${l.entity.title}") }
         }) }
     }
     if (picking) EntityPicker(title = "Tautkan ke…", search = actions::candidates, onPick = { actions.link(it); picking = false }, onDismiss = { picking = false })

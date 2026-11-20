@@ -30,7 +30,7 @@ import kotlinx.serialization.json.put
 class OpenAiCompatClient(
     private val baseUrl: String,
     private val apiKey: String,
-    private val http: HttpClient = AiHttp.client(),
+    private val http: HttpClient = AiHttp.shared(),
 ) : AiClient {
 
     override suspend fun models(): List<String> = AiHttp.guard {
@@ -62,6 +62,14 @@ class OpenAiCompatClient(
                 if (type.startsWith("application/json")) {
                     // Server mengabaikan "stream": baca jawaban utuh.
                     val o = parse(response.bodyAsText())
+                    // Respons 200 yang berisi `error` (beberapa gateway/proxy) jangan
+                    // dibaca sebagai jawaban kosong — perlakukan seperti galat SSE.
+                    (o["error"] as? JsonObject)?.let { err ->
+                        throw AiException(AiErrorKind.Server, "Server AI mengirim galat: ${err.str("message") ?: "tanpa pesan"}", raw = o.toString().take(AiHttp.RAW_LIMIT))
+                    }
+                    (o["error"] as? JsonPrimitive)?.let { err ->
+                        throw AiException(AiErrorKind.Server, "Server AI mengirim galat: ${err.content}", raw = o.toString().take(AiHttp.RAW_LIMIT))
+                    }
                     val choice = (o["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
                     val message = choice?.get("message") as? JsonObject
                     message?.str("content")?.takeIf { it.isNotEmpty() }?.let { emit(AiEvent.Text(it)) }
@@ -95,6 +103,9 @@ class OpenAiCompatClient(
     internal fun body(r: AiRequest): JsonObject = buildJsonObject {
         put("model", r.model)
         put("stream", true)
+        // Batas keluaran (nama modern Chat Completions; `max_tokens` lama ditolak
+        // sebagian server untuk model baru). Tanpa ini jawaban tak berbatas.
+        put("max_completion_tokens", r.maxTokens)
         put("messages", buildJsonArray {
             if (!r.system.isNullOrBlank()) add(buildJsonObject { put("role", "system"); put("content", r.system) })
             r.messages.forEach { m -> add(message(m)) }

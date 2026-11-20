@@ -58,7 +58,9 @@ class AuthScreenshotTest {
     }
 
     @Test fun reverifyOffline() = shot("auth_mfa_reverify_offline_light") {
-        MfaContent(GateStatus.Reverify, MfaUiState(), online = false, actions = MfaActions())
+        // D-02: tanpa jejak verifikasi dalam 24 jam terakhir, tombol "Lewati" tidak ada —
+        // layar terkunci sampai online. Varian inilah yang direkam ulang dengan sengaja.
+        MfaContent(GateStatus.Reverify, MfaUiState(), online = false, actions = MfaActions(), canSkipOffline = false)
     }
 
     @Test fun lockDark() = shot("auth_lock_dark", dark = true) {

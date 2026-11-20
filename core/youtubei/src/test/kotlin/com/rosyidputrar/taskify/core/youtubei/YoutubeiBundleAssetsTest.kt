@@ -42,6 +42,16 @@ class YoutubeiBundleAssetsTest {
         assertTrue(bundle.contains("18.0.0"))
     }
 
+    // C S-2: objek hasil resolve mengembalikan `client` (nama klien yang
+    // benar-benar dipakai JS) — regex tahan terhadap penamaan ulang
+    // identifier hasil minify esbuild (hanya bentuknya yang dicek).
+    @Test
+    fun `bundle youtubei mengembalikan nama klien resolve`() {
+        val bundle = assetBytes("youtubei.bundle.js")
+        val clientInResult = Regex("playbackTrackingUrl:[A-Za-z_\$][A-Za-z0-9_\$]*\\([^)]*\\),client:[A-Za-z_\$][A-Za-z0-9_\$]*\\}")
+        assertTrue("bundle tidak mengembalikan field client di hasil resolve", clientInResult.containsMatchIn(bundle))
+    }
+
     @Test
     fun `runtime polyfills terkemas dan tidak kosong`() {
         val polyfills = assetBytes("runtime-polyfills.js")

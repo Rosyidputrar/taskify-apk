@@ -6,7 +6,8 @@ Enam berkas Kotlin di `src/main/kotlin/.../youtubei/` disalin dari ArchiveTune
 internal (`archivetune-*.js` → `taskify-*.js`). Aset di `src/main/assets/youtubei/`
 disalin verbatim:
 
-- `youtubei.bundle.js` (1.143.408 byte, md5 `c2342b8a822bdbb6d77e9e51b7846848`)
+- `youtubei.bundle.js` (1.143.417 byte, md5 `499d39d61904404ad5296a29dca3d534` — rebuild 20 Nov 2026 untuk C S-2,
+  field `client` di hasil resolve; sebelumnya 1.143.408 byte, md5 `c2342b8a822bdbb6d77e9e51b7846848`)
 - `runtime-polyfills.js` (4.208 byte, md5 `46d1ba4559205cd117f183bf1d829fbc`)
 
 Sumber JavaScript bundle ada di `javascript/` (disalin dari

@@ -118,7 +118,7 @@ class MyTubeMusicClientTest {
 
         override suspend fun lyrics(lyricsId: String, authState: PlaybackAuthState): Result<String> = lyricsResult
 
-        override suspend fun transcript(videoId: String): Result<String> = transcriptResult
+        override suspend fun transcript(videoId: String, authState: PlaybackAuthState): Result<String> = transcriptResult
 
         override fun resolveUrl(url: String): ResolvedLink? =
             if (url.contains("watch?v=vid12345678")) ResolvedLink("video", "vid12345678", url = url) else null
@@ -293,5 +293,18 @@ class MyTubeMusicClientTest {
         val e = assertFailsWith<MyTubeMusicException> { client(tube).search("x", SearchFilter.All) }
         assertFalse(e.isAuth)
         assertEquals("Tidak bisa menghubungi YouTube Music. Periksa koneksi.", e.message)
+    }
+
+    // C S-4: panggilan katalog yang menggantung diputus anggaran 20 dtk —
+    // tanpa batas ini `withRetry` InnerTube bisa menahan UI ~46 dtk.
+    @Test fun searchMenggantungDiputusAnggaranKatalog() = runTest {
+        val hanging = object : MyTube() {
+            override suspend fun search(query: String, filter: SearchFilter, authState: PlaybackAuthState): Result<SearchResults> {
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        val e = assertFailsWith<MyTubeMusicException> { MyTubeMusicClient(hanging).search("x", SearchFilter.All) }
+        assertFalse(e.isAuth)
+        assertTrue(e.message!!.contains("kehabisan waktu"), e.message!!)
     }
 }

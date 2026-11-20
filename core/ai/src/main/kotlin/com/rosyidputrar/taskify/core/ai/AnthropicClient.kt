@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.put
 class AnthropicClient(
     private val baseUrl: String,
     private val apiKey: String,
-    private val http: HttpClient = AiHttp.client(),
+    private val http: HttpClient = AiHttp.shared(),
 ) : AiClient {
 
     private fun HttpRequestBuilder.auth() {
@@ -34,12 +35,23 @@ class AnthropicClient(
     }
 
     override suspend fun models(): List<String> = AiHttp.guard {
-        val response = http.get("$baseUrl/v1/models?limit=1000") { auth() }
-        if (!response.status.isSuccess()) throw AiHttp.failure(response)
-        val body = response.bodyAsText()
-        val root = runCatching { AiJson.parseToJsonElement(body) as JsonObject }.getOrNull()
-            ?: throw AiException(AiErrorKind.BadResponse, "Daftar model bukan JSON.", response.status.value, body.take(AiHttp.RAW_LIMIT))
-        (root["data"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("id") }.distinct().sorted()
+        // Paginasi (`has_more` + `after_id`): tanpa ini model di atas 1000 pertama hilang diam-diam.
+        val out = mutableListOf<String>()
+        var afterId: String? = null
+        repeat(MAX_MODEL_PAGES) {
+            val url = "$baseUrl/v1/models?limit=1000" + (afterId?.let { "&after_id=$it" }.orEmpty())
+            val response = http.get(url) { auth() }
+            if (!response.status.isSuccess()) throw AiHttp.failure(response)
+            val body = response.bodyAsText()
+            val root = runCatching { AiJson.parseToJsonElement(body) as JsonObject }.getOrNull()
+                ?: throw AiException(AiErrorKind.BadResponse, "Daftar model bukan JSON.", response.status.value, body.take(AiHttp.RAW_LIMIT))
+            val page = (root["data"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("id") }
+            out += page
+            val hasMore = (root["has_more"] as? JsonPrimitive)?.contentOrNull == "true"
+            afterId = if (hasMore) page.lastOrNull() else null
+            if (afterId == null) return@guard out.distinct().sorted()
+        }
+        out.distinct().sorted()
     }
 
     override fun stream(request: AiRequest): Flow<AiEvent> = flow {
@@ -134,5 +146,7 @@ class AnthropicClient(
 
     companion object {
         const val VERSION = "2023-06-01"
+        /** Pengaman: jangan kejar halaman tanpa henti bila server selalu menjawab `has_more`. */
+        const val MAX_MODEL_PAGES = 10
     }
 }

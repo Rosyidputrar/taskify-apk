@@ -39,6 +39,7 @@ import com.rosyidputrar.taskify.core.ui.share.ShareSheet
 import com.rosyidputrar.taskify.core.ui.share.confirmCopied
 import com.rosyidputrar.taskify.feature.vault.component.TemplateDialog
 import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
+import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
 import com.rosyidputrar.taskify.core.designsystem.component.LoadingScreen
 import com.rosyidputrar.taskify.core.designsystem.component.launchSafe
 import com.rosyidputrar.taskify.core.designsystem.component.FitText
@@ -126,6 +127,8 @@ data class SnippetDraft(
     val code: String = "",
     val dirty: Boolean = false,
     val favorite: Boolean = false,
+    /** id diminta tapi tidak ada di DB (dihapus permanen / belum tersinkron) — bukan draf baru. */
+    val missing: Boolean = false,
 )
 
 /** Snippet untuk dibagikan / disalin (isi draf saat ini, termasuk yang belum disimpan). */
@@ -145,8 +148,14 @@ class SnippetEditorViewModel(
 
     init {
         launchSafe {
-            _draft.value = id?.let { repo.getSnippet(it) }?.let { SnippetDraft(true, it.id, it.title, it.language, it.description.orEmpty(), it.code, favorite = it.favorite) }
-                ?: SnippetDraft(loaded = true)
+            _draft.value = if (id == null) {
+                SnippetDraft(loaded = true)
+            } else {
+                // id ada tapi barisnya tidak ada → state "tidak ditemukan" (sama seperti
+                // Catatan/Jurnal), JANGAN buka draf kosong yang bisa tersimpan sebagai baru.
+                repo.getSnippet(id)?.let { SnippetDraft(true, it.id, it.title, it.language, it.description.orEmpty(), it.code, favorite = it.favorite) }
+                    ?: SnippetDraft(loaded = true, missing = true)
+            }
         }
     }
 
@@ -154,6 +163,7 @@ class SnippetEditorViewModel(
 
     fun save(onDone: () -> Unit) {
         val d = _draft.value
+        if (d.missing) return
         if (d.title.isBlank() || d.code.isBlank()) return
         launchSafe {
             val saved = repo.saveSnippet(d.id, d.title, d.language, d.code, d.description)
@@ -264,6 +274,16 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
         LoadingScreen(module = TaskifyModule.Vault)
         return
     }
+    if (d.missing) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = actions::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Kembali") }
+                Text("Snippet", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            }
+            EmptyState(TaskifyModule.Vault, "Snippet tidak ditemukan", "Snippet ini mungkin sudah dihapus permanen atau belum tersinkron ke perangkat ini.")
+        }
+        return
+    }
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val haptics = rememberHaptics()
@@ -293,7 +313,7 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
                     when { d.id == null -> "Snippet baru"; preview -> "Snippet"; else -> "Ubah snippet" },
                     style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { copy(d.code, "Kode") }, enabled = !empty) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin kode") }
+                IconButton(onClick = { guarded { copy(d.code, "Kode") } }, enabled = !empty) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin kode") }
                 IconButton(onClick = { sharing = true }, enabled = !empty) { Icon(Icons.Outlined.Share, contentDescription = "Bagikan") }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
@@ -309,7 +329,7 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
                             text = { Text("Salin sebagai Markdown") },
                             leadingIcon = { Icon(Icons.Outlined.Code, null) },
                             enabled = !empty,
-                            onClick = { menu = false; copy(SnippetExport.markdown(d.title, d.language, d.code, d.description.ifBlank { null }).trimEnd(), "Markdown") },
+                            onClick = { menu = false; guarded { copy(SnippetExport.markdown(d.title, d.language, d.code, d.description.ifBlank { null }).trimEnd(), "Markdown") } },
                         )
                         DropdownMenuItem(
                             text = { Text("Salin sebagai gambar") },
@@ -403,7 +423,7 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
     if (sharing) {
         ShareSheet("Bagikan snippet", TaskifyModule.Vault, snippetShareSections(d.language), onPick = { f -> sharing = false; guarded { actions.share(f) } }, onDismiss = { sharing = false })
     }
-    if (template) TemplateDialog(d.code, onDismiss = { template = false }) { filled -> copy(filled, "Kode"); template = false }
+    if (template) TemplateDialog(d.code, onDismiss = { template = false }) { filled -> template = false; guarded { copy(filled, "Kode") } }
     pendingSecret?.let { action ->
         AlertDialog(
             onDismissRequest = { pendingSecret = null },

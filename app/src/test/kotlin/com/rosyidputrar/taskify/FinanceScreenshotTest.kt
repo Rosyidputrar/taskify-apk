@@ -138,7 +138,7 @@ object SampleFinance {
         override fun removeWallet(w: Wallet, onDone: () -> Unit) = Unit
         override fun saveCategory(id: String?, input: CategoryInput, onDone: () -> Unit) = Unit
         override fun removeCategory(c: Category) = Unit
-        override fun exportCsv(): Pair<String, String>? = null
+        override suspend fun exportCsv(): Pair<String, String>? = null
         override fun back() = Unit
         override fun update(block: (TxDraft) -> TxDraft) = Unit
         override fun kind(kind: TxKind) = Unit

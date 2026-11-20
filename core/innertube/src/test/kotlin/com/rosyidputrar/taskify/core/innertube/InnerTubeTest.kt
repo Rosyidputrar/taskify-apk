@@ -529,4 +529,32 @@ class InnerTubeTest {
         assertEquals("GET", capturedMethod)
         assertEquals("https://music.youtube.com/sw.js_data", capturedUrl)
     }
+
+    // ------------------------------------------------------------ C S-6: authState eksplisit ke getTranscript
+
+    @Test
+    fun getTranscriptMemakaiAuthStateEksplisitBukanStateInternal() = runTest {
+        val capturedHeaders = mutableMapOf<String, String>()
+        var capturedBody = ""
+        val tube = InnerTube(mockClient {
+            it.headers.forEach { k, v -> capturedHeaders[k] = v.joinToString() }
+            capturedBody = (it.body as TextContent).text
+            okJson("""{"actions":[]}""")
+        })
+        // State internal transport sengaja dibuat BASI (visitorData lama).
+        tube.applyAuthState(PlaybackAuthState(visitorData = "CgtBasi"))
+        tube.getTranscript(
+            MyTubeClient.WEB_REMIX,
+            videoId = "aaaaaaaaaaa",
+            authState = PlaybackAuthState(visitorData = "CgtEksplisit"),
+        )
+        assertEquals(
+            "CgtEksplisit",
+            capturedHeaders["X-Goog-Visitor-Id"],
+            "header visitorData harus dari authState parameter, bukan state internal yang basi",
+        )
+        val ctx = json.parseToJsonElement(capturedBody).jsonObject["context"]
+            ?.jsonObject?.get("client")?.jsonObject
+        assertEquals("CgtEksplisit", ctx?.get("visitorData")?.jsonPrimitive?.content)
+    }
 }

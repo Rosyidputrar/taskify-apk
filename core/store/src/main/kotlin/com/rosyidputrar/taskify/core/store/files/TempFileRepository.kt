@@ -14,7 +14,7 @@ class TempFileRepository(private val db: PowerSyncDatabase) {
         """SELECT id, file_name, mime_type, size_bytes, status, share_token, is_public, expires_at, download_count,
                   last_download_at, created_at, updated_at, deleted_at
              FROM temp_files WHERE deleted_at IS NULL
-            ORDER BY datetime(created_at) DESC, id DESC""",
+            ORDER BY datetime(created_at) DESC, id DESC LIMIT 1000""",
     ) { c ->
         TempFile(
             id = c.getString(0)!!, fileName = c.getString(1) ?: "berkas", mimeType = c.getString(2) ?: "application/octet-stream",

@@ -3,6 +3,7 @@ package com.rosyidputrar.taskify.core.device
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,6 +18,13 @@ import com.rosyidputrar.taskify.core.domain.finance.TxKind
 
 /** Notifikasi "Transaksi terdeteksi" — mengajak meninjau draf, tidak pernah menyimpan otomatis. */
 class DraftAlerts(private val context: Context, private val hideContent: () -> Boolean = { false }) {
+    // False positive lint: izin POST_NOTIFICATIONS SUDAH dicek di awal metode ini
+    // (early return bila belum diberikan, SDK 33+; di bawah 33 izin ini tidak ada).
+    // Lint tidak mengenali guard itu karena notify() berada di dalam runCatching,
+    // dan @RequiresPermission di sini justru memindah galat ke pemanggil
+    // (TaskifyNotificationListener, callback framework yang tetap jalan tanpa izin
+    // ini — ia hanya melewati alert). Jadi supresi terarah dengan alasan ini.
+    @SuppressLint("MissingPermission")
     fun show(id: String, money: MoneyNotif) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

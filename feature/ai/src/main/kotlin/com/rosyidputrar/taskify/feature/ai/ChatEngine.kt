@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,8 +43,14 @@ class ChatEngine(
     private val scope: CoroutineScope,
     private val now: () -> ZonedDateTime = { ZonedDateTime.now() },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Batas token keluaran per jawaban (dari Pengaturan AI; bawaan 4096). */
+    private val maxTokens: () -> Int = { 4096 },
 ) {
     private val jobs = ConcurrentHashMap<String, Job>()
+    /** Anggaran putaran alat yang sudah dipakai giliran ini, dibawa lintas [decide]. */
+    private val roundsUsed = ConcurrentHashMap<String, Int>()
+    /** Keputusan yang diketuk saat satu keputusan lain masih diproses — dijalankan berurutan. */
+    private val queuedDecisions = ConcurrentHashMap<String, ArrayDeque<Pair<String, Boolean>>>()
     private val _running = MutableStateFlow<Set<String>>(emptySet())
     /** Sesi yang sedang menunggu jawaban. */
     val running: StateFlow<Set<String>> = _running.asStateFlow()
@@ -66,7 +73,7 @@ class ChatEngine(
         launch(sessionId) {
             cancelPending(sessionId, "Dibatalkan: pengguna mengirim pesan baru sebelum menyetujui.")
             repo.addMessage(sessionId, ChatRole.User, clean)
-            loop(sessionId)
+            loop(sessionId, freshTurn = true)
         }
     }
 
@@ -77,10 +84,13 @@ class ChatEngine(
     fun retry(sessionId: String) {
         if (isRunning(sessionId)) return
         launch(sessionId) {
+            // Kartu konfirmasi yang masih terbuka ikut dibatalkan dulu (catatannya ikut
+            // terhapus bersama jawaban lama di bawah — jawab ulang memang membuang giliran itu).
+            cancelPending(sessionId, "Dibatalkan: pengguna meminta jawaban ulang sebelum menyetujui.")
             val history = repo.messages(sessionId)
             val lastUser = history.lastOrNull { it.role == ChatRole.User } ?: return@launch
             repo.deleteFrom(sessionId, lastUser.seq + 1)
-            loop(sessionId)
+            loop(sessionId, freshTurn = true)
         }
     }
 
@@ -89,16 +99,24 @@ class ChatEngine(
         val clean = text.trim()
         if (clean.isEmpty() || isRunning(sessionId)) return
         launch(sessionId) {
+            cancelPending(sessionId, "Dibatalkan: pengguna mengubah pesan sebelum menyetujui.")
             val lastUser = repo.messages(sessionId).lastOrNull { it.role == ChatRole.User } ?: return@launch
             repo.deleteFrom(sessionId, lastUser.seq)
             repo.addMessage(sessionId, ChatRole.User, clean)
-            loop(sessionId)
+            loop(sessionId, freshTurn = true)
         }
     }
 
-    /** Setujui / tolak alat tulis [callId]. Bila semua panggilan di jawaban itu sudah diputuskan, model dilanjutkan. */
+    /**
+     * Setujui / tolak alat tulis [callId]. Bila semua panggilan di jawaban itu sudah diputuskan, model dilanjutkan.
+     * Ketukan saat satu keputusan masih diproses TIDAK hilang: diantrekan dan dijalankan
+     * setelah pekerjaan itu selesai (lihat [launch]).
+     */
     fun decide(sessionId: String, callId: String, approve: Boolean) {
-        if (isRunning(sessionId)) return
+        if (isRunning(sessionId)) {
+            queuedDecisions.getOrPut(sessionId) { ArrayDeque() } += callId to approve
+            return
+        }
         launch(sessionId) {
             val history = repo.messages(sessionId)
             val owner = history.lastOrNull { it.role == ChatRole.Assistant && it.state == ChatState.Awaiting } ?: return@launch
@@ -115,7 +133,7 @@ class ChatEngine(
             repo.addMessage(sessionId, ChatRole.Tool, result.text, state = toolState(result, rejected = !approve), toolCallId = call.id, toolName = call.name)
             if (calls.all { it.id in answered || it.id == callId }) {
                 repo.updateMessage(owner.id, state = ChatState.Done)
-                loop(sessionId, rounds = 1)
+                loop(sessionId)
             }
         }
     }
@@ -133,6 +151,8 @@ class ChatEngine(
             } finally {
                 jobs.remove(sessionId)
                 _running.update { it - sessionId }
+                // Keputusan yang diantrekan saat pekerjaan ini berjalan, jalankan sekarang.
+                queuedDecisions[sessionId]?.removeFirstOrNull()?.let { (callId, approve) -> decide(sessionId, callId, approve) }
             }
         }
         jobs[sessionId] = job
@@ -149,13 +169,17 @@ class ChatEngine(
         repo.updateMessage(owner.id, state = ChatState.Done)
     }
 
-    private suspend fun loop(sessionId: String, rounds: Int = 0) {
-        var round = rounds
+    private suspend fun loop(sessionId: String, freshTurn: Boolean = false) {
+        // Anggaran putaran dibawa lintas decide() dalam giliran yang sama: tanpa ini setiap
+        // persetujuan memulai hitungan dari 1 dan model bisa berputar jauh di atas MAX_ROUNDS.
+        // Giliran baru (pesan / jawab ulang / ubah) memulai anggaran baru.
+        var round = if (freshTurn) 0.also { roundsUsed[sessionId] = 0 } else roundsUsed.getOrDefault(sessionId, 0)
         while (true) {
             val session = repo.session(sessionId) ?: return
             val answer = answerOnce(session) ?: return
             if (answer.calls.isEmpty()) return
             round++
+            roundsUsed[sessionId] = round
             var waiting = false
             answer.calls.forEach { c ->
                 val result = answer.early[c.id] ?: when {
@@ -197,40 +221,77 @@ class ChatEngine(
             system = AiPrompt.render(session.systemPrompt.ifBlank { AiPrompt.DEFAULT }, now()) + if (tools.isEmpty()) "\n" + NO_DATA else "",
             messages = ChatHistory.toRequest(history),
             tools = tools,
+            maxTokens = maxTokens(),
         )
         val text = StringBuilder()
         var calls: List<AiToolCall> = emptyList()
+        var stopReason: String? = null
         var lastSave = clock()
-        try {
-            clients(provider, connection.baseUrl, connection.apiKey).stream(request).collect { e ->
-                when (e) {
-                    is AiEvent.Text -> {
-                        text.append(e.delta)
-                        _live.update { it + (assistant.id to text.toString()) }
-                        if (clock() - lastSave > SAVE_EVERY_MS) {
-                            lastSave = clock()
-                            repo.updateMessage(assistant.id, content = text.toString())
+        // Percobaan ulang terbatas untuk galat sementara (429/5xx/putus koneksi): hormati
+        // Retry-After lalu backoff. Teks parsial TIDAK dibuang — percobaan berikutnya
+        // melanjutkan dari teks yang sudah ada (lihat mergeAttemptText).
+        var attempt = 0
+        while (true) {
+            attempt++
+            val attemptText = StringBuilder()
+            var attemptCalls: List<AiToolCall> = emptyList()
+            var attemptStop: String? = null
+            try {
+                clients(provider, connection.baseUrl, connection.apiKey).stream(request).collect { e ->
+                    when (e) {
+                        is AiEvent.Text -> {
+                            attemptText.append(e.delta)
+                            val shown = mergedText(text, attemptText)
+                            _live.update { it + (assistant.id to shown) }
+                            if (clock() - lastSave > SAVE_EVERY_MS) {
+                                lastSave = clock()
+                                repo.updateMessage(assistant.id, content = shown)
+                            }
                         }
+                        is AiEvent.ToolCalls -> attemptCalls = e.calls
+                        is AiEvent.Done -> attemptStop = e.stopReason
                     }
-                    is AiEvent.ToolCalls -> calls = e.calls
-                    is AiEvent.Done -> Unit
                 }
-            }
-        } catch (e: CancellationException) {
-            withContext(NonCancellable) {
-                repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Stopped)
+            } catch (e: CancellationException) {
+                mergeAttemptText(text, attemptText)
+                withContext(NonCancellable) {
+                    repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Stopped)
+                    _live.update { it - assistant.id }
+                }
+                throw e
+            } catch (e: AiException) {
+                mergeAttemptText(text, attemptText)
+                if (e.isRetryable && attempt < MAX_ATTEMPTS) {
+                    try {
+                        delay(e.retryDelayMs(attempt))
+                    } catch (ce: CancellationException) {
+                        // Berhenti saat jeda backoff: simpan sebagai Dihentikan seperti
+                        // pembatalan di tengah streaming (bukan tertinggal "Streaming").
+                        withContext(NonCancellable) {
+                            repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Stopped)
+                            _live.update { it - assistant.id }
+                        }
+                        throw ce
+                    }
+                    continue
+                }
+                repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Error, error = e.message)
                 _live.update { it - assistant.id }
+                return null
+            } catch (e: Exception) {
+                mergeAttemptText(text, attemptText)
+                repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Error, error = "Galat tak terduga: ${e.message ?: e::class.simpleName}")
+                _live.update { it - assistant.id }
+                return null
             }
-            throw e
-        } catch (e: AiException) {
-            repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Error, error = e.message)
-            _live.update { it - assistant.id }
-            return null
-        } catch (e: Exception) {
-            repo.updateMessage(assistant.id, content = text.toString(), state = ChatState.Error, error = "Galat tak terduga: ${e.message ?: e::class.simpleName}")
-            _live.update { it - assistant.id }
-            return null
+            mergeAttemptText(text, attemptText)
+            calls = attemptCalls
+            stopReason = attemptStop
+            break
         }
+        // Jawaban terpotong karena batas token: tandai supaya pengguna tahu model belum
+        // selesai (bukan jawaban utuh), dan bisa minta lanjutan.
+        if (stopReason == "length" || stopReason == "max_tokens") text.append(TRUNCATED_NOTE)
         // Akses data mati → tidak ada alat yang boleh jalan, walau model tetap memanggilnya
         // (mis. meniru riwayat saat akses masih hidup). Alat tulis diperiksa dulu sebelum dikonfirmasi.
         val early = mutableMapOf<String, ToolResult>()
@@ -275,6 +336,32 @@ class ChatEngine(
         ToolResult("Alat gagal: ${e.message ?: e::class.simpleName}", "gagal", failed = true)
     }
 
+    /**
+     * Gabungkan teks percobaan ulang ke teks utama tanpa duplikasi: bila percobaan baru
+     * mengulang awalan yang sama (regenerasi deterministik), hanya lanjutannya yang dipakai.
+     * Bila keduanya menyimpang (model tak-deterministik), yang lebih panjang dipertahankan —
+     * server chat completions tidak punya resume, jadi sambungan sempurna tidak bisa dijamin.
+     */
+    private fun mergedText(main: StringBuilder, extra: StringBuilder): String {
+        val m = main.toString()
+        val e = extra.toString()
+        return when {
+            e.isEmpty() -> m
+            m.isEmpty() -> e
+            e.startsWith(m) -> e
+            m.startsWith(e) -> m
+            else -> if (e.length > m.length) e else m
+        }
+    }
+
+    private fun mergeAttemptText(main: StringBuilder, extra: StringBuilder) {
+        val merged = mergedText(main, extra)
+        if (merged != main.toString()) {
+            main.clear()
+            main.append(merged)
+        }
+    }
+
     /** Status pesan alat: Done = berhasil, Error = gagal, Stopped = ditolak / dibatalkan. */
     private fun toolState(r: ToolResult, rejected: Boolean) = when {
         rejected -> ChatState.Stopped
@@ -288,6 +375,10 @@ class ChatEngine(
     companion object {
         const val MAX_ROUNDS = 6
         const val SAVE_EVERY_MS = 1_200L
+        /** Percobaan kirim per giliran (1 awal + 2 ulang) untuk galat sementara. */
+        const val MAX_ATTEMPTS = 3
+        /** Catatan yang ditempel di akhir jawaban terpotong batas token (lihat E-S4). */
+        const val TRUNCATED_NOTE = "\n\n— Jawaban terpotong karena batas token. Kirim \"lanjutkan\" untuk menyambung."
         private val NO_ACCESS = ToolResult("Akses data Taskify sedang mati untuk percakapan ini, jadi alat tidak dijalankan.", "akses data mati", failed = true)
         const val NO_DATA = "Akses data Taskify sedang MATI untuk percakapan ini: kamu tidak bisa membaca atau membuat tugas, catatan, jurnal, maupun transaksi. Bila diminta, sarankan pengguna menyalakan \"Akses data\" di atas chat."
     }

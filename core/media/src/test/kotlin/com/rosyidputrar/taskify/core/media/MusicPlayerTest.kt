@@ -21,6 +21,7 @@ import com.rosyidputrar.taskify.core.media.mytube.MusicLoginEvents
 import com.rosyidputrar.taskify.core.media.mytube.StreamFailure
 import com.rosyidputrar.taskify.core.media.mytube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.mytube.YoutubeiStreamResolver
+import com.rosyidputrar.taskify.core.youtubei.YoutubeiResolutionPriority
 import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -152,6 +153,7 @@ class MusicPlayerTest {
             preferMp4a: Boolean,
             pinnedItag: Int?,
             networkMetered: Boolean,
+            priority: YoutubeiResolutionPriority,
         ): Result<DirectStream> {
             calls += videoId
             return result?.invoke(videoId)
@@ -187,6 +189,11 @@ class MusicPlayerTest {
             registerPlayback = registerPlayback,
             isOnline = isOnline,
             onlineFlow = onlineFlow,
+            // C M-3: jam virtual runTest melompat ke batas withTimeoutOrNull
+            // sebelum gate tes selesai (bahkan Long.MAX_VALUE ikut dijadwalkan
+            // sebagai timer) — anggaran end-to-end dimatikan di tes; batas
+            // per-tier tetap diuji di DirectStreamResolverTest.
+            resolveStreamTimeoutMs = null,
         )
     }
 
@@ -563,6 +570,42 @@ class MusicPlayerTest {
             player.registerPlaybackOnce(a.videoId)
             advanceUntilIdle()
             assertEquals(1, calls)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    // ------------------------------------------------- C S-7: stop() membatalkan job latar
+
+    @Test fun stopCancelsDetailsJobSoLateDetailsDoNotResurrectClearedState() = runTest {
+        // details() dipicu saat lagu berikut dimuat dari URL prefetch (tanpa
+        // resolveCurrent): keterangan B digate, lalu stop() harus membatalkan
+        // job itu — keterangan yang telat datang tidak boleh membangkitkan
+        // state yang sudah dikosongkan.
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val tube = FakeMyTube()
+            val fake = FakeResolver()
+            fake.streamSupplier = { id, _ -> stream(id) }
+            val player = player(tube, fake)
+            player.playQueue(listOf(a, b), 0)
+            advanceUntilIdle()
+            assertEquals(YtStatus.Playing, player.state.value.status)
+            assertTrue(player.state.value.urls.containsKey(b.videoId), "prefetch B harus sudah memberi URL")
+            tube.gateTrack(b.videoId)
+            player.next()
+            advanceUntilIdle()
+            assertEquals(YtStatus.Playing, player.state.value.status)
+            assertTrue(b.videoId in player.state.value.detailsPending, "details B harus sedang diambil")
+            assertTrue(tube.trackCalls.contains(b.videoId))
+            player.stop()
+            advanceUntilIdle()
+            assertEquals(YtStatus.Idle, player.state.value.status)
+            assertFalse(b.videoId in player.state.value.detailsPending, "stop() harus membatalkan job details")
+            tube.gateTrack(b.videoId).complete(Result.success(Track(b.videoId, "", emptyList())))
+            advanceUntilIdle()
+            assertEquals(YtStatus.Idle, player.state.value.status, "keterangan telat tidak boleh membangkitkan state kosong")
+            assertFalse(player.state.value.details.containsKey(b.videoId))
         } finally {
             Dispatchers.resetMain()
         }
@@ -1050,6 +1093,13 @@ class MusicPlayerTest {
         assertFalse(isBotDetectionMessage("Response code: 403"))
         assertFalse(isBotDetectionMessage("Gagal tersambung."))
         assertFalse(isBotDetectionMessage(""))
+        // C S-8: "bot" hanya sebagai kata utuh — kata yang mengandung "bot"
+        // tidak boleh memicu jalur pemulihan bot.
+        assertFalse(isBotDetectionMessage("bottom of the page failed to load"))
+        assertFalse(isBotDetectionMessage("robotic voice detected"))
+        assertFalse(isBotDetectionMessage("both tracks failed"))
+        assertTrue(isBotDetectionMessage("Sign in to confirm you're not a bot"))
+        assertTrue(isBotDetectionMessage("BOTS detected"))
     }
 
     @Test fun playback403RetryAllowanceResetsOnNewPlayAttempt() = runTest {

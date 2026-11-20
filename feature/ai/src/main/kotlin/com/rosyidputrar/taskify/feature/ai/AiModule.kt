@@ -27,7 +27,7 @@ val aiFeatureModule = module {
     single<AiClientFactory> { { p, url, key -> AiClients.create(p, url, key) } }
     single<AiData> { StoreAiData(get(), get(), get(), get(), get()) }
     single<AiToolbox> { TaskifyToolbox(get()) }
-    single { ChatEngine(get<AiRepository>(), get<AiSettingsStore>(), get<AiClientFactory>(), get(), get(AI_SCOPE)) }
+    single { ChatEngine(get<AiRepository>(), get<AiSettingsStore>(), get<AiClientFactory>(), get(), get(AI_SCOPE), maxTokens = { get<AiSettingsStore>().settings.value.maxTokens }) }
     viewModel { params -> AiChatViewModel(params.getOrNull(), get(), get(), get(), get()) }
     viewModel { AiSessionsViewModel(get(), get(), get(), get()) }
     viewModel { AiSettingsViewModel(get(), get(), get(), get<AiClientFactory>(), get()) }

@@ -28,16 +28,20 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 
 class TikTokException(message: String, val code: String = "UNKNOWN", val status: Int = 0) : Exception(message)
+
+/** C S-11: batas baca badan error TikTok — JSON error Worker kecil. */
+private const val ERROR_BODY_MAX_BYTES = 256 * 1024
 
 /**
  * Klien Worker ttdl-taskify (port `api-client.ts`). Worker hanya melayani Origin Taskify; di
  * browser header itu dipasang otomatis, di aplikasi ini dikirim eksplisit dari PUBLIC_WEB_ORIGIN.
  */
-class TikTokClient(private val baseUrl: String, private val origin: String) {
-    private val http = HttpClient(OkHttp) {
+class TikTokClient(private val baseUrl: String, private val origin: String, http: HttpClient? = null) {
+    private val http = http ?: HttpClient(OkHttp) {
         install(HttpTimeout) { requestTimeoutMillis = 10 * 60_000L; connectTimeoutMillis = 15_000; socketTimeoutMillis = 60_000 }
         expectSuccess = false
     }
@@ -50,12 +54,34 @@ class TikTokClient(private val baseUrl: String, private val origin: String) {
         var code = "UNKNOWN"
         var message = "Server TikTok membalas HTTP ${res.status.value}."
         runCatching {
-            val e = json.parseToJsonElement(res.bodyAsText()).jsonObject["error"] as? JsonObject
+            val e = json.parseToJsonElement(readErrorBodyLimited(res)).jsonObject["error"] as? JsonObject
             (e?.get("code") as? JsonPrimitive)?.content?.let { code = it }
             (e?.get("message") as? JsonPrimitive)?.content?.let { message = it }
         }
         if (code == "ORIGIN_NOT_ALLOWED") message = "Server TikTok menolak alamat aplikasi ini. Tambahkan origin Taskify (PUBLIC_WEB_ORIGIN) ke ALLOWED_ORIGINS Worker ttdl-taskify."
         return TikTokException(message, code, res.status.value)
+    }
+
+    /**
+     * C S-11: badan error dibaca lewat channel dengan batas 256 KiB, bukan
+     * `bodyAsText()` tanpa batas. JSON error Worker kecil; tanpa batas,
+     * respons galat raksasa (atau stream yang tidak pernah selesai) mengikat
+     * memori/benang tanpa henti. Bila terpotong, parse gagal → pesan bawaan.
+     */
+    private suspend fun readErrorBodyLimited(res: HttpResponse): String {
+        val channel = res.bodyAsChannel()
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8 * 1024)
+        var total = 0
+        while (total < ERROR_BODY_MAX_BYTES) {
+            val n = channel.readAvailable(buf, 0, minOf(buf.size, ERROR_BODY_MAX_BYTES - total))
+            if (n < 0) break
+            if (n == 0) { if (channel.isClosedForRead) break else continue }
+            out.write(buf, 0, n)
+            total += n
+        }
+        channel.cancel(null)
+        return String(out.toByteArray(), Charsets.UTF_8)
     }
 
     private inline fun <T> network(block: () -> T): T = try {

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -70,17 +71,19 @@ class ThemeScreenshotTest {
     @Test fun choosingAPaletteAppliesIt() {
         var theme by mutableStateOf(ThemeSpec.Default)
         compose.setContent { TaskifyTheme { Column(Modifier.padding(20.dp)) { ThemePaletteSettings(theme, onThemeChange = { theme = it }) } } }
-        // Kertas & Tinta: kontras terkunci di Standar, kontrol kontras mati.
-        compose.onNodeWithText("Tinggi").assertIsNotEnabled()
-        compose.onNodeWithText("Kertas & Tinta diracik manual pada kontras Standar, jadi kontras terkunci supaya tema bawaan tetap sama.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Palet Hutan").performClick()
-        assertEquals(ThemePalette.Hutan, theme.palette)
+        // A10: Kertas & Tinta — kontras Sedang/Tinggi memperkuat teks/garis tanpa
+        // me-regenerasi palet, jadi kontrolnya aktif dan pilihannya dipertahankan.
+        compose.onNodeWithText("Tinggi").assertIsEnabled()
+        compose.onNodeWithText("Kontras Sedang/Tinggi memperkuat teks dan garis tanpa mengubah warna racikan Kertas & Tinta.").assertIsDisplayed()
         compose.onNodeWithText("Tinggi").performClick()
         assertEquals(ThemeContrast.High, theme.contrast)
-        // Kembali ke Kertas & Tinta: kontras kembali ke Standar.
+        compose.onNodeWithContentDescription("Palet Hutan").performClick()
+        assertEquals(ThemePalette.Hutan, theme.palette)
+        assertEquals(ThemeContrast.High, theme.contrast, "pindah palet tidak mereset kontras")
+        // Kembali ke Kertas & Tinta: kontras dipertahankan (dulu direset ke Standar).
         compose.onNodeWithContentDescription("Palet Kertas & Tinta").performClick()
         assertEquals(ThemePalette.KertasTinta, theme.palette)
-        assertEquals(ThemeContrast.Standard, theme.contrast)
+        assertEquals(ThemeContrast.High, theme.contrast)
     }
 
     @Test fun dynamicPaletteDisablesContrast() {

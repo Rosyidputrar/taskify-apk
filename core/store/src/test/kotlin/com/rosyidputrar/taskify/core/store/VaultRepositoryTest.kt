@@ -32,6 +32,22 @@ class VaultRepositoryTest {
         scope.cancel()
     }
 
+    @Test fun pendingOutboxIsCapped() = runBlocking {
+        repeat(505) { i ->
+            db.execute(
+                "INSERT INTO attachments (id, user_id, entity_type, entity_id, storage_key, file_name, status, created_at, updated_at) VALUES (?, ?, 'note', 'n', ?, 'f.png', 'pending', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')",
+                listOf("a$i", user, "k$i"),
+            )
+        }
+        assertEquals(500, files.pending().size)
+    }
+
+    @Test fun getSnippetReturnsNullForUnknownId() = runBlocking {
+        // Perilaku yang dipakai SnippetEditorViewModel untuk state "Snippet tidak ditemukan"
+        // (S-3): id yang tidak ada di DB harus null, bukan draf baru.
+        assertNull(vault.getSnippet("tidak-ada"))
+    }
+
     @Test fun snippetsSearchFilterFavorite() = runBlocking {
         val a = vault.saveSnippet(null, "  Regex email  ", "javascript", "const re = /.+@.+/", "validasi")
         val b = vault.saveSnippet(null, "Docker run", "bash", "docker run -p {{port}}:80 {{image}}", null)
@@ -47,6 +63,25 @@ class VaultRepositoryTest {
         assertEquals(1, vault.watchSnippets().first().size)
         vault.restoreSnippet(a)
         assertEquals(2, vault.watchSnippets().first().size)
+    }
+
+    @Test fun removeProjectSoftDeletesVersionsAndRestoreBringsBackOnlyThose() = runBlocking {
+        val p = vault.saveProject(null, "Taskify", "Aplikasi produktivitas", "https://github.com/x/y")
+        val v1 = files.create(NewAttachment(EntityType.CodeProject, p, "taskify.zip", "application/zip", 1_000, "aaa", versionLabel = "v1"))
+        files.create(NewAttachment(EntityType.CodeProject, p, "taskify.zip", "application/zip", 2_000, "bbb", versionLabel = "v2"))
+        // v1 dihapus sendiri SEBELUM project masuk Sampah (deleted_at lama, bukan milik penghapusan project).
+        files.remove(v1.id)
+        db.execute("UPDATE attachments SET deleted_at = '2026-01-01T00:00:00Z' WHERE id = ?", listOf(v1.id))
+
+        vault.removeProject(p)
+        assertTrue(vault.watchProjects().first().isEmpty(), "project masuk Sampah")
+        assertEquals(0, files.watchUsage().first().bytes, "versi tidak lagi terhitung di pemakaian penyimpanan")
+
+        vault.restoreProject(p)
+        val project = vault.watchProject(p).first()!!
+        assertEquals(1, project.versions, "hanya v2 yang kembali; v1 yang dihapus sendiri tetap terhapus")
+        assertEquals(2_000, project.totalSize)
+        assertEquals("v2", project.latestLabel)
     }
 
     @Test fun projectsWithVersionsAndAttachmentLifecycle() = runBlocking {

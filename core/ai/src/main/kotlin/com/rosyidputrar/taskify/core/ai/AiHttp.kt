@@ -18,12 +18,34 @@ import java.io.IOException
 internal val AiJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
 internal object AiHttp {
-    /** Klien bawaan: tanpa batas total (jawaban streaming bisa lama), tapi diam > 90 dtk = galat. */
+    /**
+     * Satu klien HTTP untuk seluruh proses (E-M1): satu connection pool + dispatcher OkHttp,
+     * bukan satu per giliran chat. [HttpClient] Ktor aman dipakai dari banyak coroutine.
+     * Ditutup sekali saat proses mati (OS juga membereskannya); [closeShared] ada untuk
+     * jalur keluar akun / tes. Setelah ditutup, [shared] membuat yang baru bila dibutuhkan.
+     */
+    private var sharedClient: HttpClient? = null
+
+    @Synchronized
+    fun shared(): HttpClient {
+        sharedClient?.let { return it }
+        return client().also { sharedClient = it }
+    }
+
+    @Synchronized
+    fun closeShared() {
+        sharedClient?.close()
+        sharedClient = null
+    }
+
+    /** Klien bawaan: tanpa batas total (jawaban streaming bisa lama), tapi diam > 5 mnt = galat. */
     fun client(): HttpClient = HttpClient(OkHttp) {
         expectSuccess = false
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
-            socketTimeoutMillis = 90_000
+            // Batas diam ANTAR token, bukan total: model reasoning boleh diam lama sebelum
+            // token pertama / antar penalaran, tapi 5 menit tanpa token apa pun dianggap macet.
+            socketTimeoutMillis = 300_000
             requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
         }
     }
@@ -35,6 +57,16 @@ internal object AiHttp {
         val status = response.status.value
         val body = runCatching { response.bodyAsText() }.getOrDefault("").take(RAW_LIMIT)
         val server = serverMessage(body)?.let { " Pesan server: ${it.take(300)}" } ?: ""
+        val retryAfterMs = response.headers["Retry-After"]?.trim()?.toLongOrNull()
+            ?.coerceIn(0, 60)?.times(1_000)
+        // Konteks kepanjangan: "Coba lagi" tidak akan pernah berhasil — beri tahu yang harus dilakukan.
+        if (status in 400..422 && isContextTooLong(body)) {
+            return AiException(
+                AiErrorKind.Config,
+                "Riwayat terlalu panjang untuk model ini. Mulai percakapan baru atau minta ringkasan dulu, lalu lanjut di chat baru.$server",
+                status, body, retryAfterMs,
+            )
+        }
         val (kind, text) = when (status) {
             401 -> AiErrorKind.Auth to "API key ditolak (401). Periksa kuncinya."
             403 -> AiErrorKind.Forbidden to "Akses ditolak (403). Kunci ini tidak punya izin untuk layanan atau model tersebut."
@@ -45,7 +77,15 @@ internal object AiHttp {
             in 500..599 -> AiErrorKind.Server to "Server AI sedang bermasalah ($status)."
             else -> AiErrorKind.BadResponse to "Jawaban server tidak terduga ($status)."
         }
-        return AiException(kind, text + server, status, body)
+        return AiException(kind, text + server, status, body, retryAfterMs)
+    }
+
+    /** Benar bila badan galat menyebut konteks/token habis (format OpenAI & Anthropic). */
+    fun isContextTooLong(body: String): Boolean {
+        val b = body.lowercase()
+        return "context_length_exceeded" in b || "context length" in b ||
+            ("maximum context length" in b) || ("max_tokens" in b && "exceed" in b) ||
+            ("input is too long" in b)
     }
 
     /** Ambil `error.message` / `error` / `message` dari badan galat JSON (format OpenAI & Anthropic). */

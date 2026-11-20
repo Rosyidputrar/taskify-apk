@@ -1,17 +1,20 @@
 package com.rosyidputrar.taskify.core.media
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.rosyidputrar.taskify.core.domain.media.Loudness
@@ -47,6 +50,7 @@ import com.rosyidputrar.taskify.core.media.mytube.StreamFailureException
 import com.rosyidputrar.taskify.core.media.mytube.MyTubeAuthStore
 import com.rosyidputrar.taskify.core.media.mytube.streamUrlClientKey
 import com.rosyidputrar.taskify.core.media.mytube.streamUrlParamPresence
+import com.rosyidputrar.taskify.core.youtubei.YoutubeiResolutionPriority
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -65,6 +69,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Posisi putar (ms) untuk bilah progres. */
 data class PlaybackPosition(val positionMs: Long = 0, val durationMs: Long = 0)
@@ -91,6 +96,7 @@ fun Track.toDetails() = TrackDetails(lyricsId, upNext, loudnessDb, lyrics, lyric
  * Antrean disimpan ke [MusicPrefs] tiap kali berubah dan dipulihkan (dalam keadaan jeda) saat
  * proses dibuat ulang; URL tidak ikut disimpan.
  */
+@OptIn(UnstableApi::class)
 class MusicPlayer(
     private val context: Context,
     private val myTube: MyTube = MyTube(),
@@ -129,7 +135,13 @@ class MusicPlayer(
      * bawaan memakai `ConnectivityManager.isActiveNetworkMetered`
      * (tanpa izin tambahan). `Auto` di jaringan metered turun ke `High`.
      */
-    private val isNetworkMetered: () -> Boolean = {
+    // ACCESS_NETWORK_STATE adalah izin normal: otomatis diberikan saat instal,
+    // tidak bisa dicabut pengguna, dan dideklarasi di manifest. Lint menuntut
+    // @RequiresPermission, tapi anotasi itu tidak berlaku untuk isi lambda
+    // default konstruktor (sudah dicoba — lint tetap menandai); @SuppressLint
+    // di properti juga tidak menjangkau isi lambda, jadi supresi dipasang
+    // langsung pada lambda-nya.
+    private val isNetworkMetered: () -> Boolean = @SuppressLint("MissingPermission") {
         (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
             ?.isActiveNetworkMetered == true
     },
@@ -146,7 +158,9 @@ class MusicPlayer(
      * seperti `NetworkMonitor` di `:core:auth`. Dipakai jalan cepat
      * sebelum menunggu [onlineFlow].
      */
-    private val isOnline: () -> Boolean = {
+    // Supresi terarah: alasan sama seperti isNetworkMetered di atas
+    // (izin normal, selalu diberikan, tidak bisa dicabut).
+    private val isOnline: () -> Boolean = @SuppressLint("MissingPermission") {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         val caps = manager?.getNetworkCapabilities(manager.activeNetwork)
         caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
@@ -159,6 +173,18 @@ class MusicPlayer(
      * offline langsung resolve seperti sebelumnya.
      */
     private val onlineFlow: Flow<Boolean>? = null,
+    /**
+     * C M-3 — anggaran total satu `resolveStream` (youtubei + direct).
+     * Dibuat parameter (bukan konstanta langsung) supaya tes `runTest` bisa
+     * menonaktifkannya (`null` = tanpa batas): jam virtual
+     * `advanceUntilIdle()` melompat ke batas `withTimeoutOrNull` sebelum gate
+     * tes selesai — bahkan `Long.MAX_VALUE` pun tetap dijadwalkan sebagai
+     * timer dan ikut dilompati — jadi tanpa seam ini semua resolve di tes
+     * akan Timeout duluan. Produksi memakai default
+     * [RESOLVE_STREAM_TIMEOUT_MS]; batas per-tier (45 dtk) tetap jalan
+     * di dalam resolver masing-masing.
+     */
+    private val resolveStreamTimeoutMs: Long? = RESOLVE_STREAM_TIMEOUT_MS,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(YtState())
@@ -203,6 +229,12 @@ class MusicPlayer(
     private var playbackRegisteredFor: String? = null
     /** Poll prefetch per videoId — supaya bisa dibatalkan saat lagu berubah (item 9). */
     private val prefetchJobs = mutableMapOf<String, Job>()
+    /** C S-7: job latar `details()` per videoId — dibatalkan di `stop()` seperti `prefetchJobs`. */
+    private val detailsJobs = mutableMapOf<String, Job>()
+    /** C S-7: job latar `moreRadio()` — dibatalkan di `stop()`. */
+    private var radioJob: Job? = null
+    /** C S-7: job latar `sponsorFor()` per videoId — dibatalkan di `stop()` seperti `prefetchJobs`. */
+    private val sponsorJobs = mutableMapOf<String, Job>()
     private val sponsor = mutableMapOf<String, List<SponsorSegment>>()
     private val sponsorPending = mutableSetOf<String>()
     /** Posisi lanjut untuk antrean yang dipulihkan (hanya bila audionya bisa di-seek). */
@@ -691,6 +723,15 @@ class MusicPlayer(
         autoResumeTracker.reset()
         consecutiveErrorTracker.reset()
         cancelPrefetchExcept(null)
+        // C S-7: job latar details/radio/sponsor ikut dibatalkan — tanpanya
+        // `DetailsDone`/`RadioPage` yang telat datang masih dispatch ke
+        // state yang sudah dikosongkan `stop()`.
+        detailsJobs.values.forEach { it.cancel() }
+        detailsJobs.clear()
+        radioJob?.cancel()
+        radioJob = null
+        sponsorJobs.values.forEach { it.cancel() }
+        sponsorJobs.clear()
         if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
         loadedUrl = null
@@ -823,6 +864,14 @@ class MusicPlayer(
      * TIDAK pernah langsung jadi galat putar selama direct masih bisa —
      * fallback ada di sini, bukan di UI. Itag terakhir video ini dipakai
      * sebagai pinned (format yang sama dipertahankan).
+     *
+     * C M-3 — anggaran total end-to-end: [RESOLVE_STREAM_TIMEOUT_MS]
+     * membatasi youtubei + direct SEKALIGUS. Tanpa batas ini, youtubei
+     * yang menggantung (45 dtk) + sapuan direct (45 dtk) bisa menahan
+     * layar di "Menyiapkan audio…" sampai ~2 menit. Tiap tier juga punya
+     * batasnya sendiri (youtubei 45 dtk di `YoutubeiResolver`, direct
+     * 45 dtk di `DirectStreamResolver`); batas di sini yang memastikan
+     * gabungan keduanya tidak pernah melewati anggaran total.
      */
     private suspend fun resolveStream(
         videoId: String,
@@ -838,13 +887,22 @@ class MusicPlayer(
         val key = ResolveCacheKey(videoId, effective, preferMp4a, auth.streamCacheFingerprint, metered)
         resolveCache.get(key)?.let { rememberTracking(videoId, it); return Result.success(it) }
         val pinned = resolveCache.pinnedItag(videoId)
-        val result = if (youtubeiResolver == null) {
-            streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered)
+        val attempt: suspend () -> Result<DirectStream> = {
+            if (youtubeiResolver == null) {
+                streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered)
+            } else {
+                youtubeiResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered).fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = { streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered) },
+                )
+            }
+        }
+        // `null` = tanpa batas (seam tes runTest, lihat KDoc konstruktor).
+        val result = if (resolveStreamTimeoutMs == null) {
+            attempt()
         } else {
-            youtubeiResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered).fold(
-                onSuccess = { Result.success(it) },
-                onFailure = { streamResolver.resolve(videoId, effective, auth, preferMp4a, pinned, metered) },
-            )
+            withTimeoutOrNull(resolveStreamTimeoutMs) { attempt() }
+                ?: Result.failure(StreamFailureException(StreamFailure.Timeout))
         }
         result.getOrNull()?.let { resolveCache.put(key, it); rememberTracking(videoId, it) }
         return result
@@ -983,7 +1041,10 @@ class MusicPlayer(
             if (stream == null) {
                 stream = streamResolver.tryResolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
                     ?: runCatching {
-                        youtubeiResolver?.resolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered)
+                        // C M-3: prefetch youtubei jalan sebagai BACKGROUND —
+                        // antreannya terpisah dari resolve foreground (lagu
+                        // yang sedang diputar) lewat `backgroundPermit`.
+                        youtubeiResolver?.resolve(videoId, effective, auth, preferMp4a, resolveCache.pinnedItag(videoId), metered, YoutubeiResolutionPriority.BACKGROUND)
                     }.getOrNull()?.getOrNull()
             }
             if (stream != null) {
@@ -1006,8 +1067,9 @@ class MusicPlayer(
     }
 
     private fun details(videoId: String) {
+        if (detailsJobs[videoId]?.isActive == true) return
         dispatch(YtEvent.DetailsStart(videoId))
-        scope.launch {
+        val job = scope.launch {
             try {
                 myTube.track(videoId, authState())
                     .onSuccess { dispatch(YtEvent.DetailsDone(videoId, it.toDetails())) }
@@ -1016,11 +1078,14 @@ class MusicPlayer(
                 dispatch(YtEvent.DetailsCancelled(videoId))
             }
         }
+        detailsJobs[videoId] = job
+        job.invokeOnCompletion { if (detailsJobs[videoId] == job) detailsJobs.remove(videoId) }
     }
 
     private fun moreRadio(cursor: String) {
+        radioJob?.cancel()
         dispatch(YtEvent.RadioStart)
-        scope.launch {
+        radioJob = scope.launch {
             try {
                 myTube.radioMore(cursor, authState())
                     .onSuccess { dispatch(YtEvent.RadioPage(it.songs, it.cursor)) }
@@ -1036,12 +1101,19 @@ class MusicPlayer(
         if (!_settings.value.sponsorBlock || song.live) return
         val id = song.videoId
         if (sponsor.containsKey(id) || !sponsorPending.add(id)) return
-        scope.launch {
-            // Langsung ke sponsor.ajay.app (Tahap 4): gagal apa pun → tanpa segmen.
-            val segs = try { sponsorBlock.segments(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
-            sponsor[id] = segs
-            sponsorPending -= id
+        val job = scope.launch {
+            try {
+                // Langsung ke sponsor.ajay.app (Tahap 4): gagal apa pun → tanpa segmen.
+                val segs = try { sponsorBlock.segments(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+                sponsor[id] = segs
+            } finally {
+                // C S-7: dibatalkan `stop()` pun pending dilepas — kalau tidak,
+                // lagu ini tidak pernah dicoba lagi segmennya selama sesi.
+                sponsorPending -= id
+            }
         }
+        sponsorJobs[id] = job
+        job.invokeOnCompletion { if (sponsorJobs[id] == job) sponsorJobs.remove(id) }
     }
 
     private fun load(song: Song, url: String) {
@@ -1051,7 +1123,14 @@ class MusicPlayer(
         // Tahap 9 (C2-21): lagu baru = telemetri putar boleh dikirim lagi.
         if (loadedId != song.videoId) playbackRegisteredFor = null
         if (loadedId == song.videoId && loadedUrl == url && player.playbackState != Player.STATE_IDLE) {
-            if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
+            if (player.playbackState == Player.STATE_ENDED) {
+                // C S-10: lagu yang sama diputar ulang dari awal (mis.
+                // repeat-one) = pemutaran baru — telemetri putar boleh
+                // dikirim lagi; tanpa reset ini `registerPlaybackOnce`
+                // mengembalikan langsung dan pengulangan tidak tercatat.
+                playbackRegisteredFor = null
+                player.seekTo(0)
+            }
             player.play()
             return
         }
@@ -1187,6 +1266,9 @@ class MusicPlayer(
         /** Label status saat antrean putar menunggu jaringan kembali (Agen B). */
         const val WAITING_FOR_NETWORK_LABEL = "Menunggu jaringan…"
 
+        /** Anggaran total satu resolve stream end-to-end (youtubei + direct, C M-3). */
+        const val RESOLVE_STREAM_TIMEOUT_MS = 60_000L
+
         /** Batas cache byte media di disk (Tahap 6, C2-22): 100 MB, LRU. */
         const val MEDIA_CACHE_MAX_BYTES = 100L * 1024L * 1024L
 
@@ -1216,10 +1298,17 @@ class MusicPlayer(
  * `YTPlayerUtils.isBotDetectionError(reason: String)`, verbatim kecuali
  * nama): "bot" / "unusual traffic" / "automated" / "confirm ... not a" /
  * "not a robot" / "verify ... human".
+ *
+ * C S-8: "bot" dicocokkan sebagai KATA UTUH (`\b(bot|robot)\b`), bukan
+ * substring mentah — "bottom"/"robotic" tidak lagi memicu jalur pemulihan
+ * bot (buang PoToken yang masih sah + satu re-resolve yang tidak perlu).
+ * "robot" sengaja ikut: pesan YouTube memakai "not a robot".
  */
+private val BOT_WORD_REGEX = Regex("\\b(bots?|robots?)\\b")
+
 internal fun isBotDetectionMessage(reason: String): Boolean {
     val lower = reason.lowercase(Locale.US)
-    return "bot" in lower ||
+    return BOT_WORD_REGEX.containsMatchIn(lower) ||
         "unusual traffic" in lower ||
         "automated" in lower ||
         "confirm" in lower && "not a" in lower ||

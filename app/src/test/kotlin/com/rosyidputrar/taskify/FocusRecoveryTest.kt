@@ -12,6 +12,7 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.focus.MINUTE
+import com.rosyidputrar.taskify.focus.FocusActionReceiver
 import com.rosyidputrar.taskify.focus.FocusController
 import com.rosyidputrar.taskify.focus.FocusReceiver
 import com.rosyidputrar.taskify.focus.FocusRecord
@@ -73,9 +74,9 @@ class FocusRecoveryTest {
 
     /** PendingIntent yang sama dengan yang dipakai FocusController untuk alarm akhir fase. */
     private fun phaseEndAlarmIntent(): PendingIntent {
-        val intent = Intent(app, FocusReceiver::class.java)
-            .setAction(FocusReceiver.ACTION_PHASE_END)
-            .setData(Uri.parse("taskify://focus/${FocusReceiver.ACTION_PHASE_END}"))
+        val intent = Intent(app, FocusActionReceiver::class.java)
+            .setAction(FocusActionReceiver.ACTION_PHASE_END)
+            .setData(Uri.parse("taskify://focus/${FocusActionReceiver.ACTION_PHASE_END}"))
         return PendingIntent.getBroadcast(app, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
@@ -159,6 +160,29 @@ class FocusRecoveryTest {
         }
     }
 
+    /** D-03: aksi kustom hanya boleh masuk lewat FocusActionReceiver yang tidak diekspor. */
+    @Test fun customActionsGoToNonExportedReceiver() {
+        val pm = app.packageManager
+        val actionInfo = pm.getReceiverInfo(ComponentName(app, FocusActionReceiver::class.java), PackageManager.GET_META_DATA)
+        assertFalse(actionInfo.exported, "FocusActionReceiver tidak boleh diekspor")
+        val systemInfo = pm.getReceiverInfo(ComponentName(app, FocusReceiver::class.java), PackageManager.GET_META_DATA)
+        assertTrue(systemInfo.exported, "FocusReceiver tetap diekspor untuk aksi sistem")
+        // Aksi kustom tidak punya intent-filter di receiver sistem: broadcast implisit dari
+        // aplikasi lain tidak akan sampai ke FocusReceiver.
+        val custom = pm.queryBroadcastReceivers(Intent(FocusActionReceiver.ACTION_STOP), 0)
+        assertTrue(custom.none { it.activityInfo.name.endsWith("FocusReceiver") })
+    }
+
+    /** D-03: FocusReceiver yang diekspor mengabaikan aksi kustom (tidak menjalankan apa pun). */
+    @Test fun exportedReceiverIgnoresCustomActions() = runBlocking<Unit> {
+        startKoinWithFocus()
+        val focus = focusFromKoin()
+        focus.start("t1", "Tulis laporan")
+        FocusReceiver().onReceive(app, Intent(FocusActionReceiver.ACTION_STOP))
+        Thread.sleep(300)
+        assertNotNull(focus.run.value, "STOP dari receiver sistem harus diabaikan, sesi tetap jalan")
+    }
+
     // ---- Temuan 12: DND macet ------------------------------------------------------------------
 
     @Test fun stuckDndIsRestoredWhenNoSessionAfterRestart() = runBlocking<Unit> {
@@ -221,10 +245,10 @@ class FocusRecoveryTest {
         val running = shadowOf(nm).allNotifications.first { it.channelId == FocusController.CHANNEL_RUNNING }
         val pauseAction = running.actions.first { it.title.toString() == "Jeda" }
         val sent = shadowOf(pauseAction.actionIntent).savedIntent
-        assertEquals(FocusReceiver.ACTION_PAUSE, sent.action)
-        assertEquals(FocusReceiver::class.java.name, sent.component!!.className)
+        assertEquals(FocusActionReceiver.ACTION_PAUSE, sent.action)
+        assertEquals(FocusActionReceiver::class.java.name, sent.component!!.className)
 
-        FocusReceiver().onReceive(app, sent)
+        FocusActionReceiver().onReceive(app, sent)
         waitUntil { focus.run.value?.isPaused == true }
         assertTrue(focus.run.value!!.isPaused)
         // Tunggu sampai pipeline jeda async selesai sepenuhnya (termasuk cancelAlarm),

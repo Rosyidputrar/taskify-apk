@@ -92,7 +92,12 @@ import kotlinx.serialization.Serializable
 
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
-    val module: TaskifyModule get() = TaskifyModule.valueOf(moduleName)
+    /**
+     * Parse aman (A8): shortcut launcher bertahan melewati update, dan nama modul bisa basi
+     * bila modul diganti nama/dihapus — kembalikan null (pemanggil mengarahkan ke Ruang),
+     * bukan `valueOf` mentah yang melempar dan membuat aplikasi crash.
+     */
+    val module: TaskifyModule? get() = TaskifyModule.entries.firstOrNull { it.name == moduleName }
 }
 
 fun TaskifyModule.route(): Any = when (this) {

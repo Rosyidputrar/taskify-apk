@@ -255,32 +255,32 @@ class PlayerDataSourceFactoryTest {
     }
 
     @Test fun `registry kosong dan URL tanpa clen cap sintetis googlevideo akhir bersih`() {
-        // F2 (INVESTIGASI-A §5) + F3 (§7): tanpa registry DAN tanpa `clen`/`dur`,
-        // chunk pertama tetap dibatasi (fallback 32 KB); total dipelajari dari
-        // Content-Range chunk pertama sehingga chunk terakhir eksak (tanpa probe 416).
-        // SEBELUM perbaikan: 403 tanpa Range.
+        // F2 (INVESTIGASI-A §5) + F3 (§7) + C S-13: tanpa registry DAN tanpa `clen`/`dur`,
+        // chunk pertama tetap dibatasi (fallback per-itag 251 → 120 KB ≈ 6 detik);
+        // total dipelajari dari Content-Range chunk pertama sehingga chunk terakhir
+        // eksak (tanpa probe 416). SEBELUM perbaikan: 403 tanpa Range.
         val url = "https://rr1---sn-factory3.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251"
         val total = 1_000_000
         val server = GoogleVideoLikeClient(total)
         val read = openAndReadAll(url, factory(server.client))
         assertEquals(total.toLong(), read, "semua byte terbaca, tanpa exception")
-        assertEquals(31, server.requests.size, "1.000.000 / 32.768 = 31 chunk; total dipelajari dari Content-Range")
-        assertEquals("bytes=0-32767", server.requests[0].header("Range"))
-        assertEquals("bytes=32768-65535", server.requests[1].header("Range"))
-        assertEquals("bytes=983040-999999", server.requests[30].header("Range"))
+        assertEquals(9, server.requests.size, "1.000.000 / 120.000 = 9 chunk; total dipelajari dari Content-Range")
+        assertEquals("bytes=0-119999", server.requests[0].header("Range"))
+        assertEquals("bytes=120000-239999", server.requests[1].header("Range"))
+        assertEquals("bytes=960000-999999", server.requests[8].header("Range"))
     }
 
     @Test fun `registry kosong dan total kelipatan chunk berakhir tanpa probe ekstra`() {
-        // Total pas 2 x 32 KB: sesudah chunk kedua habis, read() berhenti
-        // lewat total yang dipelajari — tidak ada request ke-3.
+        // Total pas 2 x 120 KB (fallback per-itag 251, C S-13): sesudah chunk
+        // kedua habis, read() berhenti lewat total yang dipelajari — tidak ada request ke-3.
         val url = "https://rr1---sn-factory5.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251"
-        val total = 2 * 32 * 1024
+        val total = 2 * 120_000
         val server = GoogleVideoLikeClient(total)
         val read = openAndReadAll(url, factory(server.client))
         assertEquals(total.toLong(), read)
         assertEquals(2, server.requests.size)
-        assertEquals("bytes=0-32767", server.requests[0].header("Range"))
-        assertEquals("bytes=32768-65535", server.requests[1].header("Range"))
+        assertEquals("bytes=0-119999", server.requests[0].header("Range"))
+        assertEquals("bytes=120000-239999", server.requests[1].header("Range"))
     }
 
     @Test fun `tanpa Content-Range total kelipatan chunk berakhir lewat 416 bersih`() {
@@ -288,12 +288,12 @@ class PlayerDataSourceFactoryTest {
         // chunk ke-3 di luar akhir (416) tetap berakhir bersih, bukan galat.
         // Ini melatih jalur 416 OkHttpDataSource yang sesungguhnya.
         val url = "https://rr1---sn-factory8.googlevideo.com/videoplayback?c=WEB_CREATOR&cver=1.20260708.06.00&itag=251"
-        val total = 2 * 32 * 1024
+        val total = 2 * 120_000
         val server = GoogleVideoLikeClient(total, sendContentRange = false)
         val read = openAndReadAll(url, factory(server.client))
         assertEquals(total.toLong(), read)
         assertEquals(3, server.requests.size, "2 chunk isi + 1 probe 416 di luar akhir")
-        assertEquals("bytes=65536-98303", server.requests[2].header("Range"))
+        assertEquals("bytes=240000-359999", server.requests[2].header("Range"))
     }
 
     @Test fun `putar ulang dari cache tanpa request upstream`() {
