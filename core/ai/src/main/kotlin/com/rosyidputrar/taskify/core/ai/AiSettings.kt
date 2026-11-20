@@ -31,6 +31,14 @@ data class AiSettings(
     val ready: Boolean get() = hasKey && model.isNotBlank() && baseUrl.isNotBlank()
 }
 
+/** Alamat + kunci untuk satu penyedia. */
+data class AiConnection(val baseUrl: String, val apiKey: String)
+
+/** Sumber koneksi per penyedia (dipisah supaya mesin chat bisa diuji tanpa SharedPreferences). */
+fun interface AiConnector {
+    fun connection(provider: AiProvider): AiConnection?
+}
+
 /** Enkripsi rahasia kecil (kunci API). */
 interface SecretBox {
     fun seal(plain: ByteArray): String
@@ -81,7 +89,7 @@ class KeystoreSecretBox(private val alias: String = "taskify_ai_api_key") : Secr
  * Pengaturan AI di SharedPreferences. Base URL, model, dan kunci disimpan PER PENYEDIA, jadi
  * berpindah penyedia tidak menghapus pengaturan yang lain. Kunci API hanya tersimpan terenkripsi.
  */
-class AiSettingsStore(context: Context, private val box: SecretBox) {
+class AiSettingsStore(context: Context, private val box: SecretBox) : AiConnector {
     private val prefs = context.getSharedPreferences("taskify_ai", Context.MODE_PRIVATE)
     private val _settings = MutableStateFlow(read())
     val settings: StateFlow<AiSettings> = _settings.asStateFlow()
@@ -153,6 +161,14 @@ class AiSettingsStore(context: Context, private val box: SecretBox) {
         val sealed = prefs.getString(k(_settings.value.provider, "key"), null) ?: return null
         val bytes = box.open(sealed) ?: return null
         return try { String(bytes, Charsets.UTF_8) } finally { bytes.fill(0) }
+    }
+
+    /** Koneksi penyedia mana pun (sesi lama bisa memakai penyedia yang bukan aktif saat ini). */
+    override fun connection(provider: AiProvider): AiConnection? {
+        val sealed = prefs.getString(k(provider, "key"), null) ?: return null
+        val bytes = box.open(sealed) ?: return null
+        val key = try { String(bytes, Charsets.UTF_8) } finally { bytes.fill(0) }
+        return AiConnection(prefs.getString(k(provider, "base_url"), null) ?: provider.defaultBaseUrl, key)
     }
 
     /** Keluar akun: hapus semua pengaturan & kunci (perangkat bisa dipakai orang lain). */

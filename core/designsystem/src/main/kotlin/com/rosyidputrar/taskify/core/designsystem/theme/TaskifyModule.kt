@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify.core.designsystem.theme
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChecklistRtl
@@ -50,6 +51,7 @@ enum class TaskifyModule(
     TikTok("TikTok", "Lihat & unduh konten", Icons.Outlined.OndemandVideo, Color(0xFF1F1C17), Color(0xFFE8E8E8)),
     Notifications("Notifikasi", "Semua yang masuk hari ini", Icons.Outlined.NotificationsActive, Color(0xFF8C4A00), Color(0xFFFFB86B)),
     Wellbeing("Kesehatan Digital", "Waktu layar & kebiasaan HP", Icons.Outlined.Timelapse, Color(0xFF00639B), Color(0xFF94CCFF)),
+    Assistant("Asisten AI", "Tanya, ringkas, catat cepat", Icons.Outlined.AutoAwesome, Color(0xFF5546A8), Color(0xFFC7BDFF)),
     ;
 
     companion object {
@@ -57,7 +59,7 @@ enum class TaskifyModule(
         val onDark = Color(0xFF141414)
 
         /** Modul utama, urutan tampil di Ruang. */
-        val main = listOf(Home, Tasks, Calendar, Journal, Notes, Finance, Vault, Sandi, Files, Review, Notifications, Wellbeing, Settings)
+        val main = listOf(Home, Tasks, Calendar, Journal, Notes, Finance, Vault, Sandi, Files, Review, Notifications, Wellbeing, Assistant, Settings)
 
         /** Fitur lintas modul yang juga punya halaman sendiri. */
         val extras = listOf(Tags, Trash, Music, TikTok)

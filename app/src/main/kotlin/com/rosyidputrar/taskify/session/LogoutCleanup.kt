@@ -46,6 +46,8 @@ class DeviceLeftovers(
     /** Notifikasi & Kesehatan Digital: preferensi (pengecualian, pemetaan dompet) + pekerjaan latar. */
     private val devicePrefs: com.rosyidputrar.taskify.core.device.DeviceModulePrefs? = null,
     private val deviceScheduler: com.rosyidputrar.taskify.core.device.DeviceScheduler? = null,
+    /** Asisten AI: hentikan jawaban + hapus pengaturan & kunci API (riwayat chat ada di tabel lokal). */
+    private val aiWipe: (() -> Unit)? = null,
 ) {
     suspend fun clear() {
         // Notifikasi pengingat yang masih tampil memuat judul tugas akun lama.
@@ -65,6 +67,7 @@ class DeviceLeftovers(
         // di sini preferensinya (pemetaan dompet, pengecualian) dan pekerjaan salin data tiap jam.
         devicePrefs?.clear()
         deviceScheduler?.cancel()
+        aiWipe?.invoke()
         File(context.cacheDir, SHARE_UPLOAD_DIR).deleteRecursively()
         // PIN dibuat oleh akun lama; akun berikutnya membuat PIN-nya sendiri.
         lock.disable()

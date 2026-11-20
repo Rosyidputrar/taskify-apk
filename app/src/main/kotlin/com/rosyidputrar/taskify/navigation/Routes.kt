@@ -73,6 +73,15 @@ import kotlinx.serialization.Serializable
 /** Modul Kesehatan Digital. */
 @Serializable data object WellbeingRoute
 
+/** Asisten AI: daftar percakapan (layar lebar: daftar + chat berdampingan). */
+@Serializable data object AiRoute
+
+/** Satu percakapan AI; [sessionId] null = chat baru (sesi dibuat saat pesan pertama). */
+@Serializable data class AiChatRoute(val sessionId: String? = null)
+
+/** Pengaturan AI (penyedia, kunci API, model, system prompt). */
+@Serializable data object AiSettingsRoute
+
 @Serializable data class FocusRoute(val taskId: String? = null)
 
 /** Pemutar musik; [link] = link YouTube dari Bagikan yang langsung dibuka. */
@@ -104,5 +113,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.TikTok -> TikTokRoute()
     TaskifyModule.Notifications -> NotificationsRoute()
     TaskifyModule.Wellbeing -> WellbeingRoute
+    TaskifyModule.Assistant -> AiRoute
     else -> ModuleRoute(name)
 }

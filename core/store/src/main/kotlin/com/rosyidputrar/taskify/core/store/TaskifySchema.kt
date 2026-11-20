@@ -203,11 +203,30 @@ object TaskifySchema {
         localOnly = true,
     )
 
+    /** LOCAL-ONLY: sesi chat asisten AI (riwayat pribadi; webapp tidak punya AI → tidak disinkronkan). */
+    val aiSessions = Table(
+        name = "ai_sessions",
+        columns = listOf(t("title"), t("provider"), t("model"), t("system_prompt"), i("data_access"), i("created_ms"), i("updated_ms")),
+        indexes = listOf(idx("ai_sessions_updated", "updated_ms")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: pesan chat AI, urut [seq] dalam satu sesi. */
+    val aiMessages = Table(
+        name = "ai_messages",
+        columns = listOf(
+            t("session_id"), i("seq"), t("role"), t("content"), t("tool_calls"), t("tool_call_id"), t("tool_name"),
+            t("state"), t("error"), i("created_ms"),
+        ),
+        indexes = listOf(idx("ai_messages_session", "session_id", "seq")),
+        localOnly = true,
+    )
+
     val all: List<Table> = listOf(
         userSettings, tags, taggings, entityLinks, taskLists, tasks, journalEntries, notes, wallets, categories, debts,
         recurringTransactions, transactions, budgets, snippets, codeProjects, attachments, pwKeys, pwItems, pwTotpLog,
         configFiles, configVersions, tempFiles, uploadErrors, focusSessions,
-        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily, txSources,
+        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily, txSources, aiSessions, aiMessages,
     )
 
     val schema = Schema(all)

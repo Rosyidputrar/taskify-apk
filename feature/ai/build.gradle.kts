@@ -18,5 +18,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.androidx.compose)
+    implementation(libs.markdown.renderer.m3)
+    implementation(libs.markdown.renderer.code)
+    implementation(libs.highlights)
     testImplementation(libs.kotlinx.coroutines.test)
 }

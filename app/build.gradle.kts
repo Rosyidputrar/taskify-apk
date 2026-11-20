@@ -124,6 +124,7 @@ dependencies {
     implementation(projects.feature.organize)
     implementation(projects.feature.media)
     implementation(projects.feature.notifications)
+    implementation(projects.feature.ai)
     implementation(projects.feature.wellbeing)
     implementation(projects.core.device)
     implementation(libs.androidx.glance.appwidget)

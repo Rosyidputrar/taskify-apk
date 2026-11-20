@@ -18,6 +18,9 @@ import com.rosyidputrar.taskify.feature.wellbeing.WellbeingScreen
 import com.rosyidputrar.taskify.feature.notifications.NotificationDraftsBanner
 import com.rosyidputrar.taskify.feature.notifications.NotificationsScreen
 import com.rosyidputrar.taskify.navigation.WellbeingRoute
+import com.rosyidputrar.taskify.navigation.AiRoute
+import com.rosyidputrar.taskify.navigation.AiChatRoute
+import com.rosyidputrar.taskify.navigation.AiSettingsRoute
 import com.rosyidputrar.taskify.navigation.NotificationsRoute
 import com.rosyidputrar.taskify.ui.focus.FocusScreen
 import com.rosyidputrar.taskify.navigation.FocusRoute
@@ -272,6 +275,7 @@ fun TaskifyApp(
         destination.hasRoute<ReviewRoute>() -> TaskifyModule.Review
         destination.hasRoute<NotificationsRoute>() -> TaskifyModule.Notifications
         destination.hasRoute<WellbeingRoute>() -> TaskifyModule.Wellbeing
+        destination.hasRoute<AiRoute>() || destination.hasRoute<AiChatRoute>() || destination.hasRoute<AiSettingsRoute>() -> TaskifyModule.Assistant
         destination.hasRoute<TagsRoute>() || destination.hasRoute<TagRoute>() -> TaskifyModule.Tags
         destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
         destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
@@ -581,6 +585,38 @@ private fun TaskifyNavHost(
                 )
             }
         }
+        composable<AiRoute> {
+            Screen {
+                com.rosyidputrar.taskify.feature.ai.AiScreen(
+                    contentPadding = contentPadding,
+                    onOpenChat = { id -> navController.navigate(AiChatRoute(id)) },
+                    onSettings = { navController.navigate(AiSettingsRoute) },
+                    onBack = navController.backIfPossible(),
+                    backButton = { BackButton(it) },
+                )
+            }
+        }
+        composable<AiChatRoute> { entry ->
+            Screen {
+                com.rosyidputrar.taskify.feature.ai.AiChatScreen(
+                    sessionId = entry.toRoute<AiChatRoute>().sessionId,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    backButton = { BackButton(it) },
+                    onSettings = { navController.navigate(AiSettingsRoute) },
+                    onDeleted = { navController.popBackStack() },
+                )
+            }
+        }
+        composable<AiSettingsRoute> {
+            Screen {
+                com.rosyidputrar.taskify.feature.ai.AiSettingsScreen(
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    backButton = { BackButton(it) },
+                )
+            }
+        }
         composable<WellbeingRoute> {
             Screen {
                 WellbeingScreen(
@@ -756,7 +792,9 @@ private fun TaskifyNavHost(
  */
 internal fun NavDestination.isFullScreenEditor(): Boolean =
     hasRoute<JournalEntryRoute>() || hasRoute<NoteEditRoute>() || hasRoute<TransactionRoute>() ||
-        hasRoute<SnippetRoute>() || hasRoute<ZipRoute>() || hasRoute<ConfigEditRoute>() || hasRoute<FocusRoute>()
+        hasRoute<SnippetRoute>() || hasRoute<ZipRoute>() || hasRoute<ConfigEditRoute>() || hasRoute<FocusRoute>() ||
+        // Chat AI: kotak input menempel di atas keyboard, jadi dok disembunyikan.
+        hasRoute<AiChatRoute>()
 
 /** Padanan `isTab()` Animeru: Hari Ini, Kalender, Ruang, dan modul yang disematkan di dok. */
 internal fun NavBackStackEntry.isTopLevel(pinned: TaskifyModule?): Boolean {

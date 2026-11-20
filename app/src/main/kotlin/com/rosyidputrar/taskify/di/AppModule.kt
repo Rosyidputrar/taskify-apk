@@ -184,6 +184,10 @@ private val deviceModule = module {
         DeviceLeftovers(
             androidContext(), get(), get(), get(), get(), get(),
             devicePrefs = get(), deviceScheduler = get(),
+            aiWipe = {
+                get<com.rosyidputrar.taskify.feature.ai.ChatEngine>().cancelAll()
+                get<com.rosyidputrar.taskify.core.ai.AiSettingsStore>().wipe()
+            },
         )
     }
     // Musik direct (Tahap 7): tidak ada lagi klien Worker — katalog/lirik/
@@ -292,4 +296,4 @@ private val serverModule = module {
 }
 
 fun appModules(): List<Module> =
-    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule, deviceDataModule, notificationsFeatureModule, wellbeingFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
+    listOf(deviceModule, authFeatureModule, tasksFeatureModule, calendarFeatureModule, journalFeatureModule, notesFeatureModule, financeFeatureModule, vaultFeatureModule, attachmentsFeatureModule, sandiFeatureModule, filesFeatureModule, reviewFeatureModule, linksFeatureModule, organizeFeatureModule, mediaFeatureModule, deviceDataModule, notificationsFeatureModule, wellbeingFeatureModule, com.rosyidputrar.taskify.feature.ai.aiFeatureModule) + if (serverConfig.isComplete) listOf(serverModule) else emptyList()
