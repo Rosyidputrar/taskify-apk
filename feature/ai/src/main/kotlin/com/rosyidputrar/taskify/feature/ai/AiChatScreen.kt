@@ -46,7 +46,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -113,6 +112,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyLogo
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.store.ai.ChatState
@@ -500,9 +500,7 @@ private fun EmptyChat(state: ChatUiState, onPick: (String) -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.size(64.dp).background(accent.copy(alpha = 0.14f), CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Outlined.AutoAwesome, null, tint = accent, modifier = Modifier.size(30.dp))
-        }
+        Icon(TaskifyLogo.Full, null, tint = Color.Unspecified, modifier = Modifier.size(64.dp))
         Spacer(Modifier.size(16.dp))
         Text("Mau dibantu apa?", style = MaterialTheme.typography.headlineSmall.copy(fontFamily = SerifFamily))
         Spacer(Modifier.size(6.dp))
@@ -552,7 +550,7 @@ private fun Composer(
                 AssistChip(
                     onClick = onModel,
                     label = { Text(model.ifBlank { "Pilih model" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp)) },
-                    leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null, modifier = Modifier.size(16.dp)) },
+                    leadingIcon = { Icon(TaskifyLogo.Mono, null, modifier = Modifier.size(18.dp)) },
                 )
                 FilterChip(
                     selected = dataAccess, onClick = onToggleAccess,
