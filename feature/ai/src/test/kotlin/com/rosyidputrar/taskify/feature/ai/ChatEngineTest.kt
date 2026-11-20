@@ -240,4 +240,75 @@ class ChatEngineTest {
         assertEquals(ChatState.Error, store.list.last().state)
         assertNull(e.live.value[store.list.last().id])
     }
+
+    @Test fun toolsNeverRunWhileDataAccessIsOff() = runTest {
+        store.newSession(dataAccess = false)
+        val client = ScriptedClient(
+            // Model tetap memanggil alat walau tidak diberi (mis. meniru riwayat lama).
+            { emit(AiEvent.ToolCalls(listOf(AiToolCall("c1", "baca", "{}"), AiToolCall("w1", "simpan", "{}")))); emit(AiEvent.Done("tool_calls")) },
+            { emit(AiEvent.Text("Akses data mati.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "cek tugasku")
+        advanceUntilIdle()
+        assertTrue(tools.ran.isEmpty())
+        // Tidak ada kartu konfirmasi: keduanya langsung dijawab "akses mati", lalu model lanjut.
+        assertEquals(
+            listOf(ChatRole.User to ChatState.Done, ChatRole.Assistant to ChatState.Done, ChatRole.Tool to ChatState.Error, ChatRole.Tool to ChatState.Error, ChatRole.Assistant to ChatState.Done),
+            store.roles(),
+        )
+        assertTrue(store.list[2].content.contains("Akses data Taskify sedang mati"))
+    }
+
+    @Test fun approvingAfterDataAccessWasTurnedOffDoesNothing() = runTest {
+        store.newSession(dataAccess = true)
+        val client = ScriptedClient(
+            { emit(AiEvent.ToolCalls(listOf(AiToolCall("w1", "simpan", "{}")))); emit(AiEvent.Done("tool_calls")) },
+            { emit(AiEvent.Text("Oke.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "simpan")
+        advanceUntilIdle()
+        assertEquals(ChatState.Awaiting, store.list.last().state)
+        store.sessions["s1"] = store.sessions["s1"]!!.copy(dataAccess = false)
+        e.decide("s1", "w1", approve = true)
+        advanceUntilIdle()
+        assertTrue(tools.ran.isEmpty())
+        assertEquals(ChatRole.Tool to ChatState.Error, store.roles()[2])
+    }
+
+    @Test fun invalidWriteIsAnsweredWithoutAskingTheUser() = runTest {
+        store.newSession(dataAccess = true)
+        tools.check = { Prepared.Invalid(ToolResult("Dompet \"BCA\" tidak ada.", "tidak valid", failed = true)) }
+        val client = ScriptedClient(
+            { emit(AiEvent.ToolCalls(listOf(AiToolCall("w1", "simpan", "{\"wallet\":\"BCA\"}")))); emit(AiEvent.Done("tool_calls")) },
+            { emit(AiEvent.Text("Dompet BCA tidak ada, mau pakai yang mana?")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "catat 20rb di BCA")
+        advanceUntilIdle()
+        assertTrue(tools.ran.isEmpty())
+        assertEquals(
+            listOf(ChatRole.User to ChatState.Done, ChatRole.Assistant to ChatState.Done, ChatRole.Tool to ChatState.Error, ChatRole.Assistant to ChatState.Done),
+            store.roles(),
+        )
+        assertEquals("Dompet \"BCA\" tidak ada.", client.requests[1].messages.last().content)
+    }
+
+    @Test fun preparedArgumentsAreWhatTheUserApprovesAndWhatRuns() = runTest {
+        store.newSession(dataAccess = true)
+        tools.check = { Prepared.Ready("{\"wallet_id\":\"w-1\",\"wallet\":\"Tunai\"}") }
+        val client = ScriptedClient(
+            { emit(AiEvent.ToolCalls(listOf(AiToolCall("w1", "simpan", "{\"wallet\":\"tunai\"}")))); emit(AiEvent.Done("tool_calls")) },
+            { emit(AiEvent.Text("Tercatat.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "catat")
+        advanceUntilIdle()
+        val stored = ChatHistory.decodeCalls(store.list.last().toolCalls).single()
+        assertEquals("{\"wallet_id\":\"w-1\",\"wallet\":\"Tunai\"}", stored.arguments)
+        e.decide("s1", "w1", approve = true)
+        advanceUntilIdle()
+        assertEquals(listOf("simpan" to "{\"wallet_id\":\"w-1\",\"wallet\":\"Tunai\"}"), tools.ran)
+    }
 }

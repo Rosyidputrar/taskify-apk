@@ -6,6 +6,9 @@ import com.rosyidputrar.taskify.core.ai.AiProvider
 import com.rosyidputrar.taskify.core.ai.AiSettingsStore
 import com.rosyidputrar.taskify.core.ai.KeystoreSecretBox
 import com.rosyidputrar.taskify.core.store.ai.AiRepository
+import com.rosyidputrar.taskify.feature.ai.tools.AiData
+import com.rosyidputrar.taskify.feature.ai.tools.StoreAiData
+import com.rosyidputrar.taskify.feature.ai.tools.TaskifyToolbox
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
@@ -22,7 +25,8 @@ val aiFeatureModule = module {
     single { AiSettingsStore(androidContext(), KeystoreSecretBox()) }
     single { AiRepository(get()) }
     single<AiClientFactory> { { p, url, key -> AiClients.create(p, url, key) } }
-    single<AiToolbox> { AiToolbox.None }
+    single<AiData> { StoreAiData(get(), get(), get(), get(), get()) }
+    single<AiToolbox> { TaskifyToolbox(get()) }
     single { ChatEngine(get<AiRepository>(), get<AiSettingsStore>(), get<AiClientFactory>(), get(), get(AI_SCOPE)) }
     viewModel { params -> AiChatViewModel(params.getOrNull(), get(), get(), get(), get()) }
     viewModel { AiSessionsViewModel(get(), get(), get(), get()) }

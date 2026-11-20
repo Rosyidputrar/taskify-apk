@@ -58,6 +58,9 @@ class ScriptedClient(vararg scripts: suspend kotlinx.coroutines.flow.FlowCollect
 class FakeToolbox : AiToolbox {
     val ran = mutableListOf<Pair<String, String>>()
     var fail = false
+    /** Pemeriksa argumen alat tulis (bawaan: diterima apa adanya). */
+    var check: (String) -> Prepared = { Prepared.Ready(it) }
+    override suspend fun prepare(name: String, arguments: String) = check(arguments)
     override fun specs() = listOf(
         AiToolSpec("baca", "Baca data", buildJsonObject { put("type", "object") }),
         AiToolSpec("simpan", "Simpan data", buildJsonObject { put("type", "object") }),

@@ -106,7 +106,12 @@ class ChatEngine(
             val call = calls.firstOrNull { it.id == callId } ?: return@launch
             val answered = history.filter { it.role == ChatRole.Tool }.mapNotNull { it.toolCallId }.toSet()
             if (callId in answered) return@launch
-            val result = if (approve) runTool(call) else ToolResult("Pengguna menolak tindakan ini. Jangan dicoba lagi tanpa diminta.", "dibatalkan")
+            val allowed = repo.session(sessionId)?.dataAccess == true
+            val result = when {
+                !approve -> ToolResult("Pengguna menolak tindakan ini. Jangan dicoba lagi tanpa diminta.", "dibatalkan")
+                !allowed -> NO_ACCESS
+                else -> runTool(call)
+            }
             repo.addMessage(sessionId, ChatRole.Tool, result.text, state = toolState(result, rejected = !approve), toolCallId = call.id, toolName = call.name)
             if (calls.all { it.id in answered || it.id == callId }) {
                 repo.updateMessage(owner.id, state = ChatState.Done)
@@ -148,24 +153,31 @@ class ChatEngine(
         var round = rounds
         while (true) {
             val session = repo.session(sessionId) ?: return
-            val calls = answerOnce(session) ?: return
-            if (calls.isEmpty()) return
+            val answer = answerOnce(session) ?: return
+            if (answer.calls.isEmpty()) return
             round++
-            val writes = calls.filter { toolbox.kind(it.name) == ToolKind.Write }
-            calls.filter { toolbox.kind(it.name) != ToolKind.Write }.forEach { c ->
-                val result = if (round > MAX_ROUNDS) ToolResult("Batas pemanggilan alat untuk pesan ini tercapai. Jawab dengan data yang sudah ada.", "dilewati") else runTool(c)
-                repo.addMessage(sessionId, ChatRole.Tool, result.text, state = toolState(result, rejected = false), toolCallId = c.id, toolName = c.name)
+            var waiting = false
+            answer.calls.forEach { c ->
+                val result = answer.early[c.id] ?: when {
+                    toolbox.kind(c.name) == ToolKind.Write -> { waiting = true; null }
+                    round > MAX_ROUNDS -> ToolResult("Batas pemanggilan alat untuk pesan ini tercapai. Jawab dengan data yang sudah ada.", "dilewati")
+                    else -> runTool(c)
+                }
+                if (result != null) repo.addMessage(sessionId, ChatRole.Tool, result.text, state = toolState(result, rejected = false), toolCallId = c.id, toolName = c.name)
             }
-            if (writes.isNotEmpty()) return // menunggu decide()
+            if (waiting) return // menunggu decide()
             if (round > MAX_ROUNDS + 1) return
         }
     }
+
+    /** Panggilan alat dari satu jawaban + hasil yang sudah pasti tanpa dijalankan (ditolak / tidak valid). */
+    private class Answer(val calls: List<AiToolCall>, val early: Map<String, ToolResult>)
 
     /**
      * Satu panggilan model. Mengembalikan panggilan alat (kosong = jawaban selesai), atau null bila
      * gagal / dihentikan (pesan asisten sudah diberi status yang sesuai).
      */
-    private suspend fun answerOnce(session: ChatSession): List<AiToolCall>? {
+    private suspend fun answerOnce(session: ChatSession): Answer? {
         val provider = AiProvider.entries.firstOrNull { it.name == session.provider }
         val connection = provider?.let(connector::connection)
         val history = repo.messages(session.id)
@@ -219,7 +231,20 @@ class ChatEngine(
             _live.update { it - assistant.id }
             return null
         }
-        val pending = calls.any { toolbox.kind(it.name) == ToolKind.Write }
+        // Akses data mati → tidak ada alat yang boleh jalan, walau model tetap memanggilnya
+        // (mis. meniru riwayat saat akses masih hidup). Alat tulis diperiksa dulu sebelum dikonfirmasi.
+        val early = mutableMapOf<String, ToolResult>()
+        calls = calls.map { c ->
+            when {
+                !session.dataAccess -> c.also { early[it.id] = NO_ACCESS }
+                toolbox.kind(c.name) != ToolKind.Write -> c
+                else -> when (val p = prepare(c)) {
+                    is Prepared.Ready -> c.copy(arguments = p.arguments)
+                    is Prepared.Invalid -> c.also { early[it.id] = p.result }
+                }
+            }
+        }
+        val pending = calls.any { it.id !in early && toolbox.kind(it.name) == ToolKind.Write }
         repo.updateMessage(
             assistant.id, content = text.toString(),
             state = if (pending) ChatState.Awaiting else ChatState.Done,
@@ -230,7 +255,15 @@ class ChatEngine(
             repo.updateMessage(assistant.id, state = ChatState.Error, error = "Model tidak mengirim jawaban apa pun.")
             return null
         }
-        return calls
+        return Answer(calls, early)
+    }
+
+    private suspend fun prepare(call: AiToolCall): Prepared = try {
+        toolbox.prepare(call.name, call.arguments)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Prepared.Invalid(ToolResult("Argumen tidak valid: ${e.message ?: e::class.simpleName}", "tidak valid", failed = true))
     }
 
     private suspend fun runTool(call: AiToolCall): ToolResult = try {
@@ -255,6 +288,7 @@ class ChatEngine(
     companion object {
         const val MAX_ROUNDS = 6
         const val SAVE_EVERY_MS = 1_200L
+        private val NO_ACCESS = ToolResult("Akses data Taskify sedang mati untuk percakapan ini, jadi alat tidak dijalankan.", "akses data mati", failed = true)
         const val NO_DATA = "Akses data Taskify sedang MATI untuk percakapan ini: kamu tidak bisa membaca atau membuat tugas, catatan, jurnal, maupun transaksi. Bila diminta, sarankan pengguna menyalakan \"Akses data\" di atas chat."
     }
 }

@@ -15,6 +15,14 @@ data class ToolPreview(val title: String, val lines: List<Pair<String, String>> 
 /** Hasil alat: [text] dikirim ke model; [summary] ringkas untuk pengguna (mis. "5 tugas"). */
 data class ToolResult(val text: String, val summary: String, val failed: Boolean = false)
 
+/** Hasil pemeriksaan alat tulis sebelum ditampilkan ke pengguna. */
+sealed interface Prepared {
+    /** Argumen sudah dinormalkan (mis. nama dompet → id) dan siap dikonfirmasi. */
+    data class Ready(val arguments: String) : Prepared
+    /** Tidak valid — dikembalikan langsung ke model tanpa meminta konfirmasi pengguna. */
+    data class Invalid(val result: ToolResult) : Prepared
+}
+
 /**
  * Alat yang boleh dipakai asisten. Hanya diberikan ke model bila sesi mengaktifkan "Akses data
  * Taskify". Sandi TIDAK PERNAH termasuk.
@@ -26,6 +34,12 @@ interface AiToolbox {
     fun label(name: String): String
     fun preview(name: String, arguments: String): ToolPreview
     suspend fun run(name: String, arguments: String): ToolResult
+
+    /**
+     * Periksa & lengkapi argumen alat TULIS sebelum kartu konfirmasi tampil, supaya yang disetujui
+     * pengguna sama persis dengan yang disimpan (dompet/kategori/daftar sudah ditemukan, tanggal valid).
+     */
+    suspend fun prepare(name: String, arguments: String): Prepared = Prepared.Ready(arguments)
 
     /** Tanpa alat (akses data mati / belum ada alat). */
     object None : AiToolbox {

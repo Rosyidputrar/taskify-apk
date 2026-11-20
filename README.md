@@ -102,6 +102,8 @@ core/media           Musik (Worker music-taskify + Media3: putar di latar, notif
                      URL kedaluwarsa diminta ulang, arsip R2, SponsorBlock, volume rata, pewaktu tidur,
                      antrean tersimpan lintas proses, sesi 401 di-refresh sekali) dan TikTok (Worker
                      ttdl-taskify dengan header Origin); simpan unduhan ke Download/Taskify
+core/ai              Klien AI: OpenAI-compatible (OpenAI, OpenRouter, Groq, Gemini, DeepSeek, Mistral, …)
+                     & Anthropic, streaming SSE + pemanggilan alat, ambil daftar model, kunci API di Keystore
 core/reminders       Pengingat tugas sebagai alarm lokal + notifikasi (Selesai / Tunda 10 mnt)
 feature/auth         Layar Masuk, verifikasi dua langkah (kode & daftar QR), kunci PIN
 feature/tasks        Tugas: quick add bahasa natural, subtask, prioritas, tag, daftar, RRULE, pengingat
@@ -128,6 +130,8 @@ feature/sandi        Sandi: buat brankas + kunci pemulihan, buka/pulihkan, dafta
                      cincin hitung mundur + riwayat, cek kunci cepat, generator, ganti master password
 feature/finance      Keuangan: saldo & karusel dompet, 6 tab (Ringkasan, Transaksi, Anggaran, Berulang,
                      Hutang, Kelola), editor transaksi, grafik, ekspor CSV, transaksi berulang otomatis
+feature/ai           Asisten AI: sesi chat lokal, streaming halus (per kalimat, fade-in), Markdown lengkap +
+                     kode berwarna, alat baca & tulis data Taskify dengan konfirmasi
 build-logic/         Convention plugin Gradle
 tools/sandi-vectors  Skrip Node untuk membangkitkan & memverifikasi vektor uji kripto Sandi
 ```
@@ -226,6 +230,23 @@ disinkronkan), terkunci di balik PIN aplikasi (kunci tampilan, bukan enkripsi da
 - Mode Minggu: batang bertumpuk per aplikasi + rata-rata; detail aplikasi: per jam, riwayat 7/30 hari,
   daftar sesi. Jam pergantian hari bisa diatur (mis. 04.00); aplikasi bisa dikecualikan.
 - Disalin dari sistem tiap jam (WorkManager). Ubin di Beranda (Susun Beranda) & bagian di Review.
+
+### Asisten AI
+
+Pakai kunci API sendiri (*bring your own key*): pilih penyedia (OpenAI-compatible atau Anthropic),
+isi base URL (ada preset), simpan kunci, lalu **Tes koneksi & muat model**.
+
+- Kunci API dienkripsi Android Keystore dan tidak pernah ditampilkan lagi; bila Keystore gagal, kunci
+  tidak disimpan sama sekali. Hanya HTTPS.
+- Percakapan tersimpan **di HP ini saja** (tidak sinkron) dan terhapus saat Keluar. System prompt per
+  percakapan, dengan variabel `{hari}` `{tanggal}` `{jam}` `{zona}`.
+- Jawaban mengalir per kalimat/baris dengan fade-in (bukan per huruf), bisa dihentikan, diulang, atau
+  pesan terakhir diubah. Markdown GFM lengkap: tabel, checklist, kutipan, tautan, kode berwarna + salin.
+- **Akses data** mati secara bawaan dan dinyalakan per percakapan (dengan persetujuan). Saat hidup, asisten
+  bisa *membaca* tugas, catatan, jurnal, dan keuangan (cari, daftar, ringkasan, saldo, anggaran) dan
+  *membuat* tugas, catatan, atau transaksi — setiap tulisan tampil sebagai kartu yang harus kamu setujui
+  dulu, dengan dompet/kategori/daftar yang sudah dicocokkan. Sandi, Brankas kode, dan Berkas tidak pernah
+  bisa diakses. Isi pesan dan data yang dibaca alat dikirim ke penyedia yang kamu pilih.
 
 ### Pengaturan
 
