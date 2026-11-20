@@ -97,27 +97,44 @@ PY
 # (aturan keep markdown/highlights ikut teruji lewat pembukaan layar). Render satu jawaban
 # markdown panjang di R8 masih butuh percakapan berisi — dicatat di status area E.
 #
-# APK uji asap dipasang baru tanpa akun → aplikasi berhenti di layar Masuk dan dok (Ruang)
-# belum ada. Langkah ini hanya jalan bila shell tampil; di layar Masuk dilewati dengan
-# catatan (bukan lulus palsu: layar lain yang tak dikenal tetap GAGAL).
+# APK uji asap dibangun TANPA secret (alamat server kosong) → aplikasi berhenti di layar
+# "Server belum diatur" (atau layar Masuk bila server diisi tapi belum masuk akun), dan dok
+# (Ruang) belum ada. Langkah ini hanya jalan bila shell tampil; di dua layar gerbang itu
+# dilewati dengan catatan (bukan lulus palsu: layar lain yang tak dikenal tetap GAGAL).
 screen_has() {
   "$ADB" shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 || fail "uiautomator dump gagal (cek layar)"
   "$ADB" pull /sdcard/ui.xml "$OUT/ui.xml" > /dev/null 2>&1 || fail "ambil dump UI gagal (cek layar)"
   python3 - "$OUT/ui.xml" "$@" <<'PY'
 import sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
-seen = {n.get("text") for n in root.iter("node")} | {n.get("content-desc") for n in root.iter("node")}
-sys.exit(0 if all(w in seen for w in sys.argv[2:]) else 1)
+nodes = list(root.iter("node"))
+texts = [t for n in nodes for t in (n.get("text") or "", n.get("content-desc") or "") if t]
+mode = sys.argv[2]
+if mode == "shell":
+    ok = "Ruang" in texts
+elif mode == "config":
+    ok = "Server belum diatur" in texts
+else:
+    # Layar Masuk: label kolom Compose bisa tergabung ke EditText & tombol "Masuk" bisa di luar
+    # layar kecil — cukup salah satu penanda yang pasti ada di layar itu.
+    ok = any(t == "Masuk" or t.startswith("Masuk untuk menyinkronkan") or t in ("Tampilkan password", "Sembunyikan password") for t in texts) \
+        or any(n.get("password") == "true" for n in nodes)
+if not ok:
+    print("teks terlihat: " + " | ".join(texts[:40]), file=sys.stderr)
+sys.exit(0 if ok else 1)
 PY
 }
-if screen_has "Ruang"; then
+if screen_has shell 2>/dev/null; then
   tap_text "Ruang" "buka Ruang"
   settle 4 "Ruang"
   tap_text "Asisten AI" "buka Asisten AI"
   settle 5 "layar Asisten AI"
   "$ADB" exec-out screencap -p > "$OUT/ai.png" 2>/dev/null || true
   echo "ok: layar Asisten AI terbuka"
-elif screen_has "Email" "Password" "Masuk"; then
+elif screen_has config 2>/dev/null; then
+  "$ADB" exec-out screencap -p > "$OUT/config-missing.png" 2>/dev/null || true
+  echo "lewati: layar Asisten AI butuh server & akun — APK uji tanpa secret (layar \"Server belum diatur\" tampil tanpa crash)"
+elif screen_has login; then
   "$ADB" exec-out screencap -p > "$OUT/login.png" 2>/dev/null || true
   echo "lewati: layar Asisten AI butuh akun — APK uji belum masuk (layar Masuk tampil tanpa crash)"
 else
