@@ -64,6 +64,16 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
+      # Artifact rilis datar (satu file, tanpa subfolder): pola yang sama
+      # dengan apk-smoke-*. publish-release mengunduh artifact ini supaya
+      # `find` tidak perlu menebak struktur folder di dalam artifact.
+      - uses: actions/upload-artifact@v4
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        with:
+          name: taskify-apk-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -169,7 +179,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: taskify-apk-${{ github.run_number }}
+          name: taskify-apk-release-${{ github.run_number }}
           path: apk
 
       - name: Terbitkan GitHub Release
@@ -177,7 +187,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.run_number }}
         run: |
-          APK=$(find apk -name 'app-release.apk' | head -1)
+          ls -R apk
+          APK=apk/app-release.apk
+          if [ ! -f "$APK" ]; then
+            APK=$(find apk -name 'app-release.apk' | head -1)
+          fi
           if [ -z "$APK" ]; then
             echo "::error::APK rilis tidak ada — isi secret RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD."
             exit 1
