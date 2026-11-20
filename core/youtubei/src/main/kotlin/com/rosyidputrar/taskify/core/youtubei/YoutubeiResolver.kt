@@ -15,11 +15,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -51,24 +53,55 @@ class YoutubeiResolver(
         worker.preWarm()
     }
 
+    /**
+     * Resolve satu stream lewat worker QuickJS.
+     *
+     * C M-3 — anggaran total per resolve: [RESOLVE_TIMEOUT_MS] membatasi
+     * ANTRE + eksekusi sekaligus. Satu runtime QuickJS dipakai semua
+     * resolve (foreground + prefetch), jadi tanpa batas ini satu resolve
+     * yang macet menahan semua resolve berikut tanpa akhir; dengan batas
+     * ini penantian terlama yang mungkin adalah timeout, lalu pemanggil
+     * ([YoutubeiStreamResolver]) jatuh ke jalur direct. Pemisahan worker
+     * penuh (dua runtime QuickJS) sengaja TIDAK dilakukan: runtime kedua
+     * menggandakan batas memori JS (256 MB) + menduplikasi sesi JS, untuk
+     * kasus kelaparan yang sudah ditutup timeout ini. Prefetch memakai
+     * [YoutubeiResolutionPriority.BACKGROUND] (lihat
+     * `MusicPlayer.prefetch`) supaya antreannya terpisah dari foreground
+     * lewat [backgroundPermit] — foreground tidak antre di belakang
+     * prefetch yang menumpuk, hanya di belakang SATU resolve yang sedang
+     * jalan di mutex.
+     */
     suspend fun resolve(
         request: YoutubeiStreamRequest,
         priority: YoutubeiResolutionPriority,
         videoPoTokenProvider: suspend (String) -> String? = { null },
     ): YoutubeiResolvedStream =
-        when (priority) {
-            YoutubeiResolutionPriority.FOREGROUND ->
-                resolveWithWorker(
-                    request = request,
-                    videoPoTokenProvider = videoPoTokenProvider,
-                )
-            YoutubeiResolutionPriority.BACKGROUND ->
-                backgroundPermit.withPermit {
-                    resolveWithWorker(
-                        request = request,
-                        videoPoTokenProvider = videoPoTokenProvider,
-                    )
-                }
+        try {
+            when (priority) {
+                YoutubeiResolutionPriority.FOREGROUND ->
+                    withTimeout(RESOLVE_TIMEOUT_MS) {
+                        resolveWithWorker(
+                            request = request,
+                            videoPoTokenProvider = videoPoTokenProvider,
+                        )
+                    }
+                YoutubeiResolutionPriority.BACKGROUND ->
+                    backgroundPermit.withPermit {
+                        withTimeout(RESOLVE_TIMEOUT_MS) {
+                            resolveWithWorker(
+                                request = request,
+                                videoPoTokenProvider = videoPoTokenProvider,
+                            )
+                        }
+                    }
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            diagnostics("Resolution timed out elapsedMs=$RESOLVE_TIMEOUT_MS priority=$priority mediaId=${request.mediaId}")
+            throw YoutubeiException(
+                kind = YoutubeiFailureKind.TIMEOUT,
+                message = "youtubei.js resolve timed out",
+                cause = timeout,
+            )
         }
 
     suspend fun invalidateSessions() {
@@ -131,7 +164,8 @@ class YoutubeiResolver(
         }
     }
 
-    private fun parseResponse(response: String): YoutubeiResolvedStream {
+    /** C S-2: internal supaya parse `client` bisa dites tanpa QuickJS/jaringan. */
+    internal fun parseResponse(response: String): YoutubeiResolvedStream {
         val json =
             runCatching { JSONObject(response) }.getOrElse { throwable ->
                 throw YoutubeiException(
@@ -193,6 +227,9 @@ class YoutubeiResolver(
             loudnessDb = value.optionalDouble("loudnessDb"),
             perceptualLoudnessDb = value.optionalDouble("perceptualLoudnessDb"),
             playbackTrackingUrl = value.optionalString("playbackTrackingUrl"),
+            // C S-2: nama klien dari JS; bundle lama (tanpa field `client`)
+            // memberi null → pemanggil memakai tebakan lama sebagai fallback.
+            clientName = value.optionalString("client"),
         )
     }
 
@@ -235,6 +272,8 @@ class YoutubeiResolver(
     private companion object {
         const val YOUTUBEI_VERSION = "18.0.0"
         const val DEFAULT_STREAM_LIFETIME_MS = 5L * 60L * 1000L
+        /** Anggaran total satu resolve youtubei (antre + eksekusi, C M-3). */
+        const val RESOLVE_TIMEOUT_MS = 45_000L
         val HTTP_SCHEMES = setOf("http", "https")
     }
 }

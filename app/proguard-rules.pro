@@ -8,3 +8,9 @@
 # Aturan bawaan Room hanya "-keep class * extends RoomDatabase" — di R8 full mode (bawaan AGP 9)
 # constructor-nya tetap dibuang → crash saat startup (NoSuchMethodException WorkDatabase_Impl.<init>).
 -keep class * extends androidx.room.RoomDatabase { <init>(); }
+
+# Asisten AI: markdown-renderer-m3 + highlights dirender di layar chat. Belum ada bukti
+# penghapusan R8, tapi kedua pustaka ini ditarik ke R8 full mode tanpa aturan bawaan yang
+# eksplisit — keep defensif supaya layar Asisten AI tidak pecah di build rilis.
+-keep class com.mikepenz.markdown.** { *; }
+-keep class dev.snipme.highlights.** { *; }

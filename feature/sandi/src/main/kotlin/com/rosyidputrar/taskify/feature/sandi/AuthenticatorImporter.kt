@@ -32,6 +32,8 @@ data class AuthImportUi(
     val attachEnabled: Boolean = false,
     /** Posisi sakelar. */
     val attachOn: Boolean = true,
+    /** D-10: label "Penerbit (akun)" hasil pindai (maks. 10) — ditampilkan sebelum konfirmasi. */
+    val scannedLabels: List<String> = emptyList(),
 ) {
     val total get() = add + attach.size
 }
@@ -67,6 +69,12 @@ class AuthenticatorImporter(
             AuthenticatorImport.parse(text)
         } catch (e: ImportException) {
             show(e.message ?: "QR tidak bisa dibaca.")
+            return false
+        }
+        // D-10: batas akun per sesi — satu sesi impor tidak boleh membanjiri brankas.
+        val totalAfter = scans.sumOf { it.accounts.size } + parsed.sumOf { it.accounts.size }
+        if (totalAfter > AuthenticatorImport.MAX_ACCOUNTS_PER_SESSION) {
+            show("Terlalu banyak akun (maks. ${AuthenticatorImport.MAX_ACCOUNTS_PER_SESSION} per sesi impor). Selesaikan dulu sesi ini, lalu impor sisanya.")
             return false
         }
         var fresh = 0
@@ -107,6 +115,7 @@ class AuthenticatorImporter(
             // Sakelar hanya ditawarkan bila memang ada sandi yang cocok.
             attachEnabled = withAttach.attach.isNotEmpty(),
             attachOn = s.attach,
+            scannedLabels = scans.flatMap { it.accounts }.map { it.label }.distinct().take(10),
         )
     }
 

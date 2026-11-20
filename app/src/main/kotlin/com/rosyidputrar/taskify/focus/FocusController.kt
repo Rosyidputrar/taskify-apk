@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.focus
 
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -160,7 +161,7 @@ class FocusController(
 
     private fun set(r: FocusRun?) {
         // Urutan penting: atur alarm DULU, baru publikasikan state. `pause()` (dan aksi
-        // notifikasi lain) berjalan async lewat FocusReceiver, dan pengamat `run` bisa
+        // notifikasi lain) berjalan async lewat FocusActionReceiver, dan pengamat `run` bisa
         // melihat sesi dijeda SEBELUM `cancelAlarm()` sempat jalan bila state
         // dipublikasikan dulu — alarm akhir fase yang masih terjadwal sempat terlihat
         // (flake di full suite, lolos bila dijalankan sendirian).
@@ -219,14 +220,14 @@ class FocusController(
 
     private fun scheduleAlarm(at: Long) {
         val manager = alarms ?: return
-        val pi = receiverIntent(FocusReceiver.ACTION_PHASE_END)
+        val pi = receiverIntent(FocusActionReceiver.ACTION_PHASE_END)
         val exact = Build.VERSION.SDK_INT < 31 || manager.canScheduleExactAlarms()
         if (exact) manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         else manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
     }
 
     private fun cancelAlarm() {
-        alarms?.cancel(receiverIntent(FocusReceiver.ACTION_PHASE_END))
+        alarms?.cancel(receiverIntent(FocusActionReceiver.ACTION_PHASE_END))
     }
 
     // ---- Notifikasi ----------------------------------------------------------------------------
@@ -252,6 +253,10 @@ class FocusController(
         return NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
 
+    // False positive lint: izin POST_NOTIFICATIONS SUDAH dicek di canPost()
+    // (baris pertama metode ini) — lint tidak mengenali guard itu karena
+    // notify() berada di dalam runCatching. Sama seperti DraftAlerts.
+    @SuppressLint("MissingPermission")
     private fun postRunning(r: FocusRun) {
         if (!canPost()) return
         ensureChannels()
@@ -283,16 +288,19 @@ class FocusController(
             .setProgress(1000, (r.progress(t) * 1000).toInt(), false)
         if (!r.isPaused) {
             builder.setUsesChronometer(true).setChronometerCountDown(true).setWhen(r.endsAt(t)).setShowWhen(true)
-            builder.addAction(0, "Jeda", receiverIntent(FocusReceiver.ACTION_PAUSE))
+            builder.addAction(0, "Jeda", receiverIntent(FocusActionReceiver.ACTION_PAUSE))
         } else {
             builder.setShowWhen(false)
-            builder.addAction(0, if (r.elapsed(t) == 0L) "Mulai" else "Lanjut", receiverIntent(FocusReceiver.ACTION_RESUME))
+            builder.addAction(0, if (r.elapsed(t) == 0L) "Mulai" else "Lanjut", receiverIntent(FocusActionReceiver.ACTION_RESUME))
         }
-        builder.addAction(0, "Lewati", receiverIntent(FocusReceiver.ACTION_SKIP))
-        builder.addAction(0, "Berhenti", receiverIntent(FocusReceiver.ACTION_STOP))
+        builder.addAction(0, "Lewati", receiverIntent(FocusActionReceiver.ACTION_SKIP))
+        builder.addAction(0, "Berhenti", receiverIntent(FocusActionReceiver.ACTION_STOP))
         runCatching { NotificationManagerCompat.from(context).notify(ID_RUNNING, builder.build()) }
     }
 
+    // False positive lint: alasan sama seperti postRunning di atas
+    // (canPost() di baris pertama, notify() di dalam runCatching).
+    @SuppressLint("MissingPermission")
     private fun alertPhaseEnd(ended: FocusPhase, next: FocusRun) {
         if (!canPost()) return
         ensureChannels()
@@ -320,7 +328,7 @@ class FocusController(
     }
 
     private fun receiverIntent(action: String): PendingIntent {
-        val intent = Intent(context, FocusReceiver::class.java).setAction(action).setData(Uri.parse("taskify://focus/$action"))
+        val intent = Intent(context, FocusActionReceiver::class.java).setAction(action).setData(Uri.parse("taskify://focus/$action"))
         return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 

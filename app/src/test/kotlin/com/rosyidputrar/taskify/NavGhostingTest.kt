@@ -172,4 +172,90 @@ class NavGhostingTest {
     @Test fun dockTabSwitchNeverStacksScreens() = assertNeverStacked { it.navigate(com.rosyidputrar.taskify.navigation.RoomRoute) }
 
     @Test fun fullScreenEditorNeverStacksScreens() = assertNeverStacked { it.navigate(com.rosyidputrar.taskify.navigation.NoteEditRoute()) }
+
+    /**
+     * A12 — back ganda cepat dari tiga lapis: dua pop harus mendarat tepat di layar awal tanpa
+     * crash dan tanpa melewatkannya (back kedua tidak boleh "menembus" layar awal ke luar aplikasi).
+     */
+    @Test fun doubleBackLandsOnStartWithoutCrash() {
+        host()
+        compose.runOnIdle { nav.value!!.navigate("keuangan") }
+        compose.waitForIdle()
+        compose.runOnIdle { nav.value!!.navigate("keuangan") }
+        compose.waitForIdle()
+        val back = compose.activity.onBackPressedDispatcher
+        // Dua back tanpa jeda (tanpa waitForIdle di antaranya), seperti ketukan ganda.
+        compose.runOnIdle { back.onBackPressed(); back.onBackPressed() }
+        compose.waitForIdle()
+        assertTrue(nav.value!!.currentDestination?.route == "ruang", "back ganda harus berhenti di Ruang")
+        assertTrue(!compose.activity.isFinishing, "back ganda tidak boleh menutup aplikasi dari Ruang")
+    }
+
+    /** Host rute bertipe untuk menguji aturan transisi (enter/exit memakai [pinned] yang sama). */
+    private fun typedHost(pinned: com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule?) {
+        val bottom = Color(1f, 0f, 0f)
+        val top = Color(0f, 1f, 0f)
+        compose.setContent {
+            TaskifyTheme {
+                background = MaterialTheme.colorScheme.background
+                val controller = rememberNavController().also { nav.value = it }
+                NavHost(
+                    controller, com.rosyidputrar.taskify.navigation.HomeRoute, Modifier.fillMaxSize().testTag("host"),
+                    enterTransition = { enter(pinned) }, exitTransition = { exit(pinned) },
+                    popEnterTransition = { popEnter(pinned) }, popExitTransition = { popExit(pinned) },
+                    predictivePopEnterTransition = { popEnter(pinned) }, predictivePopExitTransition = { popExit(pinned) },
+                ) {
+                    composable<com.rosyidputrar.taskify.navigation.HomeRoute> { Screen { Box(Modifier.fillMaxSize().background(bottom)) } }
+                    composable<com.rosyidputrar.taskify.navigation.RoomRoute> { Screen { Box(Modifier.fillMaxSize().background(top)) } }
+                    composable<com.rosyidputrar.taskify.navigation.TasksRoute> { Screen { Box(Modifier.fillMaxSize().background(top)) } }
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    /** Koefisien merah/hijau piksel (pola yang sama dengan assertNeverStacked). */
+    private fun coefficients(c: Color): Pair<Float, Float> {
+        val bg = background
+        val k = (c.blue / bg.blue).coerceIn(0f, 1f)
+        val a = (c.red - k * bg.red).coerceAtLeast(0f)
+        val b = (c.green - k * bg.green).coerceAtLeast(0f)
+        return a to b
+    }
+
+    /**
+     * A12 — detail Tugas saat Tugas disematkan harus GESER (push), bukan fade-through:
+     * di tengah transisi, layar lama masih terlihat di kiri sementara layar baru sudah masuk
+     * dari kanan. Fade-through tidak pernah menunjukkan keduanya sekaligus.
+     */
+    @Test fun pinnedTaskDetailSlidesInsteadOfFadingThrough() {
+        typedHost(com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Tasks)
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { nav.value!!.navigate(com.rosyidputrar.taskify.navigation.TasksRoute("t1")) }
+        var sawBothSides = false
+        repeat(24) {
+            compose.mainClock.advanceTimeBy(16)
+            val (leftRed, _) = coefficients(pixelAt(0.1f, 0.5f))
+            val (_, rightGreen) = coefficients(pixelAt(0.9f, 0.5f))
+            if (leftRed > 0.3f && rightGreen > 0.5f) sawBothSides = true
+        }
+        compose.mainClock.autoAdvance = true
+        assertTrue(sawBothSides, "detail Tugas yang disematkan harus bergeser (kiri = daftar lama, kanan = detail baru), bukan fade-through")
+    }
+
+    /** Kontrol pembeda: tab dok (Hari Ini → Ruang) TIDAK PERNAH menunjukkan dua sisi sekaligus. */
+    @Test fun dockTabSwitchNeverShowsBothSides() {
+        typedHost(com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Tasks)
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { nav.value!!.navigate(com.rosyidputrar.taskify.navigation.RoomRoute) }
+        var sawBothSides = false
+        repeat(24) {
+            compose.mainClock.advanceTimeBy(16)
+            val (leftRed, _) = coefficients(pixelAt(0.1f, 0.5f))
+            val (_, rightGreen) = coefficients(pixelAt(0.9f, 0.5f))
+            if (leftRed > 0.3f && rightGreen > 0.5f) sawBothSides = true
+        }
+        compose.mainClock.autoAdvance = true
+        assertTrue(!sawBothSides, "fade-through tab dok tidak boleh menampilkan daftar lama dan layar baru sekaligus")
+    }
 }

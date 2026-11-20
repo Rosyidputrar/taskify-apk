@@ -72,6 +72,20 @@ class YoutubeiStreamResolverTest {
         assertEquals(-8.0, direct.perceptualLoudnessDb)
     }
 
+    // C S-2: nama klien dari JS menang atas tebakan; tanpa field `client`
+    // (bundle lama) tebakan lama dipakai sebagai fallback.
+    @Test
+    fun `effectiveClientName memakai client dari JS bila ada`() {
+        assertEquals("MWEB", resolved().copy(clientName = "MWEB").effectiveClientName(hasLoginCookie = true))
+        assertEquals("WEB_CREATOR", resolved().copy(clientName = "WEB_CREATOR").effectiveClientName(hasLoginCookie = false))
+    }
+
+    @Test
+    fun `effectiveClientName fallback tebakan lama bila JS tidak mengembalikan client`() {
+        assertEquals("WEB_CREATOR", resolved().effectiveClientName(hasLoginCookie = true))
+        assertEquals("MWEB", resolved().effectiveClientName(hasLoginCookie = false))
+    }
+
     @Test
     fun `expiresInSeconds null bila sudah kedaluwarsa dan contentLength 0 jadi null`() {
         val direct = resolved(expiresAtMs = 100L, contentLength = 0L).toDirectStream("MWEB", nowMs = 1_000_000L)

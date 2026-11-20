@@ -113,7 +113,7 @@ fun JournalEditorScreen(args: JournalEditorArgs, onBack: () -> Unit) {
             override fun share(format: ShareFormat?) = vm.share(format)
             override fun copyImage() = vm.copyImage()
         },
-        attachments = { id -> AttachmentsSection(EntityType.JournalEntry, id); LinksSection(EntityType.JournalEntry, id) },
+        attachments = { id, readOnly -> AttachmentsSection(EntityType.JournalEntry, id, readOnly = readOnly); LinksSection(EntityType.JournalEntry, id, readOnly = readOnly) },
     )
 }
 
@@ -145,7 +145,7 @@ fun JournalEditorContent(
     /** null = otomatis: entri yang sudah ada & berisi dibuka di mode Baca, entri baru di Tulis. */
     initialPreview: Boolean? = null,
     today: String = Dates.today(),
-    attachments: @Composable (entryId: String) -> Unit = {},
+    attachments: @Composable (entryId: String, readOnly: Boolean) -> Unit = { _, _ -> },
 ) {
     if (!ui.loaded) {
         LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Journal)
@@ -251,16 +251,16 @@ fun JournalEditorContent(
                 }
             }
         },
-        beforeBody = { MoodSlider(ui.mood, actions::mood) },
+        beforeBody = { MoodSlider(ui.mood, actions::mood, enabled = !preview) },
         afterBody = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Tag", style = MaterialTheme.typography.titleSmall)
                 if (ui.id != null) {
-                    TagPicker(tags, allTags, actions::addTag, actions::removeTag)
+                    TagPicker(tags, allTags, actions::addTag, actions::removeTag, enabled = !preview)
                 } else {
                     Text("Tag & foto bisa ditambahkan setelah entri tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                ui.id?.let { attachments(it) }
+                ui.id?.let { attachments(it, preview) }
             }
         },
     )

@@ -10,6 +10,7 @@ import com.rosyidputrar.taskify.core.domain.device.ParcelNotif
 import com.rosyidputrar.taskify.core.domain.device.ParcelStage
 import com.rosyidputrar.taskify.core.domain.device.UsageSession
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
+import com.rosyidputrar.taskify.core.store.device.AesGcmNotifLogCrypto
 import com.rosyidputrar.taskify.core.store.device.AppCount
 import com.rosyidputrar.taskify.core.store.device.DraftState
 import com.rosyidputrar.taskify.core.store.device.NewNotif
@@ -23,6 +24,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -54,6 +56,58 @@ class DeviceRepositoriesTest {
         assertEquals(mapOf(day to 4), notifs.watchDailyTotals(day, day).first())
         assertEquals(listOf(AppCount("com.whatsapp", "whatsapp", 3), AppCount("com.instagram.android", "Instagram", 1)), notifs.watchAppCounts(day, day).first())
         assertTrue(notifs.watchTimes(day, "com.whatsapp").first().isNotEmpty())
+    }
+
+    // ------------------------------------------------------------- D-06: enkripsi kolom log
+
+    private val cryptoRepo = NotificationLogRepository(
+        db,
+        AesGcmNotifLogCrypto(SecretKeySpec(ByteArray(32) { it.toByte() }, "AES")),
+    )
+    private val encDay = "2026-11-17"
+
+    @Test fun logEncryptsSensitiveColumnsAtRest() = runBlocking<Unit> {
+        val id = cryptoRepo.log(
+            n("com.bca", "Transfer masuk", "Transfer Rp50.000 dari Budi", 1_000, category = NotifCategory.Money, d = encDay)
+                .copy(money = MoneyNotif(50_000, TxKind.Expense, "Budi", "BCA")),
+        )!!
+        val rawTitle = db.getOptional("SELECT title FROM notif_log WHERE id = ?", listOf(id)) { it.getString(0)!! }
+        val rawText = db.getOptional("SELECT text FROM notif_log WHERE id = ?", listOf(id)) { it.getString(0)!! }
+        val rawParty = db.getOptional("SELECT money_party FROM notif_log WHERE id = ?", listOf(id)) { it.getString(0)!! }
+        assertTrue(rawTitle!!.startsWith("v1:"), "judul harus tersimpan terenkripsi")
+        assertTrue(rawText!!.startsWith("v1:"), "isi harus tersimpan terenkripsi")
+        assertTrue(rawParty!!.startsWith("v1:"), "nama pengirim harus tersimpan terenkripsi")
+        assertTrue(!rawTitle.contains("Transfer") && !rawText.contains("Budi"))
+        val entry = cryptoRepo.watchDay(encDay).first().single { it.id == id }
+        assertEquals("Transfer masuk", entry.title)
+        assertEquals("Transfer Rp50.000 dari Budi", entry.text)
+        assertEquals("Budi", entry.money?.counterparty)
+        assertEquals(50_000L, entry.money?.amount)
+    }
+
+    @Test fun legacyPlaintextRowsStillReadable() = runBlocking<Unit> {
+        db.execute(
+            """INSERT INTO notif_log (id, package, app_label, n_key, conversation, title, text, category, posted_ms, day, hidden,
+               money_amount, money_kind, money_party, money_source, draft, parcel_stage, parcel_ref, handled)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)""",
+            listOf("legacy-1", "com.whatsapp", "whatsapp", "k", null, "Judul lama", "Isi lama plaintext", "Chat", 1_000, encDay),
+        )
+        val entry = cryptoRepo.watchDay(encDay).first().single { it.id == "legacy-1" }
+        assertEquals("Judul lama", entry.title)
+        assertEquals("Isi lama plaintext", entry.text)
+    }
+
+    @Test fun searchFindsDecryptedTextNotCiphertext() = runBlocking<Unit> {
+        cryptoRepo.log(n("com.whatsapp", "Budi", "kode rahasia 1234", 1_000, d = encDay))
+        assertEquals(1, cryptoRepo.search("rahasia").size)
+        assertEquals(0, cryptoRepo.search("v1:").size, "ciphertext tidak boleh bisa dicari")
+        assertEquals(0, cryptoRepo.search("x").size, "kueri 1 huruf tidak mencari")
+    }
+
+    @Test fun dedupeStillWorksWithEncryption() = runBlocking<Unit> {
+        assertNotNull(cryptoRepo.log(n("com.whatsapp", "Budi", "halo", 1_000, d = encDay)))
+        assertNull(cryptoRepo.log(n("com.whatsapp", "Budi", "halo", 2_000, d = encDay)), "duplikat terenkripsi tetap terdeteksi")
+        assertNotNull(cryptoRepo.log(n("com.whatsapp", "Budi", "lain", 3_000, d = encDay)))
     }
 
     @Test fun draftsHiddenAndHandled() = runBlocking<Unit> {

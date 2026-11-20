@@ -102,6 +102,30 @@ class OpenAiCompatClientTest {
         assertEquals(listOf(AiEvent.Text("Halo!"), AiEvent.ToolCalls(listOf(AiToolCall("c1", "cari", "{}"))), AiEvent.Done("tool_calls")), events)
     }
 
+    @Test fun jsonErrorBodyIsRaisedLikeSseError() = runBlocking {
+        val c = client {
+            respond(
+                """{"error":{"message":"Model sedang sibuk","type":"server_error"}}""",
+                HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val e = assertFailsWith<AiException> { c.stream(AiRequest("m", null, listOf(AiMessage(AiRole.User, "x")))).toList() }
+        assertEquals(AiErrorKind.Server, e.kind)
+        assertTrue(e.message!!.contains("Model sedang sibuk"))
+    }
+
+    @Test fun requestBodyCarriesMaxCompletionTokens() = runBlocking {
+        val c = client { sse("""{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}""", "[DONE]") }
+        c.stream(AiRequest("gpt-4o", null, listOf(AiMessage(AiRole.User, "x")), maxTokens = 1234)).toList()
+        val body = AiJson.parseToJsonElement(requests.single().second).jsonObject
+        assertEquals("1234", body["max_completion_tokens"]!!.jsonPrimitive.content)
+        // Bawaan tetap 4096 bila tidak diisi.
+        requests.clear()
+        c.stream(AiRequest("gpt-4o", null, listOf(AiMessage(AiRole.User, "x")))).toList()
+        val body2 = AiJson.parseToJsonElement(requests.single().second).jsonObject
+        assertEquals("4096", body2["max_completion_tokens"]!!.jsonPrimitive.content)
+    }
+
     @Test fun requestBodyCarriesSystemHistoryToolResultsAndTools() = runBlocking {
         val c = client { sse("""{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}""", "[DONE]") }
         val tool = AiToolSpec("cari", "Cari catatan", buildJsonObject { put("type", "object") })

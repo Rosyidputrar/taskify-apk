@@ -137,6 +137,29 @@ class SnippetShareTest {
         assertEquals(listOf("share:text"), r.calls)
     }
 
+    @Test fun copyCodeAndMarkdownAlsoAskWhenSecret() {
+        val r = Recorder()
+        editor(secret, r)
+        // Salin kode (bilah atas) juga lewat konfirmasi rahasia, bukan langsung tersalin.
+        compose.onNodeWithContentDescription("Salin kode").performClick()
+        compose.onNodeWithText("Kode tampak berisi rahasia").assertExists()
+        compose.onNodeWithText("Tetap bagikan").performClick()
+        assertEquals(secret.code, clip.primaryClip!!.getItemAt(0).text.toString())
+        // Salin sebagai Markdown juga lewat konfirmasi yang sama; Batal = tidak tersalin.
+        compose.onNodeWithContentDescription("Lainnya").performClick()
+        compose.onNodeWithText("Salin sebagai Markdown").performClick()
+        compose.onNodeWithText("Kode tampak berisi rahasia").assertExists()
+        compose.onNodeWithText("Batal").performClick()
+        assertEquals(secret.code, clip.primaryClip!!.getItemAt(0).text.toString())
+    }
+
+    @Test fun missingSnippetShowsNotFound() {
+        editor(SnippetDraft(loaded = true, missing = true), Recorder())
+        compose.onNodeWithText("Snippet tidak ditemukan").assertExists()
+        compose.onNodeWithText("Simpan snippet").assertDoesNotExist()
+        compose.onNodeWithText("Simpan perubahan").assertDoesNotExist()
+    }
+
     @Test fun templateSnippetOffersFillAndCopy() {
         val t = SampleVault.snippets[0]
         editor(SnippetDraft(true, t.id, t.title, t.language, "", t.code), Recorder())

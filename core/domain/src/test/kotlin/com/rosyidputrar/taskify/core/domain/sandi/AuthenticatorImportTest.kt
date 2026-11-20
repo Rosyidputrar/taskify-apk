@@ -63,6 +63,15 @@ class AuthenticatorImportTest {
         assertEquals(emptyList(), AuthenticatorImport.missing(scans))
     }
 
+    /** D-10: lebih dari 100 akun dalam satu tempelan ditolak — sesi impor tidak boleh membanjiri brankas. */
+    @Test fun tooManyAccountsInOneParseIsRejected() {
+        val one = { n: Int -> "otpauth://totp/Situs$n:user$n?secret=JBSWY3DPEHPK3PXP&issuer=Situs$n" }
+        val hundred = (1..100).joinToString("\n") { one(it) }
+        assertEquals(100, AuthenticatorImport.parse(hundred).sumOf { it.accounts.size })
+        val over = (1..101).joinToString("\n") { one(it) }
+        assertTrue(assertFailsWith<ImportException> { AuthenticatorImport.parse(over) }.message!!.contains("Terlalu banyak"))
+    }
+
     @Test fun badInputIsAClearErrorNeverACrash() {
         fun fails(text: String) = assertFailsWith<ImportException> { AuthenticatorImport.parse(text) }.message!!
         assertEquals("Tidak ada teks QR.", fails("  "))

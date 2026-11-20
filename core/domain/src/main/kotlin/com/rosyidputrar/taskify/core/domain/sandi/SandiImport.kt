@@ -114,6 +114,20 @@ object SandiImport {
     /** Baca isi berkas CSV menjadi baris impor. @throws ImportException bila bukan CSV sandi. */
     fun read(text: String): ImportParse {
         if (text.length > MAX_BYTES) throw ImportException("Berkas terlalu besar (maks. 5 MB).")
+        return readParsed(text)
+    }
+
+    /**
+     * D-14: batas ukuran dihitung dari BYTE, bukan jumlah karakter — `String.length` menghitung
+     * UTF-16, jadi berkas 5 MB karakter non-ASCII bisa belasan MB dalam byte. Jalur impor
+     * memakai ini (lihat [SandiImporter]); [read] dipertahankan untuk pemanggil teks.
+     */
+    fun readBytes(bytes: ByteArray): ImportParse {
+        if (bytes.size > MAX_BYTES) throw ImportException("Berkas terlalu besar (maks. 5 MB).")
+        return readParsed(String(bytes, Charsets.UTF_8))
+    }
+
+    private fun readParsed(text: String): ImportParse {
         val table = parseCsv(text)
         if (table.isEmpty()) throw ImportException("Berkas kosong.")
         val header = table.first().second.map { it.trim().lowercase() }

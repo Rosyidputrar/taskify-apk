@@ -58,6 +58,8 @@ class ScriptedClient(vararg scripts: suspend kotlinx.coroutines.flow.FlowCollect
 class FakeToolbox : AiToolbox {
     val ran = mutableListOf<Pair<String, String>>()
     var fail = false
+    /** Bila diisi, [run] menunggu ini selesai dulu (untuk menguji antrean keputusan). */
+    var runBlocker: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     /** Pemeriksa argumen alat tulis (bawaan: diterima apa adanya). */
     var check: (String) -> Prepared = { Prepared.Ready(it) }
     override suspend fun prepare(name: String, arguments: String) = check(arguments)
@@ -69,6 +71,7 @@ class FakeToolbox : AiToolbox {
     override fun label(name: String) = if (name == "baca") "Membaca data" else "Menyimpan"
     override fun preview(name: String, arguments: String) = ToolPreview("Simpan?", listOf("Isi" to arguments))
     override suspend fun run(name: String, arguments: String): ToolResult {
+        runBlocker?.await()
         ran += name to arguments
         if (fail) throw IllegalStateException("database terkunci")
         return ToolResult("hasil $name", "1 hasil")

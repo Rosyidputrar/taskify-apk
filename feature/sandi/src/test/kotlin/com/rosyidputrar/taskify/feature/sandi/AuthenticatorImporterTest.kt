@@ -96,6 +96,28 @@ class AuthenticatorImporterTest {
         assertEquals("Tidak ada kunci 2FA baru — semuanya sudah ada di brankas.", h.messages.last())
     }
 
+    /** D-10: sesi impor dibatasi 100 akun; label hasil pindai tampil di ringkasan sebelum konfirmasi. */
+    @Test fun sessionCapAndScannedLabels() = runTest {
+        val h = Harness(this)
+        h.importer.open()
+        fun uri(n: Int): String {
+            val secret = Totp.encodeBase32(ByteArray(10).apply { this[0] = n.toByte(); this[1] = (n shr 8).toByte() })
+            return "otpauth://totp/Situs$n:user$n?secret=$secret&issuer=Situs$n"
+        }
+        // 10 batch BERBEDA (total 100 akun berbeda) — batch yang sama dua kali ter-dedup oleh plan.
+        repeat(10) { i ->
+            val batch = (1..10).joinToString("\n") { uri(i * 10 + it) }
+            assertTrue(h.importer.add(batch))
+        }
+        val ui = h.importer.summary(emptyList())!!
+        assertEquals(100, ui.add)
+        assertTrue(ui.scannedLabels.contains("Situs1 (user1)"))
+        assertEquals(10, ui.scannedLabels.size, "hanya 10 label pertama ditampilkan")
+        assertFalse(h.importer.add(uri(101)))
+        assertTrue(h.messages.last().contains("Terlalu banyak akun"))
+        assertEquals(100, h.importer.summary(emptyList())!!.add, "impor yang sudah terbaca tetap tersimpan")
+    }
+
     @Test fun badTextIsAMessageAndIdleImportExpires() = runTest {
         val h = Harness(this)
         h.importer.open()

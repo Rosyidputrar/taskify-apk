@@ -112,7 +112,7 @@ fun NoteEditorScreen(args: NoteEditorArgs, onBack: () -> Unit) {
             override fun share(format: ShareFormat?) = vm.share(format)
             override fun copyImage() = vm.copyImage()
         },
-        links = { id -> LinksSection(EntityType.Note, id) },
+        links = { id, readOnly -> LinksSection(EntityType.Note, id, readOnly = readOnly) },
     )
 }
 
@@ -143,7 +143,7 @@ fun NoteEditorContent(
     /** null = otomatis: catatan yang sudah ada & berisi dibuka di mode Baca, catatan baru di Tulis. */
     initialPreview: Boolean? = null,
     today: String = Dates.today(),
-    links: @Composable (noteId: String) -> Unit = {},
+    links: @Composable (noteId: String, readOnly: Boolean) -> Unit = { _, _ -> },
 ) {
     if (!ui.loaded) {
         LoadingScreen(module = com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule.Notes)
@@ -274,11 +274,11 @@ fun NoteEditorContent(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Tag", style = MaterialTheme.typography.titleSmall)
                 if (ui.id != null) {
-                    TagPicker(tags, allTags, actions::addTag, actions::removeTag)
+                    TagPicker(tags, allTags, actions::addTag, actions::removeTag, enabled = !preview)
                 } else {
                     Text("Tag bisa ditambahkan setelah catatan tersimpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                ui.id?.let { links(it) }
+                ui.id?.let { links(it, preview) }
             }
         },
     )

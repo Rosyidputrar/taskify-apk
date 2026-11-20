@@ -47,7 +47,7 @@ import com.rosyidputrar.taskify.core.domain.journal.MOOD_LABELS
  * setiap ikon adalah tombol radio dengan label mood.
  */
 @Composable
-fun MoodSlider(value: Int?, onChange: (Int?) -> Unit, modifier: Modifier = Modifier) {
+fun MoodSlider(value: Int?, onChange: (Int?) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     var drag by remember { mutableStateOf<Int?>(null) }
     val shown = drag ?: value
     val colors = MaterialTheme.colorScheme
@@ -64,7 +64,8 @@ fun MoodSlider(value: Int?, onChange: (Int?) -> Unit, modifier: Modifier = Modif
                 .fillMaxWidth()
                 .height(56.dp)
                 .background(colors.surfaceContainerHigh, RoundedCornerShape(28.dp))
-                .pointerInput(Unit) {
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
                     val slot = { x: Float -> (x / (size.width / 5f)).toInt().coerceIn(0, 4) + 1 }
                     detectHorizontalDragGestures(
                         onDragStart = { drag = slot(it.x) },
@@ -88,7 +89,7 @@ fun MoodSlider(value: Int?, onChange: (Int?) -> Unit, modifier: Modifier = Modif
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .selectable(selected = selected, role = Role.RadioButton, onClick = { onChange(if (value == mood) null else mood) })
+                            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = { onChange(if (value == mood) null else mood) })
                             .semantics { contentDescription = MOOD_LABELS[index] },
                         contentAlignment = Alignment.Center,
                     ) {

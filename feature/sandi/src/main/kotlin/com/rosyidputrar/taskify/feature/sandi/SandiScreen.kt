@@ -260,11 +260,11 @@ fun ItemRow(item: SandiItem, now: () -> Long, actions: SandiActions, onClick: ()
                 Text(listOf(p.username, displayHost(p.url)).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "—" },
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            // D-09: di tab Brankas kode TOTP TIDAK ditampilkan — hanya ikon salin. Kode hanya
+            // tampil di tab Kode (CodeRow). Sebelumnya kode terlihat polos di daftar brankas.
             val w = p.totp?.let { Totp.window(it, now()) }
             if (w != null) {
-                TextButton(onClick = { actions.copyCode(item, w.code) }) {
-                    Text(spacedCode(w.code), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleSmall)
-                }
+                IconButton(onClick = { actions.copyCode(item, w.code) }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin kode 2FA") }
             } else if (p.password.isNotEmpty()) {
                 IconButton(onClick = { actions.copy("Sandi ${p.title}", p.password) }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin sandi") }
             }

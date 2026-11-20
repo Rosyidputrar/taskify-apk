@@ -110,9 +110,9 @@ fun ThemePaletteSettings(theme: ThemeSpec, onThemeChange: (ThemeSpec) -> Unit) {
     val dark = TaskifyTheme.isDark
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
         items(availablePalettes(), key = { it.name }) { p ->
-            // Kertas & Tinta terkunci di kontras Standar (lihat ThemeSpec.effectiveContrast):
-            // memilihnya mengembalikan kontras ke Standar supaya tema bawaan tetap sama.
-            val spec = if (p == ThemePalette.Kustom) theme.copy(palette = p) else ThemeSpec(palette = p, seed = theme.seed, style = theme.style, paper = theme.paper, contrast = if (p == ThemePalette.KertasTinta) ThemeContrast.Standard else theme.contrast)
+            // A10: memilih Kertas & Tinta tidak lagi mengembalikan kontras ke Standar —
+            // kontras Sedang/Tinggi memperkuat teks/garisnya tanpa me-regenerasi palet.
+            val spec = if (p == ThemePalette.Kustom) theme.copy(palette = p) else ThemeSpec(palette = p, seed = theme.seed, style = theme.style, paper = theme.paper, contrast = theme.contrast)
             PaletteSwatch(
                 palette = p,
                 spec = spec,
@@ -137,10 +137,10 @@ fun ThemePaletteSettings(theme: ThemeSpec, onThemeChange: (ThemeSpec) -> Unit) {
     Spacer(Modifier.height(14.dp))
     Text("Kontras", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
-    // Kertas & Tinta diracik manual pada Standar (kontras terkunci), Material You memakai
-    // skema wallpaper sistem (kontras tidak berlaku): kontrol dimatikan supaya tidak tampak
-    // berfungsi padahal tidak berpengaruh.
-    val contrastEnabled = theme.palette != ThemePalette.KertasTinta && theme.palette != ThemePalette.Dinamis
+    // A10: kontras berlaku untuk Kertas & Tinta (hanya memperkuat teks/garis, palet tidak
+    // di-regenerasi). Material You memakai skema wallpaper sistem (kontras tidak berlaku):
+    // kontrol dimatikan supaya tidak tampak berfungsi padahal tidak berpengaruh.
+    val contrastEnabled = theme.palette != ThemePalette.Dinamis
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         ThemeContrast.entries.forEachIndexed { i, c ->
             SegmentedButton(
@@ -155,7 +155,7 @@ fun ThemePaletteSettings(theme: ThemeSpec, onThemeChange: (ThemeSpec) -> Unit) {
     if (theme.palette == ThemePalette.KertasTinta) {
         Spacer(Modifier.height(8.dp))
         Text(
-            "Kertas & Tinta diracik manual pada kontras Standar, jadi kontras terkunci supaya tema bawaan tetap sama.",
+            "Kontras Sedang/Tinggi memperkuat teks dan garis tanpa mengubah warna racikan Kertas & Tinta.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

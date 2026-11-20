@@ -193,9 +193,9 @@ private val deviceModule = module {
         )
     }
     // Musik direct (Tahap 7): tidak ada lagi klien Worker — katalog/lirik/
-    // SponsorBlock lewat fasad MyTubeMusicClient. MUSIC_API_URL tidak lagi
-    // dipakai musik (secret GitHub-nya dipertahankan untuk rollback, lihat
-    // AppConfig); Supabase tetap dipakai auth/database, bukan musik.
+    // SponsorBlock lewat fasad MyTubeMusicClient. Secret MUSIC_API_URL sudah
+    // dihapus (musik direct terbukti jalan; Worker tetap hidup untuk webapp).
+    // Supabase tetap dipakai auth/database, bukan musik.
     // Porting ArchiveTune Tahap 2 (C1-8, C2-13): resolver memakai penyedia
     // signatureTimestamp (base.js) + memastikan visitorData siap sebelum
     // resolve anonim. Tanpa keduanya perilaku sama seperti sebelumnya.
@@ -285,7 +285,7 @@ private val deviceModule = module {
 
 /** Bagian yang butuh server (Supabase + PowerSync). Hanya dimuat bila konfigurasi lengkap. */
 private val serverModule = module {
-    single { createTaskifySupabase(serverConfig) }
+    single { createTaskifySupabase(serverConfig, androidContext()) }
     single { SupabaseConnector(get(), serverConfig.powerSyncUrl) }
     single { RejectedChangeRetrier(get<TaskifyDatabase>(), get<SupabaseConnector>()) }
     single { AuthRepository(get(), get(), get(), get(APP_SCOPE)) }

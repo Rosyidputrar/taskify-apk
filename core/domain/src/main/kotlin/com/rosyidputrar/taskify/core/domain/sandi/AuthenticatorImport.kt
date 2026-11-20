@@ -47,6 +47,9 @@ data class AuthImportPlan(
 object AuthenticatorImport {
     private const val MAX_TEXT = 16 * 1024
 
+    /** D-10: batas akun per sesi impor — satu sesi tidak boleh membanjiri brankas. */
+    const val MAX_ACCOUNTS_PER_SESSION = 100
+
     /** Baca satu hasil pindai / teks tempelan (boleh beberapa URI, satu per baris). */
     fun parse(text: String): List<AuthScan> {
         val trimmed = text.trim()
@@ -59,6 +62,9 @@ object AuthenticatorImport {
                 part.startsWith("otpauth:", ignoreCase = true) -> parseOtpauth(part)
                 else -> throw ImportException("Ini bukan QR authenticator. Pindai QR dari menu \"Transfer akun\" Google Authenticator.")
             }
+        }
+        if (scans.sumOf { it.accounts.size } > MAX_ACCOUNTS_PER_SESSION) {
+            throw ImportException("Terlalu banyak akun dalam satu impor (maks. $MAX_ACCOUNTS_PER_SESSION). Bagi menjadi beberapa sesi impor.")
         }
         return scans
     }

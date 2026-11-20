@@ -140,12 +140,23 @@ fun MusicLoginScreen(
                             object {
                                 @JavascriptInterface
                                 fun onRetrieveVisitorData(newVisitorData: String?) {
-                                    loginWebView.post { viewModel.onVisitorDataExtracted(newVisitorData) }
+                                    // C S-3: origin diperiksa DI DALAM post
+                                    // (akses WebView wajib di UI thread) —
+                                    // hanya halaman login tepercaya yang boleh
+                                    // menyuntik visitorData ke sesi.
+                                    loginWebView.post {
+                                        if (!loginWebView.url.isTrustedLoginJsOrigin()) return@post
+                                        viewModel.onVisitorDataExtracted(newVisitorData)
+                                    }
                                 }
 
                                 @JavascriptInterface
                                 fun onRetrieveDataSyncId(newDataSyncId: String?) {
-                                    loginWebView.post { viewModel.onDataSyncIdExtracted(newDataSyncId) }
+                                    // C S-3: sama seperti onRetrieveVisitorData.
+                                    loginWebView.post {
+                                        if (!loginWebView.url.isTrustedLoginJsOrigin()) return@post
+                                        viewModel.onDataSyncIdExtracted(newDataSyncId)
+                                    }
                                 }
                             },
                             "Android",

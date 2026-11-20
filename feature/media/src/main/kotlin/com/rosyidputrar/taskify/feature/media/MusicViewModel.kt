@@ -14,6 +14,7 @@ import com.rosyidputrar.taskify.core.domain.media.MoodGroup
 import com.rosyidputrar.taskify.core.domain.media.MoodPage
 import com.rosyidputrar.taskify.core.domain.media.MusicCatalog
 import com.rosyidputrar.taskify.core.domain.media.MusicCollection
+import com.rosyidputrar.taskify.core.domain.media.YtEvent
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
 import com.rosyidputrar.taskify.core.domain.media.MusicSettings
 import com.rosyidputrar.taskify.core.domain.media.RadioSource
@@ -96,6 +97,13 @@ data class ExploreState(
     val error: String? = null,
     /** Detail mentah error Jelajah (jenis + status + pesan, tanpa URL/cookie/token). */
     val errorDetail: String? = null,
+    /**
+     * C S-1: gagal SEBAGIAN — 1..3 dari 4 seksi jaringan gagal, sisanya
+     * tampil. Beda salinan dengan [error] (gagal TOTAL): sebagian tampil
+     * pemberitahuan ringkas di atas seksi, total tampil blok besar dan
+     * seksi disembunyikan.
+     */
+    val partialError: String? = null,
     val home: List<DiscoverySection> = emptyList(),
     val charts: List<DiscoverySection> = emptyList(),
     val releases: List<DiscoverySection> = emptyList(),
@@ -193,6 +201,8 @@ class MusicViewModel(
     private var suggestJob: Job? = null
     private var pageJob: Job? = null
     private var lyricsJob: Job? = null
+    /** C S-4: status online terakhir (untuk gagal-cepat di `search()`). */
+    private var isOnline = true
     private val extras = combine(player.settings, player.sleep) { set, sleep -> set to sleep }
 
     val state: StateFlow<MusicUiState> = combine(local, player.state, player.position, online.flow(), extras) { l, p, pos, on, ex ->
@@ -200,6 +210,10 @@ class MusicViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
     init {
+        // C S-4: lacak online di sini (bukan dari `local.value.online` —
+        // nilainya selalu default `true` di `local`; online asli hanya
+        // mengalir lewat `combine` di `state`).
+        launchSafe { online.flow().collect { isOnline = it } }
         // Status login mengalir ke state UI (PLAN C.7): akun + flag kedaluwarsa
         // dari repo digabung di sini; player TIDAK mengekspos StateFlow sendiri
         // (ia memanggil loginEvents.onSessionExpired() langsung ke repo).
@@ -310,6 +324,13 @@ class MusicViewModel(
         if (!requireLogin(prompt = true)) return
         suggestJob?.cancel()
         if (MusicCatalog.isLink(q)) { openLink(q); return }
+        // C S-4: gagal-cepat saat offline — tanpa ini `client.search`
+        // menunggu sampai timeout katalog (20 dtk) padahal NetworkMonitor
+        // sudah tahu tidak ada koneksi.
+        if (!isOnline) {
+            local.update { it.copy(tab = MusicTab.Search, search = s.copy(loading = false, error = "Kamu sedang offline. Periksa koneksi lalu coba lagi.", errorDetail = null, suggestions = emptyList())) }
+            return
+        }
         searchJob?.cancel()
         local.update { it.copy(tab = MusicTab.Search, pages = emptyList(), search = s.copy(loading = true, error = null, errorDetail = null, suggestions = emptyList())) }
         searchJob = launchSafe {
@@ -522,8 +543,9 @@ class MusicViewModel(
     }
 
     /**
-     * Putar seluruh koleksi. Playlist panjang: halaman lanjutan (≤ 100 per halaman) diambil dulu
-     * sampai habis supaya antrean tidak berhenti di lagu ke-100 tanpa terlihat.
+     * Putar seluruh koleksi. Playlist panjang: lagu pertama berbunyi dari
+     * halaman pertama SEKARANG, halaman lanjutan disambung di latar (C S-9)
+     * — dulu semua halaman (≤ 9) diambil dulu sebelum lagu pertama berbunyi.
      */
     override fun playPage(shuffle: Boolean) {
         val p = local.value.page ?: return
@@ -536,13 +558,48 @@ class MusicViewModel(
         }
         val c = p.collection ?: return
         if (c.cursor == null) { startQueue(c.tracks, shuffle); return }
+        // Halaman pertama kosong: jalur lama (ambil semua dulu) supaya
+        // antrean tidak mulai kosong.
+        if (c.tracks.isEmpty()) { fetchAllThenStart(c, p, shuffle); return }
+        startQueue(c.tracks, shuffle)
+        val firstId = c.tracks.first().videoId
+        local.update { it.copy(busy = "Mengambil lagu… halaman 2") }
+        launchSafe {
+            var all = c
+            try {
+                var pages = 1
+                while (all.cursor != null && pages < MAX_COLLECTION_PAGES) {
+                    // Podcast: judul acara halaman pertama diteruskan (gap Tahap 6, sama seperti loadMorePage).
+                    val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
+                    val next = client.collectionMore(c.kind, all.cursor!!, c.id, showTitle)
+                    all = all.merge(next)
+                    pages++
+                    // Berhenti menyambung bila antrean sudah bukan koleksi
+                    // ini (pengguna memutar hal lain / stop).
+                    if (player.state.value.queue.firstOrNull()?.videoId != firstId) break
+                    if (next.tracks.isNotEmpty()) player.dispatch(YtEvent.ContinueQueue("playPage:${c.id}", next.tracks))
+                    local.update { it.copy(busy = if (all.cursor != null) "Mengambil lagu… halaman ${pages + 1}" else null) }
+                }
+                updatePage(p.target) { it.copy(collection = all) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                noteAuthFailure(e)
+                // Sebagian halaman sudah cukup untuk mulai (lagu sudah berbunyi).
+            } finally {
+                local.update { it.copy(busy = null) }
+            }
+        }
+    }
+
+    /** Jalur lama playPage untuk halaman pertama yang kosong: ambil semua, baru putar. */
+    private fun fetchAllThenStart(c: MusicCollection, p: BrowsePage, shuffle: Boolean) {
         local.update { it.copy(busy = "Mengambil semua lagu…") }
         launchSafe {
             var all = c
             try {
                 var pages = 0
                 while (all.cursor != null && pages < MAX_COLLECTION_PAGES) {
-                    // Podcast: judul acara halaman pertama diteruskan (gap Tahap 6, sama seperti loadMorePage).
                     val showTitle = if (c.kind == CollectionKind.Podcast) c.title else ""
                     all = all.merge(client.collectionMore(c.kind, all.cursor!!, c.id, showTitle))
                     pages++
@@ -552,7 +609,6 @@ class MusicViewModel(
                 throw e
             } catch (e: Exception) {
                 noteAuthFailure(e)
-                // Sebagian halaman sudah cukup untuk mulai.
             } finally {
                 local.update { it.copy(busy = null) }
             }
@@ -578,7 +634,7 @@ class MusicViewModel(
         if (!requireLogin(prompt = prompt)) return
         val e = local.value.explore
         if (e.loading || (e.loaded && !force && e.error == null)) return
-        local.update { it.copy(explore = it.explore.copy(loading = true, error = null, errorDetail = null)) }
+        local.update { it.copy(explore = it.explore.copy(loading = true, error = null, errorDetail = null, partialError = null)) }
         launchSafe {
             coroutineScope {
                 val home = async { runCatching { client.home() } }
@@ -589,11 +645,16 @@ class MusicViewModel(
                 val all = listOf(home.await(), charts.await(), releases.await(), moods.await())
                 val firstError = all.firstNotNullOfOrNull { it.exceptionOrNull() }
                 (firstError as? Exception)?.let(::noteAuthFailure)
+                // C S-1: bedakan gagal total (4/4) vs gagal sebagian (1..3) —
+                // sebagian tetap menampilkan seksi yang berhasil + pemberitahuan
+                // ringkas, bukan blok error besar di atas konten.
+                val failedCount = all.count { it.isFailure }
                 local.update {
                     it.copy(explore = ExploreState(
                         loading = false, loaded = true,
-                        error = if (all.all { r -> r.isFailure }) firstError?.message ?: "Gagal memuat Jelajah." else null,
-                        errorDetail = if (all.all { r -> r.isFailure }) firstError?.let(::musicErrorRawDetail) else null,
+                        error = if (failedCount == 4) firstError?.message ?: "Gagal memuat Jelajah." else null,
+                        errorDetail = if (failedCount == 4) firstError?.let(::musicErrorRawDetail) else null,
+                        partialError = if (failedCount in 1..3) "Sebagian Jelajah gagal dimuat. Coba lagi untuk memuat bagian yang hilang." else null,
                         home = home.await().getOrDefault(emptyList()),
                         charts = charts.await().getOrDefault(emptyList()),
                         releases = releases.await().getOrDefault(emptyList()),

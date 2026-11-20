@@ -54,9 +54,9 @@ class AttachmentRepository(private val db: PowerSyncDatabase, private val users:
 
     fun watchOne(id: String): Flow<Attachment?> = db.watch("SELECT $COLUMNS FROM attachments WHERE id = ?", listOf(id)) { it.toAttachment() }.map { it.firstOrNull() }
 
-    /** Lampiran yang belum terunggah (outbox), terlama dulu. */
+    /** Lampiran yang belum terunggah (outbox), terlama dulu. Dibatasi 500: outbox memproses maks. 5 per putaran. */
     suspend fun pending(): List<Attachment> =
-        db.getAll("SELECT $COLUMNS FROM attachments WHERE deleted_at IS NULL AND status <> 'uploaded' ORDER BY created_at", emptyList()) { it.toAttachment() }
+        db.getAll("SELECT $COLUMNS FROM attachments WHERE deleted_at IS NULL AND status <> 'uploaded' ORDER BY created_at LIMIT 500", emptyList()) { it.toAttachment() }
 
     suspend fun isLive(id: String): Boolean =
         db.getOptional("SELECT 1 FROM attachments WHERE id = ? AND deleted_at IS NULL", listOf(id)) { 1 } != null

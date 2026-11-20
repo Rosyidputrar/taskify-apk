@@ -275,6 +275,37 @@ class ShareReadTest {
         preview("image-long", img.bitmap)
     }
 
+    @Test fun tableRendersAsGridWithWrappedCells() {
+        val table = ShareDoc(
+            "Biaya", "Jumat",
+            "| Barang | Harga |\n|---|---|\n| Beras 10 kg | Rp 120.000 |\n| Minyak goreng 2 liter dengan nama yang sangat panjang sekali | Rp 85.000 |\n| Gula | Rp 17.500 |",
+            "Catatan", TaskifyModule.Notes.light.toArgb(),
+        )
+        val img = DocRender.image(table)
+        assertTrue(!img.truncated)
+        // Sel panjang membungkus di dalam kolomnya (bukan satu baris "│" yang melebar): gambar
+        // tabel 3 baris + judul lebih tinggi dari sekadar 3 baris teks.
+        assertTrue(img.bitmap.height > 420, "tinggi ${img.bitmap.height}")
+        preview("table-grid", img.bitmap)
+        // PDF: tabel pendek tetap satu halaman dan ada tinta (grid + teks).
+        val pages = mutableListOf<Bitmap>()
+        val count = DocRender.renderPages(table, object : DocRender.Pages {
+            override fun start(number: Int) = Canvas(Bitmap.createBitmap(DocRender.PAGE_W, DocRender.PAGE_H, Bitmap.Config.ARGB_8888).also { it.eraseColor(Color.WHITE); pages += it })
+            override fun finish(number: Int) = Unit
+        })
+        assertEquals(1, count)
+        assertTrue(hasInk(pages[0], Color.WHITE))
+    }
+
+    @Test fun hugeCodeImageIsDownscaledUnderPixelCap() {
+        val huge = (1..400).joinToString("\n") { "val x$it = \"${"a".repeat(it % 160)}\"" }
+        val big = CodeImage.render(huge, "kotlin", "Besar", "Kotlin")
+        assertTrue(big.truncated, "220 baris pertama saja")
+        val pixels = big.bitmap.width.toLong() * big.bitmap.height
+        assertTrue(pixels <= CodeImage.MAX_PIXELS, "piksel: $pixels (${big.bitmap.width}x${big.bitmap.height})")
+        assertTrue(big.bitmap.height in 1000..8000, "tinggi ${big.bitmap.height}")
+    }
+
     @Test fun codeImageWrapsLongLinesAndTruncatesHugeCode() {
         val s = SampleVault.snippets[1]
         val img = CodeImage.render(s.code, s.language, s.title, "TypeScript")

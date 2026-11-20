@@ -311,6 +311,13 @@ private fun NotifOnboarding(state: NotificationsUiState, actions: NotificationsA
         Spacer(Modifier.height(14.dp))
         Text("YANG DISIMPAN", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LevelChoice(state.settings.level, actions::setLevel)
+        // D-06: isi yang disimpan terenkripsi di perangkat (AES-256-GCM, kunci Keystore) dan
+        // terhapus setelah 7 hari. "Hitungan saja" tidak menyimpan isi sama sekali.
+        Text(
+            "Isi yang disimpan terenkripsi di perangkat dan terhapus otomatis setelah 7 hari. Pilih \"Hitungan saja\" bila tidak mau ada isi notifikasi yang tersimpan sama sekali.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

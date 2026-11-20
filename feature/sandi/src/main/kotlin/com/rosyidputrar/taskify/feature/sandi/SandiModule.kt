@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import com.rosyidputrar.taskify.core.domain.sandi.ImportException
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
@@ -38,21 +39,36 @@ internal class ContentResolverFiles(private val context: Context) : SandiFileWri
         stream.use { it.write(bytes); it.flush() }
     }
 
-    override suspend fun read(uri: String, maxBytes: Int): String = withContext(Dispatchers.IO) {
-        val input = context.contentResolver.openInputStream(Uri.parse(uri)) ?: throw IOException("berkas tidak bisa dibuka")
+    /**
+     * D-14: ukuran dicek DUA kali dalam byte — dulu lewat `OpenableColumns.SIZE` (menolak tanpa
+     * membaca isi bila penyedia melaporkannya), lalu selama streaming. Mengembalikan byte mentah
+     * supaya [SandiImport.readBytes] yang menghitung batasnya, bukan `String.length`.
+     */
+    override suspend fun read(uri: String, maxBytes: Int): ByteArray = withContext(Dispatchers.IO) {
+        val target = Uri.parse(uri)
+        val reported = runCatching {
+            context.contentResolver.query(target, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getLong(0) else null
+            }
+        }.getOrNull()
+        if (reported != null && reported > maxBytes) throw ImportException("Berkas terlalu besar (maks. ${maxBytes / (1024 * 1024)} MB).")
+        val input = context.contentResolver.openInputStream(target) ?: throw IOException("berkas tidak bisa dibuka")
         input.use {
             val out = ByteArrayOutputStream()
             val chunk = ByteArray(64 * 1024)
             var total = 0
-            while (true) {
-                val n = it.read(chunk)
-                if (n < 0) break
-                total += n
-                if (total > maxBytes) throw ImportException("Berkas terlalu besar (maks. ${maxBytes / (1024 * 1024)} MB).")
-                out.write(chunk, 0, n)
+            try {
+                while (true) {
+                    val n = it.read(chunk)
+                    if (n < 0) break
+                    total += n
+                    if (total > maxBytes) throw ImportException("Berkas terlalu besar (maks. ${maxBytes / (1024 * 1024)} MB).")
+                    out.write(chunk, 0, n)
+                }
+                out.toByteArray()
+            } finally {
+                chunk.fill(0)
             }
-            val bytes = out.toByteArray()
-            try { String(bytes, Charsets.UTF_8) } finally { bytes.fill(0); chunk.fill(0) }
         }
     }
 

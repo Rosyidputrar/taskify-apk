@@ -57,6 +57,7 @@ fun authImportLines(ui: AuthImportUi): List<String> = buildList {
     )
     if (ui.missing.isNotEmpty()) add("Belum dipindai: QR " + ui.missing.joinToString(", ") + ". Akun di QR itu tidak ikut kalau dilewati.")
     if (ui.add > 0) add("${ui.add} akun 2FA baru.")
+    if (ui.scannedLabels.isNotEmpty()) add("Akun terbaca: " + ui.scannedLabels.joinToString(", ") + if (ui.scannedLabels.size >= 10) ", …" else "")
     if (ui.attach.isNotEmpty()) add("${ui.attach.size} dipasang ke sandi yang sudah ada: " + ui.attach.take(5).joinToString(", ") + if (ui.attach.size > 5) ", …" else "")
     if (ui.identical > 0) add("${ui.identical} sudah ada di brankas, dilewati.")
     if (ui.duplicates > 0) add("${ui.duplicates} akun terpindai lebih dari sekali, dihitung sekali.")
@@ -84,6 +85,12 @@ fun AuthImportContent(
                 "Pindai QR yang muncul dari HP ini. Kalau ada beberapa QR, pindai semuanya.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // D-10: QR dari sumber lain (situs, pesan, foto acak) bisa memasang kunci milik orang lain.
+        Text(
+            "Pindai hanya QR dari menu Transfer akun di aplikasi authenticator kamu. QR dari situs atau pesan lain bisa memasang kunci 2FA milik orang lain ke brankas ini.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
         )
         FilledTonalButton(onClick = onScan, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.QrCodeScanner, null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(if (ui.scanned == 0) "Pindai QR" else "Pindai QR berikutnya")

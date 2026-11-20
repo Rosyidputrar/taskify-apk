@@ -6,6 +6,7 @@ import com.rosyidputrar.taskify.core.domain.auth.DeviceTrust
 import com.rosyidputrar.taskify.core.domain.auth.GateStatus
 import com.rosyidputrar.taskify.core.domain.auth.MfaStatus
 import com.rosyidputrar.taskify.core.domain.auth.TRUST_MILLIS
+import com.rosyidputrar.taskify.core.domain.auth.OFFLINE_GRACE_MILLIS
 import com.rosyidputrar.taskify.core.domain.auth.gateStatus
 import com.rosyidputrar.taskify.core.domain.auth.isTotpCode
 import com.rosyidputrar.taskify.core.domain.auth.mfaStatus
@@ -36,8 +37,8 @@ class MfaGateTest {
         assertEquals(MfaStatus.Ok, mfaStatus(jwt("""{"aal":"aal2","name":"Rosyid ü???>>"}"""), hasVerifiedFactor = false))
     }
 
-    private fun gate(mfa: MfaStatus, trust: DeviceTrust? = null, online: Boolean = true, launch: String? = null) =
-        gateStatus(mfa, "u", now = 1_000 * 86_400_000L, online = online, trust = trust, launchUser = launch)
+    private fun gate(mfa: MfaStatus, trust: DeviceTrust? = null, online: Boolean = true, launch: String? = null, lastVerified: Long? = null) =
+        gateStatus(mfa, "u", now = 1_000 * 86_400_000L, online = online, trust = trust, launchUser = launch, lastVerifiedMillis = lastVerified)
 
     @Test fun serverStatusAlwaysWins() {
         val trust = DeviceTrust("u", Long.MAX_VALUE)
@@ -55,9 +56,25 @@ class MfaGateTest {
         assertEquals(GateStatus.Reverify, gate(MfaStatus.Ok, DeviceTrust("lain", Long.MAX_VALUE)))
     }
 
-    @Test fun alreadyPassedThisLaunchOrOffline() {
+    @Test fun alreadyPassedThisLaunch() {
         assertEquals(GateStatus.Ok, gate(MfaStatus.Ok, launch = "u"))
-        assertEquals(GateStatus.Ok, gate(MfaStatus.Ok, online = false))
+        assertEquals(GateStatus.Ok, gate(MfaStatus.Ok, online = false, launch = "u"))
+    }
+
+    /** D-02: offline tanpa jejak verifikasi = terkunci sampai online, bukan lolos. */
+    @Test fun offlineWithoutVerifiedPassLocks() {
+        assertEquals(GateStatus.Reverify, gate(MfaStatus.Ok, online = false))
+        assertEquals(GateStatus.Reverify, gate(MfaStatus.Ok, online = false, lastVerified = 1_000 * 86_400_000L - OFFLINE_GRACE_MILLIS))
+        // Jejak dari "masa depan" (jam dimundurkan) tidak dipercaya.
+        assertEquals(GateStatus.Reverify, gate(MfaStatus.Ok, online = false, lastVerified = 1_000 * 86_400_000L + 60_000L))
+    }
+
+    /** D-02: offline dalam masa tenggang 24 jam sejak verifikasi terakhir = boleh masuk. */
+    @Test fun offlineWithinGraceAfterVerifiedPass() {
+        val now = 1_000 * 86_400_000L
+        assertEquals(GateStatus.Ok, gate(MfaStatus.Ok, online = false, lastVerified = now - 60_000L))
+        assertEquals(GateStatus.Ok, gate(MfaStatus.Ok, online = false, lastVerified = now - OFFLINE_GRACE_MILLIS + 60_000L))
+        assertEquals(24L * 60 * 60 * 1000, OFFLINE_GRACE_MILLIS)
     }
 
     @Test fun trustSpans30Days() = assertEquals(30L * 86_400_000L, TRUST_MILLIS)

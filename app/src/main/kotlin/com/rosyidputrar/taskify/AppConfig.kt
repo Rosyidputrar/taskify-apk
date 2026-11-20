@@ -8,10 +8,6 @@ object AppConfig {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
     val supabasePublishableKey: String = BuildConfig.SUPABASE_PUBLISHABLE_KEY
     val powerSyncUrl: String = BuildConfig.POWERSYNC_URL
-    // MUSIC_API_URL (BuildConfig, dari GitHub Secrets) SENGAJA dipertahankan
-    // walau tidak lagi dipakai musik sejak rewrite direct (Tahap 7): secret
-    // dihapus belakangan setelah rewrite stabil di main, supaya rollback
-    // tinggal mengembalikan kode (PLAN D.4).
     val tiktokApiUrl: String = BuildConfig.TIKTOK_API_URL
     val publicWebOrigin: String = BuildConfig.PUBLIC_WEB_ORIGIN.trimEnd('/')
 

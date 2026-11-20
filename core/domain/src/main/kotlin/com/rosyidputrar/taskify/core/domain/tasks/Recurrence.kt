@@ -51,10 +51,12 @@ private data class Rule(
 )
 
 private fun parseRuleString(rule: String): Rule? {
-    val parts = rule.removePrefix("RRULE:").split(';').filter { it.isNotBlank() }.associate {
+    // Kunci duplikat (data rusak dari server/perangkat lain, mis. FREQ=DAILY;FREQ=WEEKLY):
+    // yang TERAKHIR menang — associate() lama melempar IllegalArgumentException di sini.
+    val parts = rule.removePrefix("RRULE:").split(';').filter { it.isNotBlank() }.map {
         val (k, v) = it.split('=', limit = 2).let { p -> p[0].uppercase() to p.getOrElse(1) { "" } }
         k to v
-    }
+    }.toMap()
     val freq = when (parts["FREQ"]) {
         "DAILY" -> Freq.DAILY
         "WEEKLY" -> Freq.WEEKLY
@@ -67,7 +69,10 @@ private fun parseRuleString(rule: String): Rule? {
     fun ints(key: String) = parts[key]?.split(',')?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
     val byDay = parts["BYDAY"]?.split(',')?.map { code -> WEEKDAY_CODES.indexOf(code.trim().uppercase()) } ?: emptyList()
     if (byDay.any { it < 0 }) return null // BYDAY berprefiks (mis. 1MO) tidak dibuat Taskify
-    val until = parts["UNTIL"]?.let { u -> if (u.length >= 8) "${u.substring(0, 4)}-${u.substring(4, 6)}-${u.substring(6, 8)}" else null }
+    val until = parts["UNTIL"]?.let { u ->
+        // UNTIL rusak (bulan/hari tidak valid) diabaikan, bukan crash saat dipakai.
+        if (u.length < 8) null else runCatching { LocalDate.parse("${u.substring(0, 4)}-${u.substring(4, 6)}-${u.substring(6, 8)}") }.getOrNull()?.toString()
+    }
     return Rule(
         freq = freq,
         interval = parts["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
@@ -105,11 +110,11 @@ private fun Rule.toRuleString(): String = buildList {
     if (bySetPos.isNotEmpty()) add("BYSETPOS=" + bySetPos.joinToString(","))
 }.joinToString(";")
 
-/** Bangun string RRULE dari state editor. [anchor] = due_date (untuk bulanan/tahunan). */
+/** Bangun string RRULE dari state editor. [anchor] = due_date (untuk bulanan/tahunan). null = anchor rusak. */
 fun buildRule(state: RecurrenceState, anchor: String): String? {
     if (state.freq == RecurrenceFreq.None) return null
     val interval = state.interval.coerceAtLeast(1)
-    val a = Dates.parse(anchor)
+    val a = Dates.parseOrNull(anchor) ?: return null
     val base = when (state.freq) {
         RecurrenceFreq.Daily -> Rule(Freq.DAILY, interval)
         RecurrenceFreq.Weekdays -> Rule(Freq.WEEKLY, 1, byDay = listOf(0, 1, 2, 3, 4))
@@ -204,11 +209,12 @@ private fun applySetPos(set: List<LocalDate>, pos: List<Int>): List<LocalDate> {
     return pos.mapNotNull { p -> if (p > 0) set.getOrNull(p - 1) else set.getOrNull(set.size + p) }.distinct().sorted()
 }
 
-/** Kejadian berikutnya SETELAH [after] (eksklusif). null = seri berakhir / rule tidak valid. */
+/** Kejadian berikutnya SETELAH [after] (eksklusif). null = seri berakhir / rule atau tanggal tidak valid. */
 fun nextOccurrence(rule: String, dtstart: String, after: String): String? {
     val r = parseRuleString(rule) ?: return null
-    val a = Dates.parse(after)
-    return r.occurrences(Dates.parse(dtstart)).firstOrNull { it.isAfter(a) }?.toString()
+    val a = Dates.parseOrNull(after) ?: return null
+    val start = Dates.parseOrNull(dtstart) ?: return null
+    return r.occurrences(start).firstOrNull { it.isAfter(a) }?.toString()
 }
 
 /**
@@ -221,12 +227,13 @@ fun nextDueAfterCompletion(rule: String, dueDate: String, today: String): String
     return nextOccurrence(rule, dueDate, Dates.addDays(today, -1))
 }
 
-/** Semua kejadian dalam [from, to] (inklusif), dibatasi [limit]. */
+/** Semua kejadian dalam [from, to] (inklusif), dibatasi [limit]. Tanggal rusak → daftar kosong. */
 fun occurrencesBetween(rule: String, dtstart: String, from: String, to: String, limit: Int = 400): List<String> {
     val r = parseRuleString(rule) ?: return emptyList()
-    val f = Dates.parse(from)
-    val t = Dates.parse(to)
-    return r.occurrences(Dates.parse(dtstart))
+    val f = Dates.parseOrNull(from) ?: return emptyList()
+    val t = Dates.parseOrNull(to) ?: return emptyList()
+    val start = Dates.parseOrNull(dtstart) ?: return emptyList()
+    return r.occurrences(start)
         .dropWhile { it.isBefore(f) }
         .takeWhile { !it.isAfter(t) }
         .take(limit)
@@ -244,10 +251,10 @@ fun describeRule(rule: String?, anchor: String? = null): String {
         RecurrenceFreq.Weekdays -> "Setiap hari kerja"
         RecurrenceFreq.Weekly -> "${every("minggu")}: ${s.byDay.joinToString(", ") { WEEKDAY_SHORT[it] }}"
         RecurrenceFreq.Monthly -> {
-            val day = s.monthDay ?: anchor?.let { Dates.parse(it).dayOfMonth }
+            val day = s.monthDay ?: anchor?.let { Dates.parseOrNull(it)?.dayOfMonth }
             "${every("bulan")} tgl ${day ?: ""}" + if ((day ?: 0) > 28) " (atau hari terakhir bulan)" else ""
         }
-        RecurrenceFreq.Yearly -> if (anchor != null) "${every("tahun")}, ${Dates.format(anchor, "d MMM")}" else every("tahun")
+        RecurrenceFreq.Yearly -> if (anchor != null && Dates.parseOrNull(anchor) != null) "${every("tahun")}, ${Dates.format(anchor, "d MMM")}" else every("tahun")
         RecurrenceFreq.None -> ""
     }
     return if (s.until != null) "$text · s.d. ${Dates.format(s.until, "d MMM yyyy")}" else text

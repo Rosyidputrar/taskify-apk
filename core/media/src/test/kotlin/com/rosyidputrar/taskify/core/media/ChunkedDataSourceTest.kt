@@ -119,11 +119,11 @@ class ChunkedDataSourceTest {
         source.close()
     }
 
-    @Test fun `length UNSET googlevideo dibatasi chunk fallback 32KB dan open mengembalikan UNSET`() {
-        // F2 (INVESTIGASI-A §5) + F3 (§7): tanpa panjang total DAN tanpa
-        // `clen`/`dur`, chunk pertama googlevideo tetap dibatasi (fallback
-        // 32 KB ≈ 5,3 detik pada bitrate audio terendah ~48 kbps);
-        // open() tidak mengklaim panjang chunk sebagai panjang total.
+    @Test fun `length UNSET googlevideo dibatasi chunk fallback itag 251 dan open mengembalikan UNSET`() {
+        // F2 (INVESTIGASI-A §5) + F3 (§7) + C S-13: tanpa panjang total DAN
+        // tanpa `clen`/`dur`, chunk pertama googlevideo tetap dibatasi —
+        // fallback per-itag (251 ≈ 160 kbps → 120 KB ≈ 6 detik), bukan 32 KB
+        // buta; open() tidak mengklaim panjang chunk sebagai panjang total.
         val total = 1_000_000
         val upstream = FakeUpstream(ByteArray(total) { (it % 251).toByte() })
         val source = ChunkedDataSource(upstream, MediaRequestHeaders.CHUNK_LENGTH)
@@ -133,27 +133,27 @@ class ChunkedDataSourceTest {
         )
         assertEquals(1, upstream.opened.size)
         assertEquals(0L, upstream.opened[0].position)
-        assertEquals(32 * 1024L, upstream.opened[0].length)
+        assertEquals(120_000L, upstream.opened[0].length)
         source.close()
     }
 
     @Test fun `length UNSET googlevideo dibaca penuh sampai habis bersih`() {
         // Total dipelajari dari Content-Range chunk pertama → chunk terakhir
         // eksak, tanpa probe di luar akhir, tanpa EOFException.
-        // 1.000.000 byte / 32.768 = 30,5 → 31 chunk; terakhir di 983.040.
+        // 1.000.000 byte / 120.000 = 8,33 → 9 chunk; terakhir di 960.000.
         val total = 1_000_000
         val upstream = FakeUpstream(ByteArray(total) { (it % 251).toByte() })
         val source = ChunkedDataSource(upstream, MediaRequestHeaders.CHUNK_LENGTH)
         source.open(specUnset("https://rr1---sn-yyyy.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251"))
         assertEquals(total.toLong(), readAll(source))
-        assertEquals(31, upstream.opened.size)
-        assertEquals(30 * 32 * 1024L, upstream.opened[30].position)
-        assertEquals(total - 30 * 32 * 1024L, upstream.opened[30].length)
+        assertEquals(9, upstream.opened.size)
+        assertEquals(8 * 120_000L, upstream.opened[8].position)
+        assertEquals(total - 8 * 120_000L, upstream.opened[8].length)
         source.close()
     }
 
     @Test fun `length UNSET googlevideo kelipatan chunk berakhir tanpa probe ekstra`() {
-        val total = 2 * 32 * 1024
+        val total = 2 * 120_000
         val upstream = FakeUpstream(ByteArray(total) { 7 })
         val source = ChunkedDataSource(upstream, MediaRequestHeaders.CHUNK_LENGTH)
         source.open(specUnset("https://rr1---sn-yyyy.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251"))
@@ -193,13 +193,23 @@ class ChunkedDataSourceTest {
         assertEquals((5_495_333.0 / 312.5 * 6).toLong(), resolveBitrateAwareChunkLength(blqp))
     }
 
-    @Test fun `resolveBitrateAwareChunkLength fallback 32KB bila param hilang`() {
+    @Test fun `resolveBitrateAwareChunkLength fallback per itag bila clen dur hilang`() {
+        // C S-13: tanpa clen/dur, fallback memakai bitrate nominal itag
+        // (251 → 160 kbps × 6 dtk / 8 = 120.000), bukan 32 KB untuk semua.
         val noParams = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251")
-        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(noParams))
+        assertEquals(120_000L, resolveBitrateAwareChunkLength(noParams))
         val noDur = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=3371685")
-        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(noDur))
+        assertEquals(120_000L, resolveBitrateAwareChunkLength(noDur))
         val durZero = Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR&itag=251&clen=3371685&dur=0")
-        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(durZero))
+        assertEquals(120_000L, resolveBitrateAwareChunkLength(durZero))
+        // 140 → 128 kbps × 6 / 8 = 96.000; 139 → 48 kbps × 6 / 8 = 36.000.
+        assertEquals(96_000L, resolveBitrateAwareChunkLength(Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?itag=140")))
+        assertEquals(36_000L, resolveBitrateAwareChunkLength(Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?itag=139")))
+        // 599 → 32 kbps × 6 / 8 = 24.000 → dijepit naik ke 32 KB.
+        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?itag=599")))
+        // Itag tak dikenal / tanpa itag → tetap 32 KB (tanpa regresi).
+        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?itag=999")))
+        assertEquals(32 * 1024L, resolveBitrateAwareChunkLength(Uri.parse("https://rr1---sn-x.googlevideo.com/videoplayback?c=WEB_CREATOR")))
     }
 
     @Test fun `resolveBitrateAwareChunkLength dijepit ke 32KB sampai 1MB`() {

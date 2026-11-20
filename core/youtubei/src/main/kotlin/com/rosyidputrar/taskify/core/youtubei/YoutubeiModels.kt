@@ -8,6 +8,7 @@ package com.rosyidputrar.taskify.core.youtubei
 
 import okhttp3.Dns
 import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 import java.io.IOException
 import java.net.Proxy
 
@@ -70,6 +71,8 @@ data class YoutubeiResolvedStream(
     val loudnessDb: Double?,
     val perceptualLoudnessDb: Double?,
     val playbackTrackingUrl: String?,
+    /** C S-2: klien InnerTube yang benar-benar dipakai JS (`MWEB`/`WEB_CREATOR`); null bila bundle lama tidak mengembalikannya. */
+    val clientName: String? = null,
 )
 
 data class YoutubeiNetworkConfiguration(
@@ -78,6 +81,15 @@ data class YoutubeiNetworkConfiguration(
     val proxyPassword: String?,
     val dns: Dns,
     val interceptors: List<Interceptor> = emptyList(),
+    /**
+     * Klien dasar yang dipakai sebagai basis ([OkHttpClient.newBuilder]):
+     * connection pool, DNS, dan socket factory DIBAGI dengan klien ini —
+     * jadi request `player` youtubei.js keluar lewat jalur jaringan yang
+     * sama dengan InnerTube/media (C M-1, perbaikan 403 ikatan IP).
+     * `null` = bangun klien segar (perilaku lama, hanya untuk tes).
+     * Produksi mengisi ini dengan `SharedHttpClient.client`.
+     */
+    val baseClient: OkHttpClient? = null,
 )
 
 class YoutubeiException(

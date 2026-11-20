@@ -23,6 +23,8 @@ import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockApiException
 import com.rosyidputrar.taskify.core.media.sponsorblock.SponsorBlockRepository
 import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import java.io.IOException
 
 /**
@@ -65,13 +67,21 @@ open class MyTubeMusicClient(
     /** Buka `Result<T>` fasad `:core:innertube` dan petakan galatnya ke pesan UI. */
     private suspend fun <T> call(block: suspend () -> Result<T>): T {
         val result = try {
-            block()
+            // C S-4: anggaran total per panggilan katalog — `withRetry` di
+            // InnerTube mengulang 3x dengan timeout 15 dtk per percobaan
+            // (~46 dtk tanpa batas ini). 20 dtk total: cukup untuk 1x
+            // percobaan lambat + 1x ulang cepat, tapi gagal-cepat bila
+            // jaringan menggantung.
+            withTimeout(CATALOG_TIMEOUT_MS) { block() }
+        } catch (e: TimeoutCancellationException) {
+            throw MyTubeMusicException("Permintaan ke YouTube Music kehabisan waktu. Coba lagi.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             throw e.toMusicException()
         }
         return result.getOrElse { failure ->
+            if (failure is TimeoutCancellationException) throw MyTubeMusicException("Permintaan ke YouTube Music kehabisan waktu. Coba lagi.")
             if (failure is CancellationException) throw failure
             throw failure.toMusicException()
         }
@@ -170,6 +180,9 @@ open class MyTubeMusicClient(
         }
 
     companion object {
+        /** C S-4: anggaran total per panggilan katalog (lihat `call`). */
+        const val CATALOG_TIMEOUT_MS = 20_000L
+
         /** Galat hulu → pesan siap tampil (pola `MusicErrors` Worker, tanpa kode server). */
         internal fun Throwable.toMusicException(): MyTubeMusicException = when (this) {
             is MyTubeMusicException -> this

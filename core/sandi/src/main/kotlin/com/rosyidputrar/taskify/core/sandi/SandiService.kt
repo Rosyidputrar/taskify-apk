@@ -4,6 +4,7 @@ import com.rosyidputrar.taskify.core.common.Timestamps
 import com.rosyidputrar.taskify.core.data.TaskifyDatabase
 import com.rosyidputrar.taskify.core.domain.sandi.ConfigFormat
 import com.rosyidputrar.taskify.core.domain.sandi.ConfigPayload
+import com.rosyidputrar.taskify.core.domain.sandi.Dek
 import com.rosyidputrar.taskify.core.domain.sandi.ItemPayload
 import com.rosyidputrar.taskify.core.domain.sandi.KEY_REJECTED_MESSAGE
 import com.rosyidputrar.taskify.core.domain.sandi.KeyRecord
@@ -13,6 +14,7 @@ import com.rosyidputrar.taskify.core.domain.sandi.RemoteKeyState
 import com.rosyidputrar.taskify.core.domain.sandi.RewrittenVault
 import com.rosyidputrar.taskify.core.domain.sandi.RotationProbe
 import com.rosyidputrar.taskify.core.domain.sandi.SandiCrypto
+import com.rosyidputrar.taskify.core.domain.sandi.TOTP_LOG_PAGE_SIZE
 import com.rosyidputrar.taskify.core.domain.sandi.TOTP_LOG_RETENTION_DAYS
 import com.rosyidputrar.taskify.core.domain.sandi.Totp
 import com.rosyidputrar.taskify.core.domain.sandi.TotpLogEntry
@@ -234,6 +236,42 @@ class SandiService(
     suspend fun recover(recoveryKey: String, newPassword: String) =
         rotate("Kunci pemulihan salah. Periksa lagi (huruf O/0 dan I/1 boleh tertukar).") { r, u -> SandiCrypto.resetPasswordWithRecovery(r, recoveryKey, newPassword, u) }
 
+    // ------------------------------------------------- D-11: baris yang akan tertinggal
+
+    /** Baris yang tidak bisa dibuka dengan kunci saat ini — akan hilang permanen bila rotasi dilanjutkan. */
+    data class RotationAtRisk(val items: Int, val log: Int, val configs: Int) {
+        val total: Int get() = items + log + configs
+    }
+
+    /** Hitung baris yang tertinggal dengan DEK sesi saat ini (brankas sudah terbuka). */
+    suspend fun rotationAtRisk(): RotationAtRisk = rotationAtRiskWith(session.require().dek)
+
+    /**
+     * Hitung baris yang tertinggal untuk alur pemulihan (brankas terkunci): DEK lama diturunkan
+     * dari kunci pemulihan yang dimasukkan. null = kunci pemulihan salah (rotasi tidak jalan).
+     */
+    suspend fun rotationAtRiskWithRecoveryKey(recoveryKey: String): RotationAtRisk? {
+        val k = repo.getKey() ?: return null
+        val userId = users.require()
+        val dek = SandiCrypto.unlockWithRecoveryKey(k.record, recoveryKey, userId) ?: return null
+        return try {
+            rotationAtRiskWith(dek)
+        } finally {
+            dek.destroy()
+        }
+    }
+
+    private suspend fun rotationAtRiskWith(dek: Dek): RotationAtRisk = withContext(Dispatchers.Default) {
+        val userId = users.require()
+        val items = countUndecryptable(repo.watchItemRows().first()) { r -> SandiCrypto.decryptItem(dek, userId, r.id, r.enc) }
+        val log = countUndecryptable(repo.watchTotpLogRows(limit = TOTP_LOG_PAGE_SIZE * 100).first()) { r -> SandiCrypto.decryptTotpLog(dek, userId, r.id, r.enc) }
+        var atRiskConfigs = 0
+        for (f in configs.watchFiles().first()) {
+            atRiskConfigs += countUndecryptable(configs.watchVersions(f.id).first()) { r -> SandiCrypto.decryptConfig(dek, userId, f.id, r.id, r.enc) }
+        }
+        RotationAtRisk(items, log, atRiskConfigs)
+    }
+
     private suspend fun rotate(wrongMessage: String, compute: (KeyRecord, String) -> RewrittenVault?): RotationDone {
         val k = repo.getKey() ?: throw SandiUserException("Brankas belum tersinkron ke perangkat ini.")
         // 1. Prasyarat — gagal di sini = tidak ada yang berubah.
@@ -388,3 +426,8 @@ class SandiService(
     }
 
 }
+
+/** D-11: hitung baris yang gagal dibuka ([decrypt] melempar) — predikat yang sama dipakai probe rotasi. */
+internal fun <T> countUndecryptable(rows: List<T>, decrypt: (T) -> Any?): Int =
+    rows.count { runCatching { decrypt(it) }.isFailure }
+

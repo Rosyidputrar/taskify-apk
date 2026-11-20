@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.net.URI
+import java.security.KeyStore
 
 plugins {
     alias(libs.plugins.taskify.android.application)
@@ -30,7 +31,6 @@ val serverConfigKeys = listOf(
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
     "POWERSYNC_URL",
-    "MUSIC_API_URL",
     "TIKTOK_API_URL",
     "PUBLIC_WEB_ORIGIN",
 )
@@ -42,7 +42,9 @@ android {
         applicationId = "com.rosyidputrar.taskify"
         // CI: nomor run GitHub Actions → setiap APK bisa dipasang menimpa yang sebelumnya.
         versionCode = config("VERSION_CODE").toIntOrNull() ?: 1
-        versionName = "1.0.0"
+        // Nomor build masuk ke nama versi yang tampil, supaya dua APK rilis bisa dibedakan
+        // dari Pengaturan (bukan hanya dari versionCode yang tak terlihat).
+        versionName = config("VERSION_CODE").toIntOrNull()?.let { "1.0.0.$it" } ?: "1.0.0"
         serverConfigKeys.forEach { key -> buildConfigField("String", key, config(key).asBuildConfigString()) }
         // App Link halaman unduh publik: host dari PUBLIC_WEB_ORIGIN (tanpa skema/path).
         manifestPlaceholders["publicWebHost"] = publicWebHost
@@ -102,6 +104,41 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// Fail-fast build rilis (E-M3): tanpa ini assembleRelease lokal tanpa keystore diam-diam
+// menghasilkan APK unsigned, dan password yang salah baru ketahuan di akhir build yang panjang
+// (packageRelease). Validasi jalan saat konfigurasi, sebelum kompilasi apa pun.
+// Sengaja TIDAK menyentuh build debug dan tidak menyentuh keystore/password yang ada.
+val releaseTaskRequested = gradle.startParameter.taskNames.any { requested ->
+    val simple = requested.substringAfterLast(':')
+    simple.contains("assembleRelease") || simple.contains("bundleRelease") || simple == "build" || simple == "assemble"
+}
+if (releaseTaskRequested) {
+    val storePath = config("RELEASE_KEYSTORE_PATH")
+    if (storePath.isEmpty()) throw GradleException("Build rilis butuh keystore: isi RELEASE_KEYSTORE_PATH (path ke berkas .jks/.keystore). Build debug tidak butuh ini.")
+    val storeFile = file(storePath)
+    if (!storeFile.exists()) throw GradleException("Build rilis gagal: RELEASE_KEYSTORE_PATH menunjuk berkas yang tidak ada: $storePath")
+    val storePassword = config("RELEASE_KEYSTORE_PASSWORD")
+    val keyAlias = config("RELEASE_KEY_ALIAS")
+    val keyPassword = config("RELEASE_KEY_PASSWORD")
+    if (storePassword.isEmpty()) throw GradleException("Build rilis gagal: RELEASE_KEYSTORE_PASSWORD kosong.")
+    if (keyAlias.isEmpty()) throw GradleException("Build rilis gagal: RELEASE_KEY_ALIAS kosong.")
+    if (keyPassword.isEmpty()) throw GradleException("Build rilis gagal: RELEASE_KEY_PASSWORD kosong.")
+    val keystore = try {
+        KeyStore.getInstance(storeFile, storePassword.toCharArray())
+    } catch (e: Exception) {
+        throw GradleException("Build rilis gagal: keystore tidak bisa dibuka dengan RELEASE_KEYSTORE_PASSWORD (${e.message}).", e)
+    }
+    try {
+        if (keystore.getKey(keyAlias, keyPassword.toCharArray()) == null) {
+            throw GradleException("Build rilis gagal: alias '$keyAlias' (RELEASE_KEY_ALIAS) tidak ada di keystore, atau RELEASE_KEY_PASSWORD salah.")
+        }
+    } catch (e: GradleException) {
+        throw e
+    } catch (e: Exception) {
+        throw GradleException("Build rilis gagal: kunci '$keyAlias' tidak bisa dibuka dengan RELEASE_KEY_PASSWORD (${e.message}).", e)
     }
 }
 

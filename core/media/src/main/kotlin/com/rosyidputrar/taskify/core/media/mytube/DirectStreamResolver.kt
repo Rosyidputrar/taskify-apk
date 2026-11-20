@@ -11,6 +11,7 @@ import com.rosyidputrar.taskify.core.innertube.pages.pickStr
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -55,6 +56,8 @@ open class DirectStreamResolver(
     private val innerTube: InnerTube = InnerTube(),
     private val clients: List<MyTubeClient>? = null,
     private val attemptTimeoutMs: Long = DIRECT_TIMEOUT_MS,
+    /** Anggaran total satu resolve (C M-3); dibuat parameter supaya tes bisa memakai anggaran kecil. */
+    private val totalTimeoutMs: Long = DIRECT_TOTAL_TIMEOUT_MS,
     /** Penyedia `signatureTimestamp` (C1-8); `null` = tanpa timestamp (perilaku lama). */
     private val signatureTimestampProvider: (suspend (MyTubeClient, String) -> Int?)? = null,
     /** Pastikan `visitorData` siap bila tanpa konteks login (C2-13); `null` = tanpa jaminan (perilaku lama). */
@@ -71,8 +74,8 @@ open class DirectStreamResolver(
 
     /**
      * Resolve satu URL audio langsung. Klien dicoba berurutan; tiap klien
-     * mendapat satu retry langsung bila gagal HTTP 429/5xx/403 (flaky
-     * sesaat — pola `callInnertubeWithRetry` Worker). `LOGIN_REQUIRED`
+     * mendapat satu retry (dengan jeda backoff, C S-5) bila gagal HTTP
+     * 429/5xx/403 (flaky sesaat — pola `callInnertubeWithRetry` Worker). `LOGIN_REQUIRED`
      * di-retry sampai dua kali tambahan (total 3 percobaan per klien):
      * status ini terbukti flaky per permintaan — `player` yang sama bisa
      * menjawab `LOGIN_REQUIRED` lalu `OK` pada percobaan berikut — dan
@@ -129,11 +132,30 @@ open class DirectStreamResolver(
         // video + sesi ini (ArchiveTune `buildStreamClientOrder.filterNot
         // isStreamClientTemporarilyBlocked`); bila semuanya terblokir,
         // laporkan AllClientsFailed supaya pemutar bisa menyegarkan sesi.
+        //
+        // C S-12 — gate `loginRequired`: klien yang menyatakan wajib login
+        // (WEB_CREATOR, lihat `youtube_clients.json`) dilewati bila tidak
+        // ada konteks login pemutaran. Jalur normal sudah menjamin ini
+        // lewat `clientsFor` (WEB_CREATOR hanya masuk LOGIN_CLIENTS), tapi
+        // gate di sini menegakkan kontrak untuk daftar klien eksplisit
+        // (tes / pemanggil mendatang) — tanpa gate, `WEB_CREATOR` tanpa
+        // cookie akan dipanggil dan gagal `LOGIN_REQUIRED` di server.
         val fingerprint = effectiveAuth.streamCacheFingerprint
         val attemptedClients = effectiveClients.filterNot { client ->
-            failedStreamClients?.isBlocked(videoId, FailedStreamClients.clientKey(client), fingerprint) == true
+            failedStreamClients?.isBlocked(videoId, FailedStreamClients.clientKey(client), fingerprint) == true ||
+                client.loginRequired && !effectiveAuth.hasPlaybackLoginContext
         }
         if (attemptedClients.isEmpty() && effectiveClients.isNotEmpty()) {
+            val loginGated = effectiveClients.filter { it.loginRequired && !effectiveAuth.hasPlaybackLoginContext }
+            if (loginGated.size == effectiveClients.size) {
+                return Result.failure(
+                    StreamFailureException(
+                        StreamFailure.LoginRequired(
+                            "Klien ${loginGated.joinToString(", ") { it.clientName }} memerlukan login",
+                        ),
+                    ),
+                )
+            }
             return Result.failure(
                 StreamFailureException(
                     StreamFailure.AllClientsFailed(
@@ -144,20 +166,31 @@ open class DirectStreamResolver(
         }
         // Tangga kualitas (Tahap 8, C2-23): tier dihitung dari kualitas
         // efektif (Auto + metered = High); tiap tier mencoba semua klien.
+        //
+        // C M-3 — anggaran total satu resolve direct: [DIRECT_TOTAL_TIMEOUT_MS]
+        // membatasi SELURUH sapuan tier+klien, bukan hanya satu percobaan
+        // ([DIRECT_TIMEOUT_MS] per percobaan). Tanpa batas ini, 4 klien × 3
+        // percobaan × 10 dtk = ~2 menit saat server menggantung. Batas total
+        // tidak mengubah jalur sukses (resolve normal selesai dalam hitungan
+        // detik); ia hanya memotong sapuan yang menggantung menjadi
+        // `StreamFailure.Timeout`.
         val tiers = qualityLadder(effectiveQuality(quality, networkMetered))
-        var lastFailure: StreamFailureException? = null
-        for (tier in tiers) {
-            val attempt = resolveWithQuality(tier, attemptedClients, videoId, effectiveAuth, preferMp4a, pinnedItag)
-            if (attempt.isSuccess) return attempt
-            val failure = attempt.exceptionOrNull() as? StreamFailureException
-                ?: return attempt // exception tak terduga: teruskan apa adanya
-            lastFailure = failure
-            // Hanya kegagalan format yang layak coba tier berikut.
-            if (failure.failure !is StreamFailure.NoFormat && failure.failure !is StreamFailure.Unplayable) {
-                return Result.failure(failure)
+        val result = withTimeoutOrNull(totalTimeoutMs) {
+            var lastFailure: StreamFailureException? = null
+            for (tier in tiers) {
+                val attempt = resolveWithQuality(tier, attemptedClients, videoId, effectiveAuth, preferMp4a, pinnedItag)
+                if (attempt.isSuccess) return@withTimeoutOrNull attempt
+                val failure = attempt.exceptionOrNull() as? StreamFailureException
+                    ?: return@withTimeoutOrNull attempt // exception tak terduga: teruskan apa adanya
+                lastFailure = failure
+                // Hanya kegagalan format yang layak coba tier berikut.
+                if (failure.failure !is StreamFailure.NoFormat && failure.failure !is StreamFailure.Unplayable) {
+                    return@withTimeoutOrNull Result.failure(failure)
+                }
             }
+            Result.failure(lastFailure ?: StreamFailureException(StreamFailure.NoFormat))
         }
-        return Result.failure(lastFailure ?: StreamFailureException(StreamFailure.NoFormat))
+        return result ?: Result.failure(StreamFailureException(StreamFailure.Timeout))
     }
 
     /** Satu tier kualitas: semua klien dicoba berurutan; gagal total → kegagalan klien utama. */
@@ -219,7 +252,12 @@ open class DirectStreamResolver(
                 val maxAttempts = if (e.failure is StreamFailure.LoginRequired) MAX_LOGIN_REQUIRED_ATTEMPTS else MAX_ATTEMPTS_PER_CLIENT
                 if (!e.failure.isRetryable || attempt >= maxAttempts - 1) return Result.failure(e)
                 attempt++
-                // Retry langsung, tanpa jeda — flaky sesaat.
+                // C S-5 — jeda backoff antar retry se-klien (seperti
+                // `withRetry` di `InnerTube.kt`): retry langsung tanpa jeda
+                // menghantam server 12× beruntun saat flaky dan memperparah
+                // rate-limit 429 yang justru sedang dihindari. Jeda 500 ms,
+                // lalu 1 dtk untuk retry kedua LOGIN_REQUIRED.
+                delay(RETRY_BACKOFF_INITIAL_MS * (1L shl (attempt - 1)))
             }
         }
     }
@@ -345,6 +383,12 @@ open class DirectStreamResolver(
     companion object {
         /** Batas tunggu resolve direct — sama seperti `DIRECT_TIMEOUT_MS` Worker. */
         const val DIRECT_TIMEOUT_MS = 10_000L
+
+        /** Anggaran total satu resolve direct, semua tier + klien (C M-3). */
+        const val DIRECT_TOTAL_TIMEOUT_MS = 45_000L
+
+        /** Jeda awal backoff antar retry se-klien (C S-5); retry ke-2 = 2× ini. */
+        const val RETRY_BACKOFF_INITIAL_MS = 500L
 
         /** Satu percobaan awal + satu retry langsung untuk HTTP flaky. */
         const val MAX_ATTEMPTS_PER_CLIENT = 2

@@ -22,6 +22,19 @@ class DeviceStoresTest {
         assertNull(store.read())
     }
 
+    /** D-02: jejak verifikasi dicatat saat dipercaya, dan ikut terhapus saat perangkat dilupakan. */
+    @Test fun lastVerifiedRecordedOnTrustAndClearedOnForget() {
+        val store = MfaTrustStore(prefs)
+        assertNull(store.lastVerifiedAt())
+        store.trust("u", now = 1_000)
+        assertEquals(1_000L, store.lastVerifiedAt())
+        store.recordVerified(now = 2_000)
+        assertEquals(2_000L, store.lastVerifiedAt())
+        store.clear()
+        assertNull(store.lastVerifiedAt())
+        assertNull(store.read())
+    }
+
     @Test fun loginNameCanBeTurnedOffWhichDeletesIt() {
         val store = LoginNameStore(prefs)
         store.write("  Rosyid  ")

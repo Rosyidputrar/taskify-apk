@@ -117,7 +117,11 @@ class FilesViewModel(
     override fun copied() = messenger.show("Tautan disalin")
 
     private fun run(key: String, success: String?, block: suspend () -> Unit) {
-        if (local.value.busy != null) return
+        if (local.value.busy != null) {
+            // Ketukan kedua saat aksi pertama berjalan tidak lagi hilang diam-diam.
+            messenger.show("Tunggu sebentar…")
+            return
+        }
         local.value = local.value.copy(busy = key)
         launchSafe {
             try {

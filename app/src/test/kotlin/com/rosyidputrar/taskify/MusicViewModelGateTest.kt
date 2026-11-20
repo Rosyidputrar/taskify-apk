@@ -4,7 +4,10 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.media.AccountInfo
+import com.rosyidputrar.taskify.core.domain.media.BrowseTarget
+import com.rosyidputrar.taskify.core.domain.media.CollectionKind
 import com.rosyidputrar.taskify.core.domain.media.DiscoverySection
+import com.rosyidputrar.taskify.core.domain.media.MusicCollection
 import com.rosyidputrar.taskify.core.domain.media.Lyrics
 import com.rosyidputrar.taskify.core.domain.media.MoodGroup
 import com.rosyidputrar.taskify.core.domain.media.MusicQuality
@@ -74,11 +77,18 @@ class MusicViewModelGateTest {
         }
     }
 
-    private class FakeClient(tube: MyTube) : MyTubeMusicClient(tube) {
+    // C S-9: `inner` supaya `playlistResult`/`collectionMoreResult` bisa memakai helper `song()` milik kelas luar.
+    private inner class FakeClient(tube: MyTube) : MyTubeMusicClient(tube) {
         var searchCalls = 0
         var suggestCalls = 0
         var homeCalls = 0
         var throwAuthOnSearch = false
+        /** C S-1: kendali gagal per seksi Jelajah. */
+        var failHome = false
+        var failCharts = false
+        var failReleases = false
+        var failMoods = false
+        var homeResult: List<DiscoverySection> = emptyList()
         val results = SearchResults(songs = listOf(Song("aaaaaaaaaaa", "Lagu a", "Artis", "3.05", emptyList()), Song("bbbbbbbbbbb", "Lagu b", "Artis", "3.05", emptyList())))
 
         override suspend fun search(query: String, filter: SearchFilter): SearchResults {
@@ -94,17 +104,47 @@ class MusicViewModelGateTest {
 
         override suspend fun home(): List<DiscoverySection> {
             homeCalls++
+            if (failHome) throw RuntimeException("home gagal")
+            return homeResult
+        }
+
+        override suspend fun charts(country: String): List<DiscoverySection> {
+            if (failCharts) throw RuntimeException("charts gagal")
             return emptyList()
         }
 
-        override suspend fun charts(country: String): List<DiscoverySection> = emptyList()
-        override suspend fun newReleases(): List<DiscoverySection> = emptyList()
-        override suspend fun moods(): List<MoodGroup> = emptyList()
+        override suspend fun newReleases(): List<DiscoverySection> {
+            if (failReleases) throw RuntimeException("releases gagal")
+            return emptyList()
+        }
+
+        override suspend fun moods(): List<MoodGroup> {
+            if (failMoods) throw RuntimeException("moods gagal")
+            return emptyList()
+        }
+
+        // C S-9: koleksi 2 halaman untuk playPage.
+        var collectionMoreCalls = 0
+        var playlistResult: MusicCollection = MusicCollection(
+            CollectionKind.Playlist, "pl1", "Playlist", "", emptyList(),
+            listOf(song("a"), song("b")), cursor = "c2",
+        )
+        var collectionMoreResult: MusicCollection = MusicCollection(
+            CollectionKind.Playlist, "pl1", "Playlist", "", emptyList(),
+            listOf(song("c")), cursor = null,
+        )
+
+        override suspend fun playlist(browseId: String): MusicCollection = playlistResult
+
+        override suspend fun collectionMore(kind: CollectionKind, cursor: String, id: String, showTitle: String): MusicCollection {
+            collectionMoreCalls++
+            return collectionMoreResult
+        }
         override suspend fun track(videoId: String): Track = Track(videoId, "", emptyList(), lyricsChecked = true)
         override suspend fun syncedLyrics(song: Song, lyricsId: String?): Lyrics? = null
     }
 
-    private inner class Fixture(loggedIn: Boolean) {
+    private inner class Fixture(loggedIn: Boolean, online: Boolean = true) {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val authStore = MyTubeAuthStore(context).also { it.clear() }
         val tube = FakeTube()
@@ -125,7 +165,7 @@ class MusicViewModelGateTest {
             // SponsorBlock default: tidak pernah terpanggil di tes ini
             // (resolve tidak pernah selesai → status tidak pernah Playing).
             player = MusicPlayer(context, tube, resolver, authStore = authStore)
-            vm = MusicViewModel(player, client, OnlineFlow { flowOf(true) }, null, repo)
+            vm = MusicViewModel(player, client, OnlineFlow { flowOf(online) }, null, repo)
             scope.launch { vm.state.collect { states += it } }
             idle()
         }
@@ -149,6 +189,67 @@ class MusicViewModelGateTest {
         assertEquals(0, f.client.searchCalls, "belum login: client.search tidak dipanggil")
         assertTrue(f.current().showLogin, "aksi UI membuka prompt login")
         assertEquals(MusicLoginUiState.LoggedOut, f.current().login)
+    }
+
+    // C S-4: offline gagal-cepat — tanpa menunggu timeout katalog (20 dtk).
+    @Test fun searchWhenOfflineFailsFastWithoutCallingClient() {
+        val f = Fixture(loggedIn = true, online = false)
+        f.vm.setQuery("negoro")
+        f.vm.search()
+        f.idle()
+        assertEquals(0, f.client.searchCalls, "offline: client.search tidak dipanggil")
+        assertFalse(f.current().search.loading)
+        assertTrue(f.current().search.error?.contains("offline", ignoreCase = true) == true, f.current().search.error)
+    }
+
+    // C S-1: gagal SEBAGIAN (2 dari 4 seksi) → partialError, seksi yang
+    // berhasil tetap tampil, tanpa blok error total.
+    @Test fun explorePartialFailureShowsPartialErrorAndKeepsSections() {
+        val f = Fixture(loggedIn = true)
+        f.client.homeResult = listOf(DiscoverySection.Songs("Beranda", listOf(song("a"))))
+        f.client.failCharts = true
+        f.client.failMoods = true
+        f.vm.loadExplore(force = true)
+        f.idle()
+        val e = f.current().explore
+        assertNull(e.error, "gagal sebagian bukan error total")
+        assertNull(e.errorDetail)
+        assertTrue(e.partialError?.contains("Sebagian") == true, e.partialError)
+        assertEquals(1, e.home.size, "seksi yang berhasil tetap tampil")
+        assertTrue(e.charts.isEmpty() && e.moods.isEmpty())
+    }
+
+    // C S-1: gagal TOTAL (4 dari 4 seksi) → error besar, tanpa partialError.
+    @Test fun exploreTotalFailureShowsErrorNotPartial() {
+        val f = Fixture(loggedIn = true)
+        f.client.failHome = true
+        f.client.failCharts = true
+        f.client.failReleases = true
+        f.client.failMoods = true
+        f.vm.loadExplore(force = true)
+        f.idle()
+        val e = f.current().explore
+        assertTrue(e.error != null, "gagal total harus punya error")
+        assertNull(e.partialError)
+    }
+
+    // C S-9: playPage mulai putar dari halaman pertama SEKARANG, halaman 2
+    // disambung di latar ke antrean yang sama.
+    @Test fun playPageStartsAfterFirstPageThenAppendsNextPage() {
+        val f = Fixture(loggedIn = true)
+        f.vm.open(BrowseTarget.Playlist("pl1", "Playlist"))
+        f.idle()
+        assertEquals(2, f.current().page?.collection?.tracks?.size)
+        f.vm.playPage(false)
+        f.idle()
+        assertEquals(
+            listOf("axxxxxxxxxx", "bxxxxxxxxxx", "cxxxxxxxxxx"),
+            f.player.state.value.ordered.map { it.videoId },
+            "halaman 1 langsung antre + halaman 2 tersambung di latar",
+        )
+        assertEquals(1, f.client.collectionMoreCalls, "halaman 2 diambil sekali di latar")
+        assertNull(f.current().busy, "busy dibersihkan setelah semua halaman")
+        assertEquals(3, f.current().page?.collection?.tracks?.size, "halaman tetap menyimpan koleksi gabungan")
     }
 
     @Test fun playSongWhenLoggedOutDoesNotResolve() {

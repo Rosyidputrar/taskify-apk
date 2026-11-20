@@ -468,10 +468,17 @@ open class MyTube(private val innerTube: InnerTube = InnerTube()) {
      * (`[mm:ss.mmm]teks` per baris). Tanpa PoToken di tahap 1; bila
      * YouTube menolak tanpa token/visitorData, hasilnya gagal (Result)
      * dan pemanggil (LyricsRepository) jatuh ke `null`, bukan error.
+     *
+     * C S-6: [authState] diteruskan eksplisit seperti jalur lain
+     * (`track`/`search`/`lyrics`) — dulu `transcript` tidak menerima
+     * authState dan `getTranscript` memakai state internal transport.
      */
-    open suspend fun transcript(videoId: String): Result<String> =
+    open suspend fun transcript(
+        videoId: String,
+        authState: PlaybackAuthState = innerTube.currentAuthState(),
+    ): Result<String> =
         resultOf {
-            val raw = innerTube.getTranscript(MyTubeClient.WEB_REMIX, videoId)
+            val raw = innerTube.getTranscript(MyTubeClient.WEB_REMIX, videoId, authState = authState)
             parseTranscript(parse(raw))
         }
 

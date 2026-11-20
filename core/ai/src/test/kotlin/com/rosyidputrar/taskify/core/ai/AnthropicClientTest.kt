@@ -112,4 +112,25 @@ class AnthropicClientTest {
         assertEquals(listOf("claude-haiku-x", "claude-sonnet-x"), c.models())
         assertEquals("https://api.anthropic.com/v1/models?limit=1000", requests.single().first.url.toString())
     }
+
+    @Test fun modelsFollowPaginationWhileHasMore() = runBlocking {
+        var calls = 0
+        val c = AnthropicClient(
+            "https://api.anthropic.com", "sk-ant",
+            HttpClient(MockEngine { req ->
+                requests += req to String(req.body.toByteArray())
+                calls++
+                val page = if (calls == 1) {
+                    """{"data":[{"id":"claude-b","type":"model"}],"has_more":true}"""
+                } else {
+                    """{"data":[{"id":"claude-a","type":"model"}],"has_more":false}"""
+                }
+                respond(page, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }),
+        )
+        assertEquals(listOf("claude-a", "claude-b"), c.models())
+        assertEquals(2, calls)
+        assertEquals("https://api.anthropic.com/v1/models?limit=1000", requests[0].first.url.toString())
+        assertEquals("https://api.anthropic.com/v1/models?limit=1000&after_id=claude-b", requests[1].first.url.toString())
+    }
 }

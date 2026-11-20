@@ -45,6 +45,24 @@ class SandiExporterTest {
         )
     }
 
+    /** D-12: byte yang diserahkan ke writer dinolkan setelah ditulis (tidak tertinggal di memori). */
+    @Test fun writtenBytesAreZeroedAfterFinish() = runTest {
+        var handed: ByteArray? = null
+        val exporter = SandiExporter(
+            scope = this,
+            verify = { it == "master benar" },
+            writer = { _, bytes -> handed = bytes },
+            show = {},
+            today = { "2026-11-19" },
+        )
+        exporter.start(ExportKind.GoogleCsv, "master benar", items)
+        exporter.finish("content://x")
+        advanceUntilIdle()
+        val bytes = handed
+        assertNotNull(bytes)
+        assertTrue(bytes.all { it == 0.toByte() }, "isi ekspor harus dinolkan setelah ditulis")
+    }
+
     @Test fun wrongOrEmptyPasswordExportsNothing() = runTest {
         val h = Harness(this)
         assertEquals("Master password salah.", assertFailsWith<SandiUserException> { h.exporter.start(ExportKind.GoogleCsv, "salah", items) }.message)

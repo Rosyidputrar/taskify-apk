@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.core.reminders
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -115,6 +116,11 @@ class ContextNotifier(private val context: Context, private val prefs: ReminderP
 
     fun cancelBill(recurringId: String) = NotificationManagerCompat.from(context).cancel(billNotificationId(recurringId))
 
+    // False positive lint: semua pemanggil helper ini sudah melewati canPost()
+    // (cek izin POST_NOTIFICATIONS + saklar + kanal) di metode publiknya — lint
+    // tidak mengenali guard itu karena notify() berada di dalam runCatching.
+    // Sama seperti DraftAlerts dan ReminderNotifier.
+    @SuppressLint("MissingPermission")
     private fun notify(id: Int, n: android.app.Notification) {
         runCatching { NotificationManagerCompat.from(context).notify(id, n) }
     }

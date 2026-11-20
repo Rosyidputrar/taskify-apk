@@ -33,6 +33,8 @@ sealed interface ChatItem {
         val tools: List<ToolActivity>,
         /** Jawaban terakhir di percakapan (boleh diulang). */
         val last: Boolean,
+        /** Jawaban terpotong karena batas token (lihat [ChatEngine.TRUNCATED_NOTE]). */
+        val truncated: Boolean = false,
     ) : ChatItem
 }
 
@@ -69,6 +71,7 @@ fun chatItems(messages: List<ChatMessage>, live: Map<String, String>, running: B
                 ChatItem.Assistant(
                     id = m.id, text = live[m.id] ?: m.content, state = m.state, error = m.error,
                     streaming = m.state == ChatState.Streaming, tools = tools, last = m.id == lastAssistant,
+                    truncated = m.content.endsWith(ChatEngine.TRUNCATED_NOTE),
                 )
             }
         }

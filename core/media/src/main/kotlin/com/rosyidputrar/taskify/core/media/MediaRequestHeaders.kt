@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.core.media
 
+import androidx.annotation.OptIn
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
@@ -7,6 +8,7 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.common.util.UnstableApi
 import com.rosyidputrar.taskify.core.innertube.SharedHttpClient
 import com.rosyidputrar.taskify.core.innertube.models.MyTubeClient
 import com.rosyidputrar.taskify.core.media.mytube.streamRequestHeaders
@@ -56,6 +58,7 @@ import java.util.concurrent.ConcurrentHashMap
  * penuh tanpa `Range` → googlevideo 403 0 byte pada URL ANDROID
  * (INVESTIGASI-B §2.5, terbukti dari bytecode media3 1.11.1).
  */
+@OptIn(UnstableApi::class)
 object MediaRequestHeaders {
     const val ORIGIN = "https://music.youtube.com"
     const val REFERER = "https://music.youtube.com/"
@@ -179,6 +182,7 @@ object MediaRequestHeaders {
  * Entri tidak dihapus otomatis (URL berumur ~6 jam; jumlah lagu per sesi
  * kecil) — [clear] dipakai saat pemutar di-`wipe()`.
  */
+@OptIn(UnstableApi::class)
 object ResolvedStreamRegistry {
     private val lengths = ConcurrentHashMap<String, Long>()
     private val headers = ConcurrentHashMap<String, Map<String, String>>()

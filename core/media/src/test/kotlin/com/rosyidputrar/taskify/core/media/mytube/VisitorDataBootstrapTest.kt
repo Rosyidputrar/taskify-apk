@@ -38,6 +38,7 @@ class VisitorDataBootstrapTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(MyTubeAuthStore.PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences(MyTubeAuthStore.SECURE_PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
         store = MyTubeAuthStore(context)
     }
 

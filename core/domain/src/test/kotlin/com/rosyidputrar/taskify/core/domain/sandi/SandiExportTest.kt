@@ -49,7 +49,8 @@ class SandiExportTest {
     @Test fun csvRoundTripsTrickyValuesUnchanged() {
         val tricky = listOf(
             item("Bank, Utama", "jago.com", "rosyid \"rp\"", "a,b\"c\nd\r\ne", "baris 1\nbaris 2"),
-            // Diawali karakter formula: TIDAK boleh diberi awalan ' (sandi jadi salah saat diimpor).
+            // Diawali karakter formula: sandi TIDAK boleh diberi awalan ' (jadi salah saat
+            // diimpor); username & catatan justru diberi awalan (D-08).
             item("Formula", "https://example.com", "=user", "=SUM(A1)+@cmd", "-catatan"),
             item("Spasi", "https://spasi.example.com", " lead", "trail ", "\tTab"),
             item("Emoji 🔐", "https://emoji.example.com", "üser", "pässwörd🔑", ""),
@@ -59,9 +60,27 @@ class SandiExportTest {
         val byName = rows.drop(1).associateBy { it[0] }
         assertEquals(4, byName.size)
         assertEquals(listOf("Bank, Utama", "https://jago.com", "rosyid \"rp\"", "a,b\"c\nd\r\ne", "baris 1\nbaris 2"), byName.getValue("Bank, Utama"))
-        assertEquals(listOf("Formula", "https://example.com", "=user", "=SUM(A1)+@cmd", "-catatan"), byName.getValue("Formula"))
+        // D-08: sandi TIDAK boleh diberi awalan ' (jadi salah saat diimpor), tapi kolom
+        // non-sandi yang diawali karakter formula diberi awalan ' anti-formula spreadsheet.
+        assertEquals(listOf("Formula", "https://example.com", "'=user", "=SUM(A1)+@cmd", "'-catatan"), byName.getValue("Formula"))
         assertEquals(listOf("Spasi", "https://spasi.example.com", " lead", "trail ", "\tTab"), byName.getValue("Spasi"))
         assertEquals(listOf("Emoji 🔐", "https://emoji.example.com", "üser", "pässwörd🔑", ""), byName.getValue("Emoji 🔐"))
+    }
+
+    @Test fun antiFormulaPrefixesOnlyFormulaLikeNonPasswordFields() {
+        assertTrue(SandiExport.startsWithFormulaChar("=2+5"))
+        assertTrue(SandiExport.startsWithFormulaChar("+62812"))
+        assertTrue(SandiExport.startsWithFormulaChar("-2"))
+        assertTrue(SandiExport.startsWithFormulaChar("@user"))
+        assertTrue(SandiExport.startsWithFormulaChar("  =cmd")) // spasi awal tidak melindungi
+        assertFalse(SandiExport.startsWithFormulaChar("GitHub"))
+        assertFalse(SandiExport.startsWithFormulaChar(""))
+        assertFalse(SandiExport.startsWithFormulaChar("a=b"))
+        assertEquals("'=SUM(A1)", SandiExport.antiFormula("=SUM(A1)"))
+        assertEquals("biasa", SandiExport.antiFormula("biasa"))
+        // Judul & catatan ikut diberi awalan; sandi tidak pernah disentuh.
+        val rows = parseCsv(SandiExport.passwordsCsv(listOf(item("=Jebakan", "https://x.example.com", "u", "=sandi", "@catatan")))).drop(1)
+        assertEquals(listOf("'=Jebakan", "https://x.example.com", "u", "=sandi", "'@catatan"), rows.single())
     }
 
     @Test fun csvSkipsItemsWithoutPasswordAndNormalisesUrls() {

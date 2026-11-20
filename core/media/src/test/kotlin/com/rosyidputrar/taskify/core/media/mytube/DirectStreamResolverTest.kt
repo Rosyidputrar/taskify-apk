@@ -74,6 +74,7 @@ class DirectStreamResolverTest {
         handler: MockRequestHandler,
         clients: List<MyTubeClient> = DirectStreamResolver.DEFAULT_CLIENTS,
         attemptTimeoutMs: Long = DirectStreamResolver.DIRECT_TIMEOUT_MS,
+        totalTimeoutMs: Long = DirectStreamResolver.DIRECT_TOTAL_TIMEOUT_MS,
         signatureTimestampProvider: (suspend (MyTubeClient, String) -> Int?)? = null,
         ensureVisitorData: (suspend () -> String?)? = null,
         failedStreamClients: FailedStreamClients? = null,
@@ -81,7 +82,7 @@ class DirectStreamResolverTest {
         val engine = MockEngine(handler)
         val tube = InnerTube(HttpClient(engine) { expectSuccess = true })
         return DirectStreamResolver(
-            tube, clients, attemptTimeoutMs, signatureTimestampProvider, ensureVisitorData,
+            tube, clients, attemptTimeoutMs, totalTimeoutMs, signatureTimestampProvider, ensureVisitorData,
             failedStreamClients = failedStreamClients,
         )
     }
@@ -166,6 +167,35 @@ class DirectStreamResolverTest {
         val result = resolver.resolve("1RrF6Ee_io0", authState = auth)
         assertEquals(StreamFailure.InvalidLoginContext, failureOf(result))
         assertEquals(0, calls, "gate C2-12: player tidak pernah dipanggil")
+    }
+
+    // ------------------------------------------------------------ C S-12: gate loginRequired
+
+    @Test fun `klien loginRequired dilewati bila anonim, tanpa memanggil player`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            { _ ->
+                calls++
+                okJson(playerOk(sixFormatsJson))
+            },
+            clients = listOf(MyTubeClient.WEB_CREATOR),
+        )
+        val failure = failureOf(resolver.resolve("1RrF6Ee_io0"))
+        assertTrue(failure is StreamFailure.LoginRequired, "WEB_CREATOR tanpa login harus gagal LoginRequired, bukan $failure")
+        assertEquals(0, calls, "gate loginRequired: player tidak pernah dipanggil")
+    }
+
+    @Test fun `klien loginRequired dilewati lalu klien anonim dipakai`() = runBlocking {
+        val seen = mutableListOf<String>()
+        val resolver = resolverFor(
+            { request ->
+                seen += clientNameOf(request)
+                okJson(playerOk(sixFormatsJson))
+            },
+            clients = listOf(MyTubeClient.WEB_CREATOR, MyTubeClient.ANDROID),
+        )
+        assertEquals(251, resolver.resolve("1RrF6Ee_io0").getOrThrow().itag)
+        assertEquals(listOf("ANDROID"), seen, "WEB_CREATOR harus dilewati, ANDROID yang dipanggil")
     }
 
     @Test fun `PoToken ditempel ke player dan pot ke URL`() = runBlocking {
@@ -313,6 +343,50 @@ class DirectStreamResolverTest {
 
     @Test fun `timeout 10 detik adalah batas yang dipakai resolver`() {
         assertEquals(10_000L, DirectStreamResolver.DIRECT_TIMEOUT_MS)
+    }
+
+    // ------------------------------------------------------------ C M-3: anggaran total
+
+    @Test fun `anggaran total memotong sapuan yang menggantung menjadi Timeout`() = runBlocking {
+        var calls = 0
+        val resolver = resolverFor(
+            {
+                calls++
+                delay(10_000) // menggantung jauh melewati anggaran total
+                okJson(playerOk(sixFormatsJson))
+            },
+            clients = listOf(MyTubeClient.ANDROID, MyTubeClient.WEB_REMIX, MyTubeClient.MWEB),
+            attemptTimeoutMs = 10_000,
+            totalTimeoutMs = 300,
+        )
+        val started = System.currentTimeMillis()
+        assertEquals(StreamFailure.Timeout, failureOf(resolver.resolve("1RrF6Ee_io0")))
+        val elapsed = System.currentTimeMillis() - started
+        assertTrue(elapsed < 5_000, "anggaran total harus memotong jauh sebelum 45 dtk, aktual ${elapsed}ms")
+        assertEquals(1, calls, "sapuan berhenti pada percobaan yang menggantung, tidak lanjut ke klien berikut")
+    }
+
+    @Test fun `anggaran total bawaan 45 detik`() {
+        assertEquals(45_000L, DirectStreamResolver.DIRECT_TOTAL_TIMEOUT_MS)
+    }
+
+    // ------------------------------------------------------------ C S-5: backoff antar retry
+
+    @Test fun `retry 429 menunggu backoff sebelum percobaan kedua`() = runBlocking {
+        var calls = 0
+        val startedAt = mutableListOf<Long>()
+        val resolver = resolverFor(
+            {
+                calls++
+                startedAt += System.currentTimeMillis()
+                respond("terlalu banyak", HttpStatusCode.TooManyRequests, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+            },
+            clients = listOf(MyTubeClient.ANDROID),
+        )
+        assertEquals(StreamFailure.Http(429), failureOf(resolver.resolve("1RrF6Ee_io0")))
+        assertEquals(2, calls)
+        val gap = startedAt[1] - startedAt[0]
+        assertTrue(gap >= 400, "retry harus menunggu backoff, jeda aktual ${gap}ms")
     }
 
     @Test fun `player menggantung melewati batas menjadi StreamFailure Timeout`() = runBlocking {

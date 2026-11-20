@@ -90,12 +90,15 @@ fun isTextPath(path: String): Boolean {
 
 fun isImagePath(path: String): Boolean = Regex("\\.(png|jpe?g|gif|webp|svg|ico|avif)$", RegexOption.IGNORE_CASE).containsMatchIn(path)
 
-/** Label versi berikutnya: v1 → v2, v1.2 → v1.3; tanpa label numerik → v1. */
+/** Label versi berikutnya: v1 → v2, v1.2 → v1.3; tanpa label numerik → v1. Label yang angkanya tidak muat di Int (mis. v99999999999999999999) diabaikan, bukan crash. */
 fun nextVersionLabel(labels: List<String?>): String {
     var best: List<Int>? = null
     for (l in labels) {
         val m = l?.let { Regex("^v?(\\d+(?:\\.\\d+)*)$", RegexOption.IGNORE_CASE).find(it) } ?: continue
-        val parts = m.groupValues[1].split('.').map { it.toInt() }
+        val parsed = m.groupValues[1].split('.').map { it.toIntOrNull() }
+        if (parsed.any { it == null }) continue // angka terlalu besar untuk Int
+        val parts = parsed.filterNotNull()
+        if (parts.last() == Int.MAX_VALUE) continue // tidak bisa dinaikkan lagi
         if (best == null || compareVersions(parts, best) > 0) best = parts
     }
     val b = best ?: return "v1"

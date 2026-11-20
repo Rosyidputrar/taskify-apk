@@ -55,6 +55,10 @@ interface ChatActions {
     fun delete(onDone: () -> Unit) {}
 }
 
+/** Provider yang dipakai `setModel`: provider sesi bila ada, kalau tidak provider pengaturan. */
+internal fun resolveSessionProvider(sessionProvider: String?, settingsProvider: String): String =
+    sessionProvider?.takeIf { it.isNotBlank() } ?: settingsProvider
+
 /** Satu percakapan. [initialId] null = chat baru; sesi dibuat saat pesan pertama dikirim. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AiChatViewModel(
@@ -124,7 +128,13 @@ class AiChatViewModel(
         val m = model.trim()
         if (m.isEmpty()) return
         val id = sessionId.value ?: run { draftModel.value = m; return }
-        launchSafe { repo.setModel(id, settingsStore.settings.value.provider.name, m) }
+        launchSafe {
+            // Penyedia diambil dari SESI, bukan pengaturan global: sesi Anthropic yang
+            // pemilih modelnya dibuka tidak boleh diam-diam berubah jadi OpenAI-compatible
+            // (dan sebaliknya) hanya karena pengaturan global sudah pindah.
+            val provider = resolveSessionProvider(repo.session(id)?.provider, settingsStore.settings.value.provider.name)
+            repo.setModel(id, provider, m)
+        }
     }
 
     override fun rename(title: String) { sessionId.value?.let { id -> launchSafe { repo.rename(id, title) } } }

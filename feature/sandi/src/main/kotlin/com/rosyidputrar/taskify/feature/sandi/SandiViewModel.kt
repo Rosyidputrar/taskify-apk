@@ -75,6 +75,8 @@ data class SandiUiState(
     val importDone: ImportDone? = null,
     /** Lembar impor 2FA terbuka (ringkasan tanpa kunci rahasia); null = tertutup. */
     val authImport: AuthImportUi? = null,
+    /** D-11: peringatan sebelum rotasi — ada baris yang tidak bisa dibuka dengan kunci saat ini. */
+    val rotationWarning: RotationWarning? = null,
 ) {
     /** Dihitung sekali per state (bukan setiap kali dibaca). State hanya berganti saat isi/pencarian berubah. */
     val filtered: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) {
@@ -84,6 +86,9 @@ data class SandiUiState(
     }
     val withTotp: List<SandiItem> by lazy(LazyThreadSafetyMode.NONE) { filtered.filter { it.payload.totp != null } }
 }
+
+/** D-11: hitungan baris yang akan tertinggal bila rotasi dilanjutkan. Judul baris tidak bisa ditampilkan — isinya terenkripsi. */
+data class RotationWarning(val items: Int, val log: Int, val configs: Int)
 
 interface SandiActions {
     fun setTab(tab: SandiTab)
@@ -97,6 +102,9 @@ interface SandiActions {
     fun recover(recoveryKey: String, newPassword: String)
     fun changePassword(old: String, new: String)
     fun rotateRecovery(password: String)
+    /** D-11: lanjutkan rotasi yang tertunda (sudah dikonfirmasi) / batalkan. */
+    fun confirmRotation() {}
+    fun dismissRotation() {}
     fun acknowledgeRecovery()
     fun lock()
     fun setAutoLock(minutes: Int)
@@ -273,21 +281,65 @@ class SandiViewModel(
         local.update { it.copy(recoveryToShow = recovery) }
     }
 
-    override fun recover(recoveryKey: String, newPassword: String) = run("Memulihkan brankas…") {
-        evaluateMaster(newPassword).second?.let { throw SandiUserException(it) }
-        val done = service.recover(recoveryKey, newPassword)
-        afterRotation(done.recoveryKey, done.confirmed, "Brankas dipulihkan", skippedMessage(done.result))
+    override fun recover(recoveryKey: String, newPassword: String) = askBeforeRotation(
+        probe = { service.rotationAtRiskWithRecoveryKey(recoveryKey) },
+    ) {
+        run("Memulihkan brankas…") {
+            evaluateMaster(newPassword).second?.let { throw SandiUserException(it) }
+            val done = service.recover(recoveryKey, newPassword)
+            afterRotation(done.recoveryKey, done.confirmed, "Brankas dipulihkan", skippedMessage(done.result))
+        }
     }
 
-    override fun changePassword(old: String, new: String) = run("Mengganti master password…") {
-        evaluateMaster(new).second?.let { throw SandiUserException(it) }
-        val done = service.changePassword(old, new)
-        afterRotation(done.recoveryKey, done.confirmed, "Master password diganti", skippedMessage(done.result))
+    override fun changePassword(old: String, new: String) = askBeforeRotation(
+        probe = { service.rotationAtRisk() },
+    ) {
+        run("Mengganti master password…") {
+            evaluateMaster(new).second?.let { throw SandiUserException(it) }
+            val done = service.changePassword(old, new)
+            afterRotation(done.recoveryKey, done.confirmed, "Master password diganti", skippedMessage(done.result))
+        }
     }
 
-    override fun rotateRecovery(password: String) = run("Membuat kunci pemulihan baru…") {
-        val done = service.rotateRecoveryKey(password)
-        afterRotation(done.recoveryKey, done.confirmed, "Kunci pemulihan baru dibuat", skippedMessage(done.result))
+    override fun rotateRecovery(password: String) = askBeforeRotation(
+        probe = { service.rotationAtRisk() },
+    ) {
+        run("Membuat kunci pemulihan baru…") {
+            val done = service.rotateRecoveryKey(password)
+            afterRotation(done.recoveryKey, done.confirmed, "Kunci pemulihan baru dibuat", skippedMessage(done.result))
+        }
+    }
+
+    /**
+     * D-11: sebelum rotasi, hitung baris yang akan tertinggal. Bila ada → tampilkan dialog dan
+     * tunda aksinya sampai pengguna menekan "Lanjutkan" ([confirmRotation]) atau "Batalkan"
+     * ([dismissRotation]). Aksi tertunda hanya hidup sampai dialog ditutup — kata sandi di
+     * dalamnya tidak disimpan di state. Bila probe gagal / tidak ada yang tertinggal, rotasi
+     * langsung jalan seperti sebelumnya (probe null pada pemulihan = kunci pemulihan salah,
+     * galatnya tetap muncul dari rotasi itu sendiri).
+     */
+    private var pendingRotation: (() -> Unit)? = null
+
+    private fun askBeforeRotation(probe: suspend () -> SandiService.RotationAtRisk?, action: () -> Unit) {
+        launchSafe {
+            val atRisk = runCatching { probe() }.getOrNull()
+            if (atRisk != null && atRisk.total > 0) {
+                pendingRotation = action
+                local.update { it.copy(rotationWarning = RotationWarning(atRisk.items, atRisk.log, atRisk.configs)) }
+            } else {
+                action()
+            }
+        }
+    }
+
+    override fun confirmRotation() {
+        local.update { it.copy(rotationWarning = null) }
+        pendingRotation?.invoke().also { pendingRotation = null }
+    }
+
+    override fun dismissRotation() {
+        pendingRotation = null
+        local.update { it.copy(rotationWarning = null) }
     }
 
     private fun afterRotation(recovery: String, confirmed: Boolean, what: String, skipped: String?) {

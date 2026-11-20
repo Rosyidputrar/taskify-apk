@@ -8,9 +8,11 @@ import com.rosyidputrar.taskify.core.domain.tasks.ReminderPlanner
 class ReminderPrefs(devicePrefs: DevicePrefs) {
     private val prefs = devicePrefs.prefs
 
-    /** "Sembunyikan isi notifikasi": hanya tertulis "Ada pengingat tugas". */
+    /** "Sembunyikan isi notifikasi": hanya tertulis "Ada pengingat tugas". Bawaan AKTIF (D-13):
+     * judul tugas/nominal tidak boleh terbaca dari layar kunci sebelum pengguna memilih sendiri
+     * untuk menampilkannya. Pengguna lama yang sudah menyimpan pilihan tetap memakai pilihannya. */
     var hideContent: Boolean
-        get() = prefs.getBoolean(KEY_HIDE, false)
+        get() = prefs.getBoolean(KEY_HIDE, true)
         set(value) = prefs.edit { putBoolean(KEY_HIDE, value) }
 
     /**

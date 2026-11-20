@@ -45,12 +45,15 @@ object NotificationCapture {
         val money = MoneyNotifParser.parse(raw.pkg, title, text)
         val parcel = ParcelParser.parse(raw.pkg, title, text)
         val keepText = settings.level == NotifStorageLevel.Full
+        // D-07: percakapan (judul grup/pengirim) disensor seperti judul & dibatasi panjangnya —
+        // sebelumnya tersimpan mentah tanpa batas.
+        val conversation = OtpRedactor.redact(raw.conversation?.trim()?.takeIf { it.isNotEmpty() && keepText })?.take(MAX_TITLE)
         return CaptureDecision.Log(
             NewNotif(
                 pkg = raw.pkg,
                 appLabel = label,
                 key = raw.key,
-                conversation = raw.conversation?.trim()?.takeIf { it.isNotEmpty() && keepText },
+                conversation = conversation,
                 title = title?.take(MAX_TITLE),
                 text = if (keepText) text?.take(MAX_TEXT) else null,
                 category = category,

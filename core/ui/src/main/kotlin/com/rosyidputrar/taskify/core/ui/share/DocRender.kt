@@ -107,7 +107,11 @@ object DocRender {
         val contentBottom = measure.y + if (truncated) 26f else 0f
         val heightPt = contentBottom + IMAGE_MARGIN + 28f
         // Lintasan 2: gambar sungguhan dengan tinggi pas.
-        val bitmap = Bitmap.createBitmap(widthPx, (heightPt * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val bitmap = try {
+            Bitmap.createBitmap(widthPx, (heightPt * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        } catch (e: OutOfMemoryError) {
+            throw IllegalStateException("Dokumen terlalu panjang untuk dibagikan sebagai gambar — pakai PDF.")
+        }
         val canvas = Canvas(bitmap)
         canvas.drawColor(PAPER)
         canvas.scale(scale, scale)
@@ -284,18 +288,7 @@ object DocRender {
                     }
                     space(4f)
                 }
-                is MdBlock.Table -> {
-                    val rows = listOf(b.header) + b.rows
-                    val s = SpannableStringBuilder()
-                    rows.forEachIndexed { i, row ->
-                        val start = s.length
-                        s.append(row.joinToString("   │   ") { plain(it) })
-                        if (i == 0) s.setSpan(StyleSpan(Typeface.BOLD), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        if (i < rows.lastIndex) s.append('\n')
-                    }
-                    val rule = Paint().apply { color = LINE; strokeWidth = 0.8f }
-                    text(s, paint(10f), spacing = 1.5f) { c, top, _ -> c.drawLine(margin, top - 3f, margin + width, top - 3f, rule) }
-                }
+                is MdBlock.Table -> tableBlock(b.header, b.rows)
                 is MdBlock.Rule -> {
                     val c = canvas ?: return
                     space(6f)
@@ -306,6 +299,66 @@ object DocRender {
         }
 
         private fun plain(text: String) = Markdown.parseInline(text).joinToString("") { it.text }
+
+        /**
+         * Tabel sebagai grid: lebar kolom diukur dari isi terpanjang (diskalakan bila melebihi
+         * lebar halaman), header berlatar, garis pemisah antar sel. Sel panjang dibungkus di
+         * dalam kolomnya; baris yang tidak muat pindah ke halaman berikutnya.
+         */
+        private fun tableBlock(header: List<String>, rows: List<List<String>>) {
+            if (truncated) return
+            val cols = header.size
+            if (cols == 0) return
+            val bodyP = paint(10f)
+            val headP = paint(10f, bold = true)
+            val padX = 8f
+            val padY = 5f
+            fun plainW(text: String, p: TextPaint) = plain(text).split('\n').maxOfOrNull { p.measureText(it) } ?: 0f
+            val raw = (0 until cols).map { c ->
+                var w = plainW(header[c], headP)
+                for (r in rows) w = maxOf(w, plainW(r.getOrElse(c) { "" }, bodyP))
+                w + padX * 2
+            }
+            val total = raw.sum()
+            val widths = if (total > width) raw.map { (it * width / total).coerceAtLeast(24f) } else raw
+            val line = Paint().apply { color = LINE; strokeWidth = 0.8f }
+            val headBg = Paint().apply { color = CODE_BG }
+            space(4f)
+            val allRows = listOf(header to true) + rows.map { it to false }
+            for ((cells, isHeader) in allRows) {
+                if (truncated) return
+                val p = if (isHeader) headP else bodyP
+                val texts = (0 until cols).map { c -> inline(cells.getOrElse(c) { "" }).ifEmpty { " " } }
+                val layouts = texts.mapIndexed { c, t ->
+                    StaticLayout.Builder.obtain(t, 0, t.length, p, (widths[c] - padX * 2).toInt().coerceAtLeast(24))
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(0f, 1.35f).setIncludePad(false).build()
+                }
+                val rowH = layouts.maxOf { it.height }.toFloat() + padY * 2
+                if (y + rowH > bottom) {
+                    if (newPage() == null) return
+                }
+                val c = canvas ?: return
+                val top = y
+                if (isHeader) c.drawRect(margin, top, margin + width, top + rowH, headBg)
+                var x = margin
+                layouts.forEachIndexed { i, l ->
+                    c.save()
+                    c.translate(x + padX, top + padY)
+                    l.draw(c)
+                    c.restore()
+                    x += widths[i]
+                }
+                // Garis vertikal antar kolom + garis bawah baris (header: garis lebih tegas).
+                var vx = margin
+                for (i in 0 until cols) {
+                    vx += widths[i]
+                    if (i < cols - 1) c.drawLine(vx, top, vx, top + rowH, line)
+                }
+                c.drawLine(margin, top + rowH, margin + width, top + rowH, line.apply { strokeWidth = if (isHeader) 1.2f else 0.8f })
+                y += rowH
+            }
+            y += 8f
+        }
 
         /** Inline Markdown → teks bergaya (tebal, miring, coret, kode, tautan). */
         private fun inline(text: String): CharSequence {

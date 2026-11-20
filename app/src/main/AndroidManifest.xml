@@ -4,6 +4,9 @@
     <!-- Opsional Mode Fokus: menyalakan "Jangan Ganggu" (izin diberikan pengguna di Setelan). -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
+    <!-- NetworkMonitor membaca status jaringan (izin normal, diberikan saat instal). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name=".TaskifyApplication"
         android:allowBackup="false"
@@ -43,6 +46,15 @@
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
+            <!-- A5: deep link taskify://task|note|journal → MainActivity (ACTION_VIEW) → AppEvents. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="taskify" android:host="task" />
+                <data android:scheme="taskify" android:host="note" />
+                <data android:scheme="taskify" android:host="journal" />
+            </intent-filter>
         </activity>
 
         <!-- Widget layar utama "Hari ini". -->
@@ -118,6 +130,13 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+        <!--
+            Aksi internal Mode Fokus (alarm akhir fase + tombol notifikasi): TIDAK diekspor, tanpa
+            intent-filter — hanya PendingIntent milik aplikasi sendiri yang bisa memicunya (D-03).
+        -->
+        <receiver
+            android:name=".focus.FocusActionReceiver"
+            android:exported="false" />
         <!-- Sandi sebagai layanan Isi Otomatis Android. -->
         <service
             android:name=".autofill.TaskifyAutofillService"

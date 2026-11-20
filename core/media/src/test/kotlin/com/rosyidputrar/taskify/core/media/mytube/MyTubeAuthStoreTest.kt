@@ -24,8 +24,10 @@ class MyTubeAuthStoreTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        // Bersihkan kedua prefs supaya tes independen dari urutan jalan.
+        // Bersihkan ketiga prefs supaya tes independen dari urutan jalan
+        // (C M-2: rahasia kini di SECURE_PREFS_NAME, bukan PREFS_NAME).
         context.getSharedPreferences(MyTubeAuthStore.PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences(MyTubeAuthStore.SECURE_PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("music", Context.MODE_PRIVATE).edit().clear().commit()
         store = MyTubeAuthStore(context)
     }
@@ -130,5 +132,66 @@ class MyTubeAuthStoreTest {
         store.saveAccount(AccountInfo(name = "Nama Tes"))
         store.clear()
         assertNull(store.loadAccount())
+    }
+
+    // ------------------------------------------------------------ C M-2: prefs terenkripsi
+
+    /**
+     * Routing rahasia → prefs terpisah dari prefs biasa. Prefs diinjeksikan
+     * (bukan EncryptedSharedPreferences sungguhan) supaya tes ini membuktikan
+     * PEMISAHAN-nya di Robolectric apa pun dukungan KeyStore-nya; enkripsi
+     * nyatanya dibuktikan probe `EncryptedPrefsProbeTest` + tes HP.
+     */
+    @Test fun `rahasia disimpan di prefs terpisah, bukan prefs biasa`() {
+        val secure = context.getSharedPreferences("tes-secure", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        val plain = context.getSharedPreferences("tes-plain", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        val injected = MyTubeAuthStore(context, securePrefs = secure, plainPrefs = plain)
+        injected.saveAuthState(
+            PlaybackAuthState(cookie = "SAPISID=x", visitorData = "Cgtv", dataSyncId = "d||u", poToken = "tok123"),
+        )
+        assertFalse(plain.contains("cookie"), "cookie tidak boleh di prefs biasa")
+        assertFalse(plain.contains("dataSyncId"), "dataSyncId tidak boleh di prefs biasa")
+        assertFalse(plain.contains("poToken"), "poToken tidak boleh di prefs biasa")
+        assertEquals("Cgtv", plain.getString("visitorData", null), "visitorData anonim tetap di prefs biasa")
+        assertEquals("SAPISID=x", secure.getString("cookie", null))
+        assertEquals("d||u", secure.getString("dataSyncId", null))
+        assertEquals("tok123", secure.getString("poToken", null))
+        val loaded = injected.loadAuthState()
+        assertEquals("SAPISID=x", loaded.cookie)
+        assertEquals("Cgtv", loaded.visitorData)
+        assertEquals("d||u", loaded.dataSyncId)
+        assertEquals("tok123", loaded.poToken)
+    }
+
+    @Test fun `migrasi memindahkan rahasia lama ke prefs terenkripsi`() {
+        val plain = context.getSharedPreferences("tes-plain-mig", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        // Seolah dari versi lama: rahasia masih di prefs biasa.
+        plain.edit().putString("cookie", "SAPISID=lama").putString("dataSyncId", "d||lama").putString("visitorData", "Cgtv").apply()
+        val secure = context.getSharedPreferences("tes-secure-mig", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        val injected = MyTubeAuthStore(context, securePrefs = secure, plainPrefs = plain)
+        val loaded = injected.loadAuthState()
+        assertEquals("SAPISID=lama", loaded.cookie)
+        assertEquals("d||lama", loaded.dataSyncId)
+        assertEquals("Cgtv", loaded.visitorData)
+        assertFalse(plain.contains("cookie"), "kunci lama harus dihapus setelah migrasi")
+        assertFalse(plain.contains("dataSyncId"), "kunci lama harus dihapus setelah migrasi")
+        assertEquals("SAPISID=lama", secure.getString("cookie", null))
+        assertEquals("d||lama", secure.getString("dataSyncId", null))
+        // Idempotent: instans kedua membaca hasil migrasi yang sama.
+        val second = MyTubeAuthStore(context, securePrefs = secure, plainPrefs = plain)
+        assertEquals("SAPISID=lama", second.loadAuthState().cookie)
+    }
+
+    @Test fun `clear menghapus kedua prefs`() {
+        val secure = context.getSharedPreferences("tes-secure-clr", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        val plain = context.getSharedPreferences("tes-plain-clr", Context.MODE_PRIVATE).also { it.edit().clear().commit() }
+        val injected = MyTubeAuthStore(context, securePrefs = secure, plainPrefs = plain)
+        injected.saveAuthState(PlaybackAuthState(cookie = "SAPISID=x", visitorData = "Cgtv", dataSyncId = "d||u", poToken = "tok123"))
+        injected.saveAccount(AccountInfo(name = "Nama Tes"))
+        injected.clear()
+        assertEquals(PlaybackAuthState.EMPTY, injected.loadAuthState())
+        assertNull(injected.loadAccount())
+        assertFalse(secure.contains("cookie"))
+        assertFalse(plain.contains("visitorData"))
     }
 }

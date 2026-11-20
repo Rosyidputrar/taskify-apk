@@ -47,8 +47,8 @@ class SandiExporter(
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
 
-    /** Isi berkas (teks biasa) — tidak pernah masuk state UI / saved state. */
-    private var content: String? = null
+    /** Isi berkas (byte teks biasa) — tidak pernah masuk state UI / saved state, dan tidak pernah sebagai String utuh (D-12: String tidak bisa di-nol-kan). */
+    private var content: ByteArray? = null
     private var timeout: Job? = null
 
     /** @throws SandiUserException pesan siap tampil (sandi salah, tidak ada isi). */
@@ -65,12 +65,12 @@ class SandiExporter(
                 val csv = kind == ExportKind.GoogleCsv
                 val count = if (csv) SandiExport.csvSummary(items).rows else SandiExport.withTotp(items).size
                 if (count == 0) throw SandiUserException(if (csv) "Tidak ada sandi untuk diekspor." else "Tidak ada kunci 2FA untuk diekspor.")
-                content = if (csv) SandiExport.passwordsCsv(items) else SandiExport.otpauthList(items)
+                content = if (csv) SandiExport.passwordsCsvBytes(items) else SandiExport.otpauthListBytes(items)
                 _state.update { it.copy(pending = PendingExport(kind, SandiExport.fileName(kind, today()), SandiExport.mimeType(kind), count)) }
                 timeout?.cancel()
                 timeout = scope.launch {
                     delay(ttlMs)
-                    content = null
+                    clearContent()
                     _state.update { it.copy(pending = null) }
                 }
             }
@@ -83,17 +83,21 @@ class SandiExporter(
     /** Hasil pemilih lokasi ([uri] null = batal): tulis lalu buang isinya. */
     fun finish(uri: String?) {
         val pending = _state.value.pending
-        val text = content
+        val bytes = content
+        // Lupakan referensi TANPA menolkan: byte yang sama diserahkan ke writer dan baru
+        // dinolkan di finally setelah ditulis (D-12). Menolkan di sini akan menulis nol.
         content = null
         timeout?.cancel()
         _state.update { it.copy(pending = null) }
-        if (uri == null) return
-        if (text == null || pending == null) {
+        if (uri == null) {
+            bytes?.fill(0)
+            return
+        }
+        if (bytes == null || pending == null) {
             show("Ekspor kedaluwarsa. Ulangi dari Pengaturan brankas.")
             return
         }
         scope.launchSafe {
-            val bytes = text.toByteArray(Charsets.UTF_8)
             try {
                 writer.write(uri, bytes)
                 show(if (pending.kind == ExportKind.GoogleCsv) "${pending.count} sandi diekspor. Hapus berkasnya setelah diimpor." else "${pending.count} kunci 2FA diekspor. Hapus berkasnya setelah diimpor.")
@@ -114,9 +118,15 @@ class SandiExporter(
 
     /** ViewModel dibuang. */
     fun clear() {
-        content = null
+        clearContent()
         timeout?.cancel()
         _state.value = State()
+    }
+
+    /** Nolkan isi lalu lupakan referensinya. */
+    private fun clearContent() {
+        content?.fill(0)
+        content = null
     }
 
     companion object {

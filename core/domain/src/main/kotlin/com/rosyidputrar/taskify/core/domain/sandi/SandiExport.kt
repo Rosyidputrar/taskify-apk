@@ -46,6 +46,10 @@ data class GoogleAuthPlan(
  *  - tidak pernah ditulis ke log (fungsi di sini murni, tidak mencetak apa pun);
  *  - isi sandi TIDAK diubah sama sekali (mis. tidak ada awalan `'` anti-formula seperti CSV
  *    Keuangan) — mengubahnya berarti sandi yang diimpor salah.
+ *  - kolom NON-sandi (`name`, `username`, `note`) yang diawali karakter formula spreadsheet
+ *    (`=`, `+`, `-`, `@`) diberi awalan `'` (D-08): judul/catatan bebas pengguna bisa berisi
+ *    `=CMD(...)`, dan spreadsheet akan mengeksekusinya bila CSV dibuka di sana. Awalan ini
+ *    tidak memengaruhi sandi, jadi impor balik tetap benar.
  * Urutan keluaran stabil: judul (tanpa beda huruf besar/kecil), lalu nama pengguna.
  */
 object SandiExport {
@@ -83,15 +87,35 @@ object SandiExport {
     fun csvName(item: ItemPayload): String = item.title.trim().ifEmpty { displayHost(item.url) }
 
     /** CSV RFC 4180 (pemisah koma, baris CRLF, tanpa BOM) dengan header [CSV_HEADER]. */
-    fun passwordsCsv(items: List<ItemPayload>): String {
-        val sb = StringBuilder()
-        sb.append(CSV_HEADER.joinToString(",")).append("\r\n")
+    fun passwordsCsv(items: List<ItemPayload>): String = String(passwordsCsvBytes(items), Charsets.UTF_8)
+
+    /**
+     * D-12: CSV sebagai byte tanpa pernah membangun String dokumen utuh — String JVM tidak bisa
+     * dinolkan, jadi dokumen lengkap hanya hidup sebagai byte yang bisa di-nol-kan setelah
+     * ditulis. String per baris/kolom bersifat sementara (kecil, langsung tidak terpakai).
+     */
+    fun passwordsCsvBytes(items: List<ItemPayload>): ByteArray = ByteArrayOutputStream().apply {
+        write(CSV_HEADER.joinToString(",").toByteArray(Charsets.UTF_8))
+        write("\r\n".toByteArray(Charsets.UTF_8))
         withPassword(items).forEach { p ->
-            listOf(csvName(p), csvUrl(p.url), p.username, p.password, p.notes).joinTo(sb, ",") { csvField(it) }
-            sb.append("\r\n")
+            val row = listOf(antiFormula(csvName(p)), csvUrl(p.url), antiFormula(p.username), p.password, antiFormula(p.notes))
+                .joinToString(",") { csvField(it) } + "\r\n"
+            write(row.toByteArray(Charsets.UTF_8))
         }
-        return sb.toString()
+    }.toByteArray()
+
+    /**
+     * Karakter awal yang membuat spreadsheet mengeksekusi isi sel sebagai formula
+     * (CSV injection). Nilai yang diawali karakter ini — setelah spasi/tab awal — diberi
+     * awalan `'` supaya dibaca sebagai teks. Hanya untuk kolom non-sandi.
+     */
+    fun startsWithFormulaChar(value: String): Boolean {
+        val first = value.trimStart(' ', '\t').firstOrNull() ?: return false
+        return first == '=' || first == '+' || first == '-' || first == '@'
     }
+
+    /** Awalan anti-formula untuk kolom non-sandi; nilai biasa tidak diubah. */
+    fun antiFormula(value: String): String = if (startsWithFormulaChar(value)) "'$value" else value
 
     /**
      * Kolom CSV: dikutip bila memuat koma, kutip, baris baru, atau spasi/tab di awal/akhir (supaya
@@ -111,9 +135,14 @@ object SandiExport {
     fun withTotp(items: List<ItemPayload>): List<ItemPayload> = ordered(items).filter { it.totp != null }
 
     /** Satu URI `otpauth://totp/…` per baris (LF), lengkap dengan digit/periode/algoritme aslinya. */
-    fun otpauthList(items: List<ItemPayload>): String = withTotp(items).joinToString("") { p ->
-        Totp.otpauthUri(p.totp!!, issuerOf(p), p.username) + "\n"
-    }
+    fun otpauthList(items: List<ItemPayload>): String = String(otpauthListBytes(items), Charsets.UTF_8)
+
+    /** D-12: seperti [passwordsCsvBytes] — daftar otpauth sebagai byte yang bisa di-nol-kan. */
+    fun otpauthListBytes(items: List<ItemPayload>): ByteArray = ByteArrayOutputStream().apply {
+        withTotp(items).forEach { p ->
+            write((Totp.otpauthUri(p.totp!!, issuerOf(p), p.username) + "\n").toByteArray(Charsets.UTF_8))
+        }
+    }.toByteArray()
 
     // ================================================================== Google Authenticator
 

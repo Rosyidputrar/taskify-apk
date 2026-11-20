@@ -13,6 +13,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Credentials
+import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -219,9 +220,26 @@ internal class YoutubeiHttpClient(
         }
     }
 
-    private fun buildClient(configuration: YoutubeiNetworkConfiguration): OkHttpClient =
-        OkHttpClient
-            .Builder()
+    /**
+     * Bangun klien HTTP youtubei.js. Bila [YoutubeiNetworkConfiguration.baseClient]
+     * ada, klien diturunkan darinya (`newBuilder()`): connection pool, DNS,
+     * dan socket factory DIBAGI dengan klien dasar — request `player`
+     * youtubei.js dan request media ExoPlayer keluar lewat jalur jaringan
+     * yang sama (C M-1; ikatan IP URL stream ke IP sumber, perbaikan 403).
+     * Yang tetap khas youtubei (perilaku terbukti jalan di HP, JANGAN diubah
+     * sembarangan): redirect ditangani manual (`followRedirects(false)`),
+     * timeout 15/20/20 + call 30 dtk, dan tanpa proxy bila konfigurasi tidak
+     * menyebut proxy (`Proxy.NO_PROXY`).
+     *
+     * Dispatcher sengaja dibuat SENDIRI (bukan berbagi dengan klien dasar):
+     * [currentClient] membatalkan semua panggilan + mengusir pool saat
+     * konfigurasi berubah, dan pembatalan itu tidak boleh menyentuh
+     * panggilan InnerTube/media yang berbagi pool. Pool yang dibagi hanya
+     * mengusir koneksi IDLE (`evictAll`), jadi aman untuk media.
+     */
+    internal fun buildClient(configuration: YoutubeiNetworkConfiguration): OkHttpClient =
+        (configuration.baseClient?.newBuilder() ?: OkHttpClient.Builder())
+            .dispatcher(Dispatcher())
             .proxy(configuration.proxy ?: Proxy.NO_PROXY)
             .dns(configuration.dns)
             .followRedirects(false)

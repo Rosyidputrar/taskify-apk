@@ -40,7 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -87,6 +89,7 @@ fun FinanceScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingCsv by remember { mutableStateOf<String?>(null) }
     val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val csv = pendingCsv
@@ -97,9 +100,12 @@ fun FinanceScreen(
         state, viewModel, contentPadding, onOpenTx, onNewTx, onBack, backButton,
         topSlot = topSlot,
         onExport = {
-            viewModel.exportCsv()?.let { (name, csv) ->
-                pendingCsv = csv
-                saveCsv.launch(name)
+            // exportCsv suspend (query ekspor tanpa LIMIT) → jalankan di scope layar.
+            scope.launch {
+                viewModel.exportCsv()?.let { (name, csv) ->
+                    pendingCsv = csv
+                    saveCsv.launch(name)
+                }
             }
         },
     )

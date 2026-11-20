@@ -106,6 +106,20 @@ fun String?.isYouTubeUrl(): Boolean {
     return host == "youtube.com" || host.endsWith(".youtube.com")
 }
 
+/**
+ * C S-3: true bila URL saat ini adalah origin login yang dipercaya untuk
+ * JS interface "Android" (`MusicLoginScreen`): `*.youtube.com` atau persis
+ * `accounts.google.com`. Dipakai DI DALAM kedua fungsi interface — tanpa
+ * pemeriksaan ini, halaman apa pun yang sempat dimuat WebView (mis. lewat
+ * redirect jahat) bisa memanggil interface dan menyuntik `visitorData` /
+ * `dataSyncId` palsu ke sesi login.
+ */
+fun String?.isTrustedLoginJsOrigin(): Boolean {
+    val host = this?.let { runCatching { URI(it) }.getOrNull() }?.host?.lowercase() ?: return false
+    return host == "youtube.com" || host.endsWith(".youtube.com") ||
+        host == "accounts.google.com"
+}
+
 /** Skema yang boleh dimuat WebView (persis ArchiveTune). */
 fun String.isWebViewLoadableUrl(): Boolean {
     val scheme = runCatching { URI(this).scheme?.lowercase() }.getOrNull()
