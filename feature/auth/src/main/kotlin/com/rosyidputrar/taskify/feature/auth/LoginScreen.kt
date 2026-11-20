@@ -69,7 +69,12 @@ class LoginViewModel(private val auth: AuthRepository, loginNames: LoginNameStor
                 // Sukses → status sesi berubah, gerbang pindah ke verifikasi dua langkah.
                 _state.update { it.copy(loading = false) }
             } catch (e: AuthError) {
-                _state.value = LoginUiState(error = translateLoginError(e.failure))
+                _state.value = LoginUiState(error = loginErrorText(e.failure))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Jaring terakhir: apa pun yang lolos, tombol berhenti berputar dan error mentahnya terlihat.
+                _state.value = LoginUiState(error = "Gagal masuk.\n${e::class.java.simpleName}: ${e.message.orEmpty()}".trimEnd(' ', ':'))
             }
         }
     }
@@ -132,4 +137,16 @@ fun LoginContent(greeting: String, state: LoginUiState, onSubmit: (email: String
             if (state.loading) TaskifyLoadingIndicator(size = 24.dp, color = androidx.compose.material3.LocalContentColor.current) else Text("Masuk")
         }
     }
+}
+
+/**
+ * Pesan ramah + detail mentah untuk error yang tidak dikenali (kode/kelas & pesan asli), supaya
+ * masalah seperti Keystore atau server yang salah konfigurasi bisa didiagnosis dari layar.
+ */
+internal fun loginErrorText(f: com.rosyidputrar.taskify.core.domain.auth.AuthFailure): String {
+    val friendly = translateLoginError(f)
+    val known = f.network || f.status == 429 || f.code == "over_request_rate_limit" || f.code == "invalid_credentials" || f.status == 400
+    if (known && f.code != "timeout") return friendly
+    val raw = listOfNotNull(f.status?.let { "HTTP $it" }, f.code, f.message?.takeIf { it != friendly }).joinToString(" · ")
+    return if (raw.isBlank()) friendly else "$friendly\n$raw"
 }

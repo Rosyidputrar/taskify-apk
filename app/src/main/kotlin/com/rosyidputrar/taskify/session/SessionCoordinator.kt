@@ -59,6 +59,15 @@ class SessionCoordinator(
     /** User yang database-nya sudah siap dipakai (null = belum/tertutup). */
     val readyUser: StateFlow<String?> = _readyUser.asStateFlow()
 
+    /**
+     * Galat terakhir saat menyiapkan database untuk akun yang baru masuk (null = tidak ada).
+     * Ditampilkan di layar "Menyiapkan data…" bersama tombol Coba lagi / Keluar — dulu galat
+     * di sini mematikan pengamat sesi dan layar itu berputar selamanya.
+     */
+    private val _prepareError = MutableStateFlow<String?>(null)
+    val prepareError: StateFlow<String?> = _prepareError.asStateFlow()
+    private var pendingUser: String? = null
+
     /** Nama tampilan dari `user_settings`, ikut disalin untuk sapaan layar masuk. */
     val displayName: StateFlow<String?> = readyUser.flatMapLatest<String?, String?> { userId ->
         if (userId == null) {
@@ -75,9 +84,28 @@ class SessionCoordinator(
             auth.state
                 .map { (it as? AuthState.SignedIn)?.takeIf { s -> s.gate == GateStatus.Ok }?.userId }
                 .distinctUntilChanged()
-                .collect { userId -> mutex.withLock { if (userId != null) open(userId) else close() } }
+                .collect { userId -> mutex.withLock { if (userId != null) openSafely(userId) else { pendingUser = null; _prepareError.value = null; close() } } }
         }
         scope.launch { displayName.collect { name -> if (name != null) loginNames.write(name) } }
+    }
+
+    /** Coba lagi menyiapkan database setelah gagal (tombol di layar "Menyiapkan data…"). */
+    fun retryPrepare(): Job = scope.launchSafe {
+        mutex.withLock { pendingUser?.let { if (_readyUser.value != it) openSafely(it) } }
+    }
+
+    private suspend fun openSafely(userId: String) {
+        pendingUser = userId
+        _prepareError.value = null
+        try {
+            open(userId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("Taskify", "Gagal menyiapkan database untuk akun", e)
+            _readyUser.value = null
+            _prepareError.value = "${e::class.java.simpleName}: ${e.message.orEmpty()}".trimEnd(' ', ':')
+        }
     }
 
     private suspend fun open(userId: String) {

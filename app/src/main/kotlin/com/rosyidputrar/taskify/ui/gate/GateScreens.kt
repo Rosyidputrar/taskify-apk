@@ -41,13 +41,24 @@ fun ConfigMissingScreen(onPreview: (() -> Unit)?) {
     }
 }
 
+/**
+ * Menyiapkan database setelah masuk. Bila gagal, galat aslinya ditampilkan (bukan berputar
+ * selamanya) dengan pilihan Coba lagi atau Keluar.
+ */
 @Composable
-fun PreparingScreen() {
+fun PreparingScreen(error: String? = null, onRetry: () -> Unit = {}, onSignOut: () -> Unit = {}) {
     Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(24.dp)) {
-                TaskifyLoadingIndicator(size = 48.dp)
-                Text("Menyiapkan data di perangkat…", style = MaterialTheme.typography.titleMedium)
+                if (error == null) {
+                    TaskifyLoadingIndicator(size = 48.dp)
+                    Text("Menyiapkan data di perangkat…", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Text("Data di perangkat gagal disiapkan", style = MaterialTheme.typography.titleMedium)
+                    Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    androidx.compose.material3.Button(onClick = onRetry) { Text("Coba lagi") }
+                    OutlinedButton(onClick = onSignOut) { Text("Keluar") }
+                }
             }
         }
     }

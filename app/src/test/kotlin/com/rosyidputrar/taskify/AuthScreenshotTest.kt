@@ -17,6 +17,9 @@ import com.rosyidputrar.taskify.feature.auth.MfaActions
 import com.rosyidputrar.taskify.feature.auth.MfaContent
 import com.rosyidputrar.taskify.feature.auth.MfaUiState
 import com.rosyidputrar.taskify.ui.gate.ConfigMissingScreen
+import com.rosyidputrar.taskify.ui.gate.PreparingScreen
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -68,4 +71,18 @@ class AuthScreenshotTest {
     }
 
     @Test fun configMissing() = shot("gate_config_missing_light") { ConfigMissingScreen(onPreview = {}) }
+
+    /** Menyiapkan database gagal: galat asli + Coba lagi / Keluar, bukan berputar selamanya. */
+    @Test fun preparingFailed() {
+        var retried = 0
+        var signedOut = 0
+        shot("gate_preparing_failed_light") {
+            PreparingScreen("SQLiteException: database disk image is malformed", onRetry = { retried++ }, onSignOut = { signedOut++ })
+        }
+        compose.onNodeWithText("Data di perangkat gagal disiapkan").assertExists()
+        compose.onNodeWithText("SQLiteException: database disk image is malformed").assertExists()
+        compose.onNodeWithText("Coba lagi").performClick()
+        compose.onNodeWithText("Keluar").performClick()
+        kotlin.test.assertEquals(1 to 1, retried to signedOut)
+    }
 }
