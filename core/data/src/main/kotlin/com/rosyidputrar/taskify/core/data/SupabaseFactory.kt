@@ -28,7 +28,12 @@ fun createTaskifySupabase(config: ServerConfig, context: Context): SupabaseClien
             // Sesi disimpan di perangkat & di-refresh otomatis: aplikasi tetap terbuka saat offline.
             alwaysAutoRefresh = true
             autoLoadFromStorage = true
-            sessionManager = createEncryptedSessionManager(context, config.supabaseUrl)
+            // Keystore rusak/tidak tersedia di sebagian perangkat: jangan sampai aplikasi crash
+            // saat dibuka (klien ini dibuat di startup). Jatuh ke penyimpanan bawaan supabase-kt
+            // (perilaku sebelum D-05) — tetap bisa masuk, hanya tanpa enkripsi tambahan.
+            runCatching { createEncryptedSessionManager(context, config.supabaseUrl) }
+                .onFailure { android.util.Log.w("Taskify", "Sesi terenkripsi tidak tersedia, memakai penyimpanan bawaan", it) }
+                .getOrNull()?.let { sessionManager = it }
         }
         install(Postgrest)
         install(Functions)

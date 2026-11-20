@@ -69,7 +69,9 @@ fun chatItems(messages: List<ChatMessage>, live: Map<String, String>, running: B
                     )
                 }
                 ChatItem.Assistant(
-                    id = m.id, text = live[m.id] ?: m.content, state = m.state, error = m.error,
+                    // Catatan "terpotong" disimpan di isi pesan, tapi ditampilkan sebagai baris sendiri
+                    // (dengan tombol Lanjutkan) — jangan muncul dua kali di dalam teks jawaban.
+                    id = m.id, text = (live[m.id] ?: m.content).removeSuffix(ChatEngine.TRUNCATED_NOTE), state = m.state, error = m.error,
                     streaming = m.state == ChatState.Streaming, tools = tools, last = m.id == lastAssistant,
                     truncated = m.content.endsWith(ChatEngine.TRUNCATED_NOTE),
                 )

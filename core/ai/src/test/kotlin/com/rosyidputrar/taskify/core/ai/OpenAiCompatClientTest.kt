@@ -114,16 +114,25 @@ class OpenAiCompatClientTest {
         assertTrue(e.message!!.contains("Model sedang sibuk"))
     }
 
-    @Test fun requestBodyCarriesMaxCompletionTokens() = runBlocking {
+    @Test fun requestBodyCarriesMaxTokens() = runBlocking {
+        // Server OpenAI-compatible non-OpenAI (di sini api.example.com) memakai `max_tokens`.
         val c = client { sse("""{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}""", "[DONE]") }
         c.stream(AiRequest("gpt-4o", null, listOf(AiMessage(AiRole.User, "x")), maxTokens = 1234)).toList()
         val body = AiJson.parseToJsonElement(requests.single().second).jsonObject
-        assertEquals("1234", body["max_completion_tokens"]!!.jsonPrimitive.content)
+        assertEquals("1234", body["max_tokens"]!!.jsonPrimitive.content)
+        assertEquals(null, body["max_completion_tokens"])
         // Bawaan tetap 4096 bila tidak diisi.
         requests.clear()
         c.stream(AiRequest("gpt-4o", null, listOf(AiMessage(AiRole.User, "x")))).toList()
         val body2 = AiJson.parseToJsonElement(requests.single().second).jsonObject
-        assertEquals("4096", body2["max_completion_tokens"]!!.jsonPrimitive.content)
+        assertEquals("4096", body2["max_tokens"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun maxTokensFieldFollowsServer() {
+        assertEquals("max_completion_tokens", OpenAiCompatClient.maxTokensField("https://api.openai.com/v1"))
+        assertEquals("max_completion_tokens", OpenAiCompatClient.maxTokensField("https://kantor.openai.azure.com/openai"))
+        listOf("https://openrouter.ai/api/v1", "https://api.deepseek.com/v1", "https://api.mistral.ai/v1", "http://192.168.1.5:11434/v1", "https://griphubrouter.com/v1")
+            .forEach { assertEquals("max_tokens", OpenAiCompatClient.maxTokensField(it), it) }
     }
 
     @Test fun requestBodyCarriesSystemHistoryToolResultsAndTools() = runBlocking {

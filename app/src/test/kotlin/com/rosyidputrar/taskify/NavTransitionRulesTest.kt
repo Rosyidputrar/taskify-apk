@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify
 
+import com.rosyidputrar.taskify.ui.shell.dockSpaceFor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -176,6 +177,15 @@ class NavTransitionRulesTest {
             assertFalse(current.destination.isFullScreenEditor())
             assertFalse(current.isTopLevel(null))
         }
+    }
+
+    @Test fun fullScreenScreensGetNoDockSpace() {
+        // Regresi: chat AI (layar penuh, dok tersembunyi) dulu tetap diberi ruang dok 112dp →
+        // kotak ketik melayang jauh di atas bilah navigasi.
+        assertEquals(0.dp, dockSpaceFor(immersive = true, expanded = false))
+        assertEquals(0.dp, dockSpaceFor(immersive = true, expanded = true))
+        assertEquals(112.dp, dockSpaceFor(immersive = false, expanded = false))
+        assertEquals(24.dp, dockSpaceFor(immersive = false, expanded = true))
     }
 
     @Test fun sharedBoundsIsNoOpOutsideNavHost() {

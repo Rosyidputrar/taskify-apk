@@ -46,10 +46,11 @@ data class GoogleAuthPlan(
  *  - tidak pernah ditulis ke log (fungsi di sini murni, tidak mencetak apa pun);
  *  - isi sandi TIDAK diubah sama sekali (mis. tidak ada awalan `'` anti-formula seperti CSV
  *    Keuangan) — mengubahnya berarti sandi yang diimpor salah.
- *  - kolom NON-sandi (`name`, `username`, `note`) yang diawali karakter formula spreadsheet
- *    (`=`, `+`, `-`, `@`) diberi awalan `'` (D-08): judul/catatan bebas pengguna bisa berisi
- *    `=CMD(...)`, dan spreadsheet akan mengeksekusinya bila CSV dibuka di sana. Awalan ini
- *    tidak memengaruhi sandi, jadi impor balik tetap benar.
+ *  - kolom lain (`name`, `username`, `note`) juga TIDAK diberi awalan `'` anti-formula: berkas
+ *    ini untuk diimpor ke pengelola sandi, bukan dibuka di spreadsheet, dan importer (Google,
+ *    Taskify) menyimpan awalan itu apa adanya — username nomor HP `+62812…` atau `@handle`
+ *    akan berubah jadi `'+62812…` / `'@handle` dan isi otomatis gagal. Peringatan "jangan buka
+ *    di spreadsheet" ada di layar ekspor.
  * Urutan keluaran stabil: judul (tanpa beda huruf besar/kecil), lalu nama pengguna.
  */
 object SandiExport {
@@ -98,24 +99,12 @@ object SandiExport {
         write(CSV_HEADER.joinToString(",").toByteArray(Charsets.UTF_8))
         write("\r\n".toByteArray(Charsets.UTF_8))
         withPassword(items).forEach { p ->
-            val row = listOf(antiFormula(csvName(p)), csvUrl(p.url), antiFormula(p.username), p.password, antiFormula(p.notes))
+            val row = listOf(csvName(p), csvUrl(p.url), p.username, p.password, p.notes)
                 .joinToString(",") { csvField(it) } + "\r\n"
             write(row.toByteArray(Charsets.UTF_8))
         }
     }.toByteArray()
 
-    /**
-     * Karakter awal yang membuat spreadsheet mengeksekusi isi sel sebagai formula
-     * (CSV injection). Nilai yang diawali karakter ini — setelah spasi/tab awal — diberi
-     * awalan `'` supaya dibaca sebagai teks. Hanya untuk kolom non-sandi.
-     */
-    fun startsWithFormulaChar(value: String): Boolean {
-        val first = value.trimStart(' ', '\t').firstOrNull() ?: return false
-        return first == '=' || first == '+' || first == '-' || first == '@'
-    }
-
-    /** Awalan anti-formula untuk kolom non-sandi; nilai biasa tidak diubah. */
-    fun antiFormula(value: String): String = if (startsWithFormulaChar(value)) "'$value" else value
 
     /**
      * Kolom CSV: dikutip bila memuat koma, kutip, baris baru, atau spasi/tab di awal/akhir (supaya

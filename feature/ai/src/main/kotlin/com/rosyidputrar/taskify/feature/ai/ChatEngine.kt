@@ -139,7 +139,11 @@ class ChatEngine(
     }
 
     /** Keluar akun: hentikan semua jawaban. */
-    fun cancelAll() { jobs.values.forEach { it.cancel() } }
+    fun cancelAll() {
+        queuedDecisions.clear()
+        roundsUsed.clear()
+        jobs.values.forEach { it.cancel() }
+    }
 
     // ------------------------------------------------------------------ inti
 

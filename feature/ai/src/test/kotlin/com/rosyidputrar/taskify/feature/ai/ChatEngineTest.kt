@@ -129,6 +129,11 @@ class ChatEngineTest {
         assertEquals(ChatState.Done, answer.state)
         assertTrue(answer.content.endsWith(ChatEngine.TRUNCATED_NOTE))
         assertTrue(answer.content.startsWith("Jawaban panjang"))
+        // Catatan hanya untuk pengguna: tidak muncul dua kali di layar, tidak dikirim ke model.
+        val item = chatItems(store.list, emptyMap(), running = false, toolbox = tools).last() as ChatItem.Assistant
+        assertEquals("Jawaban panjang", item.text)
+        assertTrue(item.truncated)
+        assertEquals("Jawaban panjang", ChatHistory.toRequest(store.list).last().content)
     }
 
     @Test fun stopKeepsWhatWasReceived() = runTest {

@@ -69,9 +69,12 @@ object ChatHistory {
                 ChatRole.Assistant -> {
                     if (m.state == ChatState.Error || m.state == ChatState.Streaming) return@forEach
                     val calls = if (m.state == ChatState.Stopped) emptyList() else decodeCalls(m.toolCalls).filter { it.id in results }
-                    if (m.content.isBlank() && calls.isEmpty()) return@forEach
+                    // Catatan "terpotong" hanya untuk pengguna: model melihat jawabannya apa adanya,
+                    // supaya "lanjutkan" menyambung kalimat yang terputus, bukan catatan kita.
+                    val content = m.content.removeSuffix(ChatEngine.TRUNCATED_NOTE)
+                    if (content.isBlank() && calls.isEmpty()) return@forEach
                     calls.forEach { sentCalls += it.id }
-                    out += AiMessage(AiRole.Assistant, m.content, toolCalls = calls)
+                    out += AiMessage(AiRole.Assistant, content, toolCalls = calls)
                 }
                 ChatRole.Tool -> {
                     val id = m.toolCallId ?: return@forEach

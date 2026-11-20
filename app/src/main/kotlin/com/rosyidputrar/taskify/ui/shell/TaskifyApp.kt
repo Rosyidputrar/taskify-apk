@@ -71,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -284,9 +285,15 @@ fun TaskifyApp(
         // Ruang di bawah konten supaya item terakhir tidak tertutup dok mengambang.
         // Ruang bilah mini ikut beranimasi supaya isi layar tidak melompat 68dp saat musik mulai/berhenti.
         val miniSpace by animateDpAsState(if (showMini) 68.dp else 0.dp, TaskifyMotion.screenDpSpec, label = "mini-space")
+        // Ruang dok: 0 di layar penuh (dok disembunyikan, mis. chat AI) — dulu tetap 112dp sehingga
+        // kotak ketik chat melayang tinggi. Beranimasi bersama dok agar isi tidak melompat.
+        val dockSpace by animateDpAsState(
+            dockSpaceFor(immersive, expanded),
+            TaskifyMotion.screenDpSpec, label = "dock-space",
+        )
         val contentPadding = PaddingValues(
             top = statusTop,
-            bottom = if (imeVisible) 16.dp else navBottom + (if (expanded) 24.dp else 112.dp) + miniSpace,
+            bottom = if (imeVisible) 16.dp else navBottom + dockSpace + miniSpace,
         )
 
         val host: @Composable (Modifier) -> Unit = { modifier ->
@@ -840,6 +847,13 @@ private fun TaskifyNavHost(
  * Editor layar penuh (tanpa dok): juga dianimasikan seperti PlayerRoute Animeru — pudar + skala,
  * tanpa geser. Satu sumber untuk flag `immersive` dan aturan transisi.
  */
+/** Ruang bawah untuk dok: 0 di layar penuh (dok disembunyikan), kecil di layar lebar (rel samping). */
+internal fun dockSpaceFor(immersive: Boolean, expanded: Boolean): Dp = when {
+    immersive -> 0.dp
+    expanded -> 24.dp
+    else -> 112.dp
+}
+
 internal fun NavDestination.isFullScreenEditor(): Boolean =
     hasRoute<JournalEntryRoute>() || hasRoute<NoteEditRoute>() || hasRoute<TransactionRoute>() ||
         hasRoute<SnippetRoute>() || hasRoute<ZipRoute>() || hasRoute<ConfigEditRoute>() || hasRoute<FocusRoute>() ||

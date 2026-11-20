@@ -100,12 +100,22 @@ class OpenAiCompatClient(
         throw AiException(AiErrorKind.BadResponse, "Potongan jawaban bukan JSON yang valid.", raw = text.take(AiHttp.RAW_LIMIT))
     }
 
+    companion object {
+        /** Nama kolom batas token untuk [baseUrl]: `max_completion_tokens` khusus OpenAI resmi. */
+        internal fun maxTokensField(baseUrl: String): String {
+            val host = AiEndpoint.host(baseUrl).lowercase()
+            return if (host == "api.openai.com" || host.endsWith(".openai.azure.com")) "max_completion_tokens" else "max_tokens"
+        }
+    }
+
     internal fun body(r: AiRequest): JsonObject = buildJsonObject {
         put("model", r.model)
         put("stream", true)
-        // Batas keluaran (nama modern Chat Completions; `max_tokens` lama ditolak
-        // sebagian server untuk model baru). Tanpa ini jawaban tak berbatas.
-        put("max_completion_tokens", r.maxTokens)
+        // Batas keluaran. OpenAI resmi memakai nama modern `max_completion_tokens` (model
+        // reasoning menolak `max_tokens`); server "OpenAI-compatible" lain (OpenRouter, DeepSeek,
+        // Mistral, Ollama, LM Studio, gateway/proxy) umumnya hanya mengenal `max_tokens` —
+        // sebagian bahkan menolak kolom tak dikenal (422), jadi nama modern hanya untuk OpenAI.
+        put(maxTokensField(baseUrl), r.maxTokens)
         put("messages", buildJsonArray {
             if (!r.system.isNullOrBlank()) add(buildJsonObject { put("role", "system"); put("content", r.system) })
             r.messages.forEach { m -> add(message(m)) }
