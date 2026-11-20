@@ -118,6 +118,8 @@ fun LinksSection(type: EntityType, id: String, modifier: Modifier = Modifier, re
 
 @Composable
 fun LinksContent(links: List<LinkedEntity>, actions: LinksActions, modifier: Modifier = Modifier, readOnly: Boolean = false) {
+    // Mode Baca tanpa tautan: tidak ada yang bisa dilihat atau dilakukan — sembunyikan seluruh bagian.
+    if (readOnly && links.isEmpty()) return
     var picking by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

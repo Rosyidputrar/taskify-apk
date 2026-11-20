@@ -16,6 +16,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +33,11 @@ import com.rosyidputrar.taskify.core.store.tasks.TagRef
 /** Tag picker: chip tag terpasang (hapus dengan ✕), kotak tambah, dan saran dari tag yang ada. [enabled] = false (mode Baca) → chip tampil tanpa ✕, kotak tambah & saran disembunyikan. */
 @Composable
 fun TagPicker(selected: List<TagRef>, all: List<TagRef>, onAdd: (String) -> Unit, onRemove: (TagRef) -> Unit, enabled: Boolean = true) {
+    if (!enabled) {
+        // Mode Baca: tag tampil sebagai label berwarna biasa — BUKAN chip yang tampak mati/abu-abu.
+        if (selected.isNotEmpty()) TagLabels(selected)
+        return
+    }
     var input by rememberSaveable { mutableStateOf("") }
     val query = normalizeTagName(input)
     val chosen = selected.map { it.id }.toSet()
@@ -71,6 +78,19 @@ fun TagPicker(selected: List<TagRef>, all: List<TagRef>, onAdd: (String) -> Unit
                 }
             } else if (query.isNotEmpty()) {
                 Text("Tekan selesai untuk membuat #$query", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** Daftar tag hanya-baca: label berwarna sesuai tag, tidak bisa diketuk. */
+@Composable
+fun TagLabels(tags: List<TagRef>, modifier: Modifier = Modifier) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        tags.forEach { tag ->
+            val color = namedColor(tag.color)
+            Surface(color = color.copy(alpha = 0.14f), shape = MaterialTheme.shapes.small) {
+                Text("#${tag.name}", style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
             }
         }
     }

@@ -45,6 +45,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -112,7 +113,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
-import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyLogo
 import com.rosyidputrar.taskify.core.designsystem.component.LivingLogo
 import com.rosyidputrar.taskify.core.designsystem.component.LogoMood
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
@@ -554,7 +554,8 @@ private fun Composer(
                 AssistChip(
                     onClick = onModel,
                     label = { Text(model.ifBlank { "Pilih model" }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp)) },
-                    leadingIcon = { Icon(TaskifyLogo.Mono, null, modifier = Modifier.size(18.dp)) },
+                    // Chip ini memilih MODEL — ikon chip prosesor, bukan logo (yang di ukuran kecil mirip checkbox).
+                    leadingIcon = { Icon(Icons.Outlined.Memory, null, modifier = Modifier.size(18.dp)) },
                 )
                 FilterChip(
                     selected = dataAccess, onClick = onToggleAccess,

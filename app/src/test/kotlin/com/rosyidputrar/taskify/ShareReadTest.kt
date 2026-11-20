@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -129,6 +130,22 @@ class ShareReadTest {
         compose.onNodeWithText("Rencana hari ini").assertExists()
         compose.onNodeWithText("Ubah", useUnmergedTree = true).performClick()
         compose.onNodeWithText("Tulis").assertIsSelected()
+    }
+
+    @Test fun readModeShowsTagsAsLabelsAndHidesEmptyTagSection() {
+        // Tanpa tag: judul "Tag" tidak tampil sendirian di mode Baca.
+        themed { NoteEditorContent(note, SaveState.Saved, emptyList(), emptyList(), Recorder(), today = TODAY) }
+        compose.onNodeWithText("Tag").assertDoesNotExist()
+        compose.onNodeWithText("Ubah", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Tag").assertExists() // mode Tulis: bagian tag tetap ada untuk menambah
+    }
+
+    @Test fun readModeTagLabelsAreNotDisabledChips() {
+        val tags = listOf(TagRef("t1", "kerja", "blue"))
+        themed { NoteEditorContent(note, SaveState.Saved, tags, tags, Recorder(), today = TODAY) }
+        compose.onNodeWithText("Tag").assertExists()
+        compose.onNodeWithText("#kerja").assertExists().assertHasNoClickAction()
+        compose.onNodeWithContentDescription("Lepas tag kerja").assertDoesNotExist()
     }
 
     @Test fun newOrEmptyNoteOpensInWriteMode() {

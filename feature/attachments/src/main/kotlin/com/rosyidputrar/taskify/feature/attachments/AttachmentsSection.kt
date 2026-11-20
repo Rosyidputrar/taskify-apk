@@ -88,6 +88,8 @@ fun AttachmentsSection(type: EntityType, entityId: String, modifier: Modifier = 
 fun AttachmentsContent(items: List<Attachment>, busy: String?, actions: AttachmentActions, modifier: Modifier = Modifier, label: String = "Lampiran", localFile: (Attachment) -> File? = { null }, readOnly: Boolean = false) {
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(5)) { uris -> if (uris.isNotEmpty()) actions.add(uris) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> if (uris.isNotEmpty()) actions.add(uris) }
+    // Mode Baca tanpa lampiran: sembunyikan bagian kosong (hanya judul tanpa isi).
+    if (readOnly && items.isEmpty() && busy == null) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))

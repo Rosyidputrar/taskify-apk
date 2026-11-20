@@ -47,4 +47,26 @@ object TaskifyLogo {
             clearGroup()
         }.build()
     }
+
+    /**
+     * Ikon modul Asisten AI: logo Taskify berbentuk GELEMBUNG CHAT — kartu berekor di kiri bawah,
+     * tab di kanan atas, centang berlubang di dalam. Versi kotak biasa ([Mono]) di ukuran kecil
+     * terbaca seperti checkbox tercentang ("☑ gpt-4.1-mini"); ekor gelembung membuatnya jelas
+     * "asisten/chat" tanpa meninggalkan bentuk logo. Grid 24 seperti ikon Material lain.
+     */
+    val Assistant: ImageVector by lazy {
+        ImageVector.Builder("TaskifyAssistant", 24.dp, 24.dp, 24f, 24f).apply {
+            // Tab kartu (kanan atas), menyatu dengan badan gelembung.
+            addPath(addPathNodes("M14.5,3h3a1.5,1.5 0,0 1,1.5 1.5V7H13V4.5A1.5,1.5 0,0 1,14.5,3z"), fill = SolidColor(Color.Black))
+            // Badan gelembung + ekor; centang dilubangi (evenOdd).
+            addPath(
+                addPathNodes(
+                    "M6,6h12a3,3 0,0 1,3,3v6a3,3 0,0 1,-3,3H10.5L6,21.5V18A3,3 0,0 1,3,15V9A3,3 0,0 1,6,6z" +
+                        "M7.6,12.2L9,10.8L11,12.8L15,8.8L16.4,10.2L11,15.6z",
+                ),
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.EvenOdd,
+            )
+        }.build()
+    }
 }

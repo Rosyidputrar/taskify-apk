@@ -37,6 +37,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.rememberScrollState
+import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -155,11 +157,15 @@ fun FinanceContent(
             else SkeletonCard(TaskifyModule.Finance, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), lines = 3, leadingDot = false)
         }
         stickyHeader(key = "tabs") {
+            // 6 tab tidak muat di HP: tab di tepi dulu terpotong di tengah kata ("…kasan").
+            // Tepi kini memudar hanya ke arah yang masih bisa digeser.
+            val tabScroll = rememberScrollState()
             PrimaryScrollableTabRow(
                 selectedTabIndex = state.tab.ordinal,
+                scrollState = tabScroll,
                 edgePadding = 12.dp,
                 containerColor = MaterialTheme.colorScheme.background,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).fadingEdges(tabScroll, width = 40.dp),
             ) {
                 FinanceTab.entries.forEach { tab ->
                     Tab(selected = state.tab == tab, onClick = { actions.setTab(tab) }, text = { Text(tab.label) })

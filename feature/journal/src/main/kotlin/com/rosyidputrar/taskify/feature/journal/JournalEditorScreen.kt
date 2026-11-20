@@ -254,7 +254,8 @@ fun JournalEditorContent(
         beforeBody = { MoodSlider(ui.mood, actions::mood, enabled = !preview) },
         afterBody = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Tag", style = MaterialTheme.typography.titleSmall)
+                // Mode Baca tanpa tag: judul "Tag" tidak ditampilkan sendirian (tampak seperti bagian kosong).
+                if (!preview || tags.isNotEmpty()) Text("Tag", style = MaterialTheme.typography.titleSmall)
                 if (ui.id != null) {
                     TagPicker(tags, allTags, actions::addTag, actions::removeTag, enabled = !preview)
                 } else {

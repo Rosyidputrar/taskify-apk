@@ -50,7 +50,7 @@ enum class TaskifyModule(
     TikTok("TikTok", "Lihat & unduh konten", Icons.Outlined.OndemandVideo, Color(0xFF1F1C17), Color(0xFFE8E8E8)),
     Notifications("Notifikasi", "Semua yang masuk hari ini", Icons.Outlined.NotificationsActive, Color(0xFF8C4A00), Color(0xFFFFB86B)),
     Wellbeing("Kesehatan Digital", "Waktu layar & kebiasaan HP", Icons.Outlined.Timelapse, Color(0xFF00639B), Color(0xFF94CCFF)),
-    Assistant("Asisten AI", "Tanya, ringkas, catat cepat", TaskifyLogo.Mono, Color(0xFF5546A8), Color(0xFFC7BDFF)),
+    Assistant("Asisten AI", "Tanya, ringkas, catat cepat", TaskifyLogo.Assistant, Color(0xFF5546A8), Color(0xFFC7BDFF)),
     ;
 
     companion object {

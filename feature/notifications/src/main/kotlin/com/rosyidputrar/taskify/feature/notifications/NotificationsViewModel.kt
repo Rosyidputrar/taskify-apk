@@ -120,6 +120,22 @@ data class NotificationsUiState(
 
     fun walletFor(d: NotifEntry): String? = settings.wallets[d.pkg]?.takeIf { id -> wallets.any { it.id == id } }
 
+    /**
+     * Pilihan awal dompet di kartu draf (BUKAN untuk "Simpan semua" — itu hanya memakai dompet yang
+     * sudah diingat, [walletFor]): dompet yang diingat untuk aplikasi ini → dompet yang namanya
+     * cocok dengan sumber notifikasi (mis. "BCA") → satu-satunya dompet. Selain itu null, dan
+     * kartu meminta pengguna memilih.
+     */
+    fun suggestWallet(d: NotifEntry): String? {
+        walletFor(d)?.let { return it }
+        val source = (d.money?.source ?: d.appLabel).trim()
+        if (source.isNotEmpty()) {
+            wallets.filter { w -> w.name.equals(source, ignoreCase = true) || w.name.contains(source, ignoreCase = true) || source.contains(w.name, ignoreCase = true) }
+                .singleOrNull()?.let { return it.id }
+        }
+        return wallets.singleOrNull()?.id
+    }
+
     /** Tebakan kategori dari nama merchant/pengirim. */
     fun guessCategory(d: NotifEntry): String? {
         val money = d.money ?: return null
