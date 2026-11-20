@@ -146,6 +146,7 @@ private val deviceModule = module {
     single { TaskRepository(get(), get()) }
     single { TagRepository(get(), get()) }
     single { HomeRepository(get()) }
+    single { com.rosyidputrar.taskify.core.store.home.HomeShortcutRepository(get()) }
     single { CalendarRepository(get()) }
     single { JournalRepository(get(), get()) }
     single { NoteRepository(get(), get()) }
@@ -275,7 +276,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
     viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get()) }
-    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull(), get(), getOrNull()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
     viewModel { ShareViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }

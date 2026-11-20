@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.vault.config
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.RecentEntities
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import androidx.activity.compose.BackHandler
 import com.rosyidputrar.taskify.core.designsystem.component.DiscardChangesDialog
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
@@ -125,6 +129,7 @@ fun ConfigFileContent(
     @Suppress("NAME_SHADOWING")
     val actions = remember(actions, haptics) { HapticConfigFileActions(actions, haptics) }
     val file = state.file
+    LaunchedEffect(file?.id, file?.name) { file?.let { RecentEntities.report("config_file", it.id, it.name) } }
     var menu by remember { mutableStateOf(false) }
     var meta by rememberSaveable { mutableStateOf(false) }
     var raw by rememberSaveable { mutableStateOf(false) }
@@ -144,6 +149,7 @@ fun ConfigFileContent(
                             IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(text = { Text("Ubah nama & lingkungan") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { menu = false; meta = true })
+                                TodayPinMenuItem(ShortcutType.Config, file.id, file.name, onDone = { menu = false })
                                 DropdownMenuItem(text = { Text("Pindahkan ke Sampah") }, leadingIcon = { Icon(Icons.Outlined.Delete, null) }, onClick = { menu = false; actions.remove(onBack) })
                             }
                         }

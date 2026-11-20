@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.finance
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
@@ -89,8 +90,14 @@ fun FinanceScreen(
     /** Konten tambahan di bawah kepala layar (mis. kartu draf transaksi dari Notifikasi). */
     topSlot: @Composable () -> Unit = {},
     viewModel: FinanceViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `FinanceTab`). */
+    initialTab: String? = null,
+    /** Langsung disaring ke satu dompet (pintasan dompet). */
+    initialWalletId: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { FinanceTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
+    ApplyOnce(initialWalletId) { viewModel.setWallet(initialWalletId) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingCsv by remember { mutableStateOf<String?>(null) }

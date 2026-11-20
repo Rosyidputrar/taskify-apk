@@ -4,6 +4,7 @@ package com.rosyidputrar.taskify.core.domain.home
 enum class HomeSection(val label: String) {
     Week("Pita minggu"),
     Focus("Fokus sekarang"),
+    Shortcuts("Pintasan"),
     Summary("Ringkasan"),
     Activity("Aktivitas hari ini"),
 }
@@ -30,6 +31,8 @@ data class HomeLayout(
     val hiddenSections: Set<HomeSection> = emptySet(),
     val tiles: List<HomeTile> = DEFAULT_TILES + (HomeTile.entries - DEFAULT_TILES.toSet()),
     val hiddenTiles: Set<HomeTile> = HomeTile.entries.toSet() - DEFAULT_TILES.toSet(),
+    /** Kartu "Lanjutkan" otomatis (item yang terakhir diubah) di bagian Pintasan. */
+    val showRecent: Boolean = true,
 ) {
     val visibleSections: List<HomeSection> get() = sections.filter { it !in hiddenSections }
     val visibleTiles: List<HomeTile> get() = tiles.filter { it !in hiddenTiles }
@@ -39,10 +42,12 @@ data class HomeLayout(
     fun toggleSection(s: HomeSection): HomeLayout = copy(hiddenSections = hiddenSections.toggled(s))
     fun moveTile(t: HomeTile, by: Int): HomeLayout = copy(tiles = tiles.moved(t, by))
     fun toggleTile(t: HomeTile): HomeLayout = copy(hiddenTiles = hiddenTiles.toggled(t))
+    fun toggleRecent(): HomeLayout = copy(showRecent = !showRecent)
 
     fun encode(): String = listOf(
         sections.joinToString(",") { (if (it in hiddenSections) "-" else "") + it.name },
         tiles.joinToString(",") { (if (it in hiddenTiles) "-" else "") + it.name },
+        if (showRecent) "recent" else "-recent",
     ).joinToString("|")
 
     companion object {
@@ -57,11 +62,28 @@ data class HomeLayout(
             // Item baru (belum ada di teks lama) → ditambahkan; ubin baru disembunyikan, bagian baru tampil.
             val newTiles = HomeTile.entries - tiles.toSet()
             return HomeLayout(
-                sections = sections + (HomeSection.entries - sections.toSet()),
+                sections = withNewSections(sections),
                 hiddenSections = hiddenS,
                 tiles = tiles + newTiles,
                 hiddenTiles = hiddenT + newTiles.filter { it !in DEFAULT_TILES },
+                showRecent = parts.getOrNull(2) != "-recent",
             )
+        }
+
+        /**
+         * Bagian yang belum ada di susunan tersimpan (versi lama) disisipkan tepat SETELAH bagian
+         * yang mendahuluinya langsung di urutan bawaan (bila tidak ada: di akhir) — mis. Pintasan muncul di bawah Fokus, bukan di
+         * paling bawah — tanpa mengubah urutan pilihan pengguna untuk bagian lain.
+         */
+        private fun withNewSections(saved: List<HomeSection>): List<HomeSection> {
+            val out = saved.toMutableList()
+            HomeSection.entries.forEach { s ->
+                if (s in out) return@forEach
+                val before = HomeSection.entries.getOrNull(s.ordinal - 1)
+                val at = out.indexOf(before)
+                if (at >= 0) out.add(at + 1, s) else out.add(s)
+            }
+            return out
         }
 
         private fun <T> parse(part: String?, all: List<T>, of: (String) -> T?): Pair<List<T>, Set<T>> {

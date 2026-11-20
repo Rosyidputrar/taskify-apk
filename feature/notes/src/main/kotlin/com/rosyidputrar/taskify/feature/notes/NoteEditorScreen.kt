@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.notes
 
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -212,6 +214,7 @@ fun NoteEditorContent(
                                 leadingIcon = { Icon(if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (ui.pinned) accent else LocalContentColor.current) },
                                 onClick = { menu = false; actions.togglePin() },
                             )
+                            TodayPinMenuItem(ShortcutType.Note, ui.id, doc.title ?: "Catatan", onDone = { menu = false })
                             DropdownMenuItem(
                                 text = { Text("Salin teks") },
                                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },

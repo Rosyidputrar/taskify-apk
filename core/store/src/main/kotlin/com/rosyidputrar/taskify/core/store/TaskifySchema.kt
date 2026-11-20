@@ -222,11 +222,28 @@ object TaskifySchema {
         localOnly = true,
     )
 
+    /**
+     * LOCAL-ONLY: pintasan yang disematkan ke Hari ini (id = `jenis:sasaran`). Milik akun di HP ini
+     * — ikut terhapus saat keluar akun (disconnectAndClear); webapp tidak punya fitur ini.
+     */
+    val homePins = Table(
+        name = "home_pins",
+        columns = listOf(t("kind"), t("target"), t("title"), r("position"), i("created_ms")),
+        localOnly = true,
+    )
+
+    /** LOCAL-ONLY: kapan isi terakhir DIBUKA di HP ini (id = `jenis:sasaran`) — untuk "Lanjutkan" di Hari ini. */
+    val homeRecent = Table(
+        name = "home_recent",
+        columns = listOf(t("kind"), t("target"), i("opened_ms")),
+        localOnly = true,
+    )
+
     val all: List<Table> = listOf(
         userSettings, tags, taggings, entityLinks, taskLists, tasks, journalEntries, notes, wallets, categories, debts,
         recurringTransactions, transactions, budgets, snippets, codeProjects, attachments, pwKeys, pwItems, pwTotpLog,
         configFiles, configVersions, tempFiles, uploadErrors, focusSessions,
-        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily, txSources, aiSessions, aiMessages,
+        notifLog, notifDaily, usageSessions, usageDaily, deviceDaily, txSources, aiSessions, aiMessages, homePins, homeRecent,
     )
 
     val schema = Schema(all)

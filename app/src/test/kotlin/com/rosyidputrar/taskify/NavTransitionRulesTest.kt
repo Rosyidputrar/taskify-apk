@@ -82,7 +82,7 @@ class NavTransitionRulesTest {
         compose.runOnIdle { assertTrue(current.isTopLevel(null)) }
         go(RoomRoute)
         compose.runOnIdle { assertTrue(current.isTopLevel(null)) }
-        go(FinanceRoute)
+        go(FinanceRoute())
         compose.runOnIdle {
             assertFalse(current.isTopLevel(null), "modul biasa = push")
             assertTrue(current.isTopLevel(TaskifyModule.Finance), "modul yang disematkan di dok = top-level")
@@ -104,7 +104,7 @@ class NavTransitionRulesTest {
         compose.runOnIdle { assertEquals("calendar", selectedKey()) }
         go(RoomRoute)
         compose.runOnIdle { assertEquals("room", selectedKey()) }
-        go(FinanceRoute)
+        go(FinanceRoute())
         compose.runOnIdle { assertNull(selectedKey(), "Keuangan (bukan dok, tidak disematkan) = tidak ada yang terpilih") }
         go(JournalEntryRoute(id = "j"))
         compose.runOnIdle { assertNull(selectedKey(), "editor jurnal = tidak ada yang terpilih") }
@@ -115,7 +115,7 @@ class NavTransitionRulesTest {
     /** A1 + A3: modul sematan disorot sebagai "pin", dan Ruang tidak ikut tersorot. */
     @Test fun pinnedModuleSelectsPinKeyNotRoom() {
         host()
-        go(FinanceRoute)
+        go(FinanceRoute())
         compose.runOnIdle {
             assertEquals("pin", selectedKey(TaskifyModule.Finance), "Keuangan yang disematkan = pin")
             assertNull(selectedKey(TaskifyModule.Journal), "pin orang lain tidak berlaku")

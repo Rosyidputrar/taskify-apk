@@ -1,5 +1,7 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -207,6 +209,7 @@ fun JournalEditorContent(
                                 leadingIcon = { Icon(if (ui.pinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin, null, tint = if (ui.pinned) accent else LocalContentColor.current) },
                                 onClick = { menu = false; actions.togglePin() },
                             )
+                            TodayPinMenuItem(ShortcutType.Journal, ui.id, doc.title ?: "Jurnal", onDone = { menu = false })
                             DropdownMenuItem(
                                 text = { Text("Salin teks") },
                                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },

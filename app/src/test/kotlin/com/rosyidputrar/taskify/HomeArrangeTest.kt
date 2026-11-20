@@ -63,7 +63,7 @@ class HomeArrangeTest {
         compose.onNodeWithText("Pita minggu").performClick()
         assertTrue(HomeSection.Week in layout.hiddenSections)
         compose.onNodeWithContentDescription("Turunkan Fokus sekarang").performClick()
-        assertEquals(listOf(HomeSection.Week, HomeSection.Summary, HomeSection.Focus, HomeSection.Activity), layout.sections)
+        assertEquals(listOf(HomeSection.Week, HomeSection.Shortcuts, HomeSection.Focus, HomeSection.Summary, HomeSection.Activity), layout.sections)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Saldo semua dompet"))
         compose.onNodeWithText("Saldo semua dompet").assertIsOff().performClick().assertIsOn()
         assertTrue(HomeTile.Balance in layout.visibleTiles)

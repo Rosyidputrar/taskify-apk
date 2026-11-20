@@ -52,6 +52,9 @@ class TaskifySchemaTest {
             "tool_name" to "TEXT", "state" to "TEXT", "error" to "TEXT", "created_ms" to "INTEGER",
         ),
         "focus_sessions" to mapOf("task_id" to "TEXT", "task_title" to "TEXT", "day" to "TEXT", "started_at" to "TEXT", "ended_at" to "TEXT", "minutes" to "INTEGER"),
+        // Lokal saja: pintasan Hari ini yang disematkan.
+        "home_pins" to mapOf("kind" to "TEXT", "target" to "TEXT", "title" to "TEXT", "position" to "REAL", "created_ms" to "INTEGER"),
+        "home_recent" to mapOf("kind" to "TEXT", "target" to "TEXT", "opened_ms" to "INTEGER"),
     )
 
     @Test fun schemaIsValid() = TaskifySchema.schema.validate()
@@ -65,7 +68,7 @@ class TaskifySchemaTest {
     @Test fun uploadErrorsIsLocalOnlyAndVaultTablesTrackOldEnc() {
         assertTrue(TaskifySchema.uploadErrors.options.localOnly)
         assertTrue(TaskifySchema.focusSessions.options.localOnly)
-        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily, TaskifySchema.txSources, TaskifySchema.aiSessions, TaskifySchema.aiMessages)
+        listOf(TaskifySchema.notifLog, TaskifySchema.notifDaily, TaskifySchema.usageSessions, TaskifySchema.usageDaily, TaskifySchema.deviceDaily, TaskifySchema.txSources, TaskifySchema.aiSessions, TaskifySchema.aiMessages, TaskifySchema.homePins, TaskifySchema.homeRecent)
             .forEach { assertTrue(it.options.localOnly, it.name) }
         listOf(TaskifySchema.pwItems, TaskifySchema.pwTotpLog, TaskifySchema.configVersions).forEach {
             assertEquals(listOf("enc"), it.options.trackPreviousValues?.columnFilter, it.name)

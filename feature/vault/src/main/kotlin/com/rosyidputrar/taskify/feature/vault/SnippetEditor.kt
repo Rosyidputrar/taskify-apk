@@ -1,5 +1,9 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import androidx.compose.runtime.LaunchedEffect
+import com.rosyidputrar.taskify.core.designsystem.component.RecentEntities
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -284,6 +288,8 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
         }
         return
     }
+    // "Lanjutkan" di Hari ini & shortcut launcher: snippet yang baru dibuka.
+    LaunchedEffect(d.id, d.title) { d.id?.let { RecentEntities.report("snippet", it, d.title) } }
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val haptics = rememberHaptics()
@@ -318,6 +324,7 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Lainnya") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        TodayPinMenuItem(ShortcutType.Snippet, d.id, d.title.ifBlank { "Snippet" }, onDone = { menu = false })
                         if (vars.isNotEmpty()) {
                             DropdownMenuItem(
                                 text = { Text("Isi variabel & salin") },

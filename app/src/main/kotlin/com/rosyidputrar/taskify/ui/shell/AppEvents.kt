@@ -26,6 +26,8 @@ sealed interface AppEvent {
     data class OpenFocus(val taskId: String? = null) : AppEvent
     /** Buka entitas lintas modul (hasil pencarian, tag, tautan, Sampah). */
     data class OpenEntity(val type: com.rosyidputrar.taskify.core.domain.files.EntityType, val id: String) : AppEvent
+    /** Buka pintasan Hari ini (isi modul atau tampilan cepat). */
+    data class OpenShortcut(val ref: com.rosyidputrar.taskify.core.domain.home.ShortcutRef) : AppEvent
 }
 
 /**

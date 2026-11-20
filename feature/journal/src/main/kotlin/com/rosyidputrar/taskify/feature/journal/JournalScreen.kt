@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.journal
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
 import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
@@ -83,8 +84,11 @@ fun JournalScreen(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: JournalViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `JournalTab`). */
+    initialTab: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { JournalTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
     JournalContent(state, viewModel, contentPadding, onOpenEntry, onNewEntry, onBack, backButton)
 }
 

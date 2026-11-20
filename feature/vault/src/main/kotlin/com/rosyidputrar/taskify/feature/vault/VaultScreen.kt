@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.vault
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
 import com.rosyidputrar.taskify.core.designsystem.component.fadingEdges
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.rosyidputrar.taskify.core.designsystem.component.SwipeToDelete
@@ -89,8 +90,11 @@ fun VaultScreen(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: VaultViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `VaultTab`). */
+    initialTab: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { VaultTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
     VaultContent(state, viewModel, contentPadding, onOpenSnippet, onOpenProject, onBack, backButton, onOpenConfig)
 }
 

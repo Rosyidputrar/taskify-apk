@@ -136,6 +136,7 @@ import com.rosyidputrar.taskify.feature.review.ReviewNav
 import com.rosyidputrar.taskify.feature.review.ReviewScreen
 import com.rosyidputrar.taskify.core.domain.review.ReviewPeriod
 import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.navigation.openShortcut
 import com.rosyidputrar.taskify.feature.files.FilesScreen
 import com.rosyidputrar.taskify.feature.sandi.SandiScreen
 import com.rosyidputrar.taskify.feature.vault.config.ConfigEditorScreen
@@ -217,6 +218,7 @@ fun TaskifyApp(
         AppEvents.events.collect { event ->
             when (event) {
                 is AppEvent.OpenEntity -> { spotlight.close(); navController.openEntity(event.type, event.id) }
+                is AppEvent.OpenShortcut -> { spotlight.close(); navController.openShortcut(event.ref, Dates.today()) }
                 is AppEvent.OpenModule -> { spotlight.close(); navController.navigate(event.module.route()) { launchSingleTop = true } }
                 AppEvent.OpenShare -> { spotlight.close(); navController.navigate(ShareRoute) { launchSingleTop = true } }
                 is AppEvent.OpenFocus -> { spotlight.close(); navController.navigate(FocusRoute(event.taskId)) { launchSingleTop = true } }
@@ -538,6 +540,7 @@ private fun TaskifyNavHost(
                 TasksScreen(
                     contentPadding = contentPadding,
                     openTaskId = route.taskId,
+                    initialView = route.view,
                     onBack = navController.backIfPossible(),
                     backButton = { BackButton(it) },
                     // Kartu tugas di Beranda "terbang" ke barisnya di daftar (key sama: task-{id}).
@@ -558,10 +561,11 @@ private fun TaskifyNavHost(
                 )
             }
         }
-        composable<VaultRoute> {
+        composable<VaultRoute> { entry ->
             Screen {
                 VaultScreen(
                     contentPadding = contentPadding,
+                    initialTab = entry.toRoute<VaultRoute>().tab,
                     onOpenSnippet = { navController.navigate(SnippetRoute(it)) },
                     onOpenProject = { navController.navigate(ProjectRoute(it)) },
                     onOpenConfig = { id -> navController.navigate(if (id == null) ConfigEditRoute() else ConfigFileRoute(id)) },
@@ -577,7 +581,7 @@ private fun TaskifyNavHost(
                     contentPadding = contentPadding,
                     onBack = { navController.popBackStack() },
                     onEdit = { navController.navigate(ConfigEditRoute(fileId = it)) },
-                    onOpenSandi = { navController.navigate(SandiRoute) },
+                    onOpenSandi = { navController.navigate(SandiRoute()) },
                     backButton = { BackButton(it) },
                 )
             }
@@ -593,7 +597,7 @@ private fun TaskifyNavHost(
                         navController.popBackStack()
                         if (route.fileId == null) navController.navigate(ConfigFileRoute(id))
                     },
-                    onOpenSandi = { navController.navigate(SandiRoute) },
+                    onOpenSandi = { navController.navigate(SandiRoute()) },
                     backButton = { BackButton(it) },
                 )
             }
@@ -695,8 +699,8 @@ private fun TaskifyNavHost(
                     nav = ReviewNav(
                         openDay = { navController.navigate(CalendarRoute(it)) },
                         openJournal = { navController.navigate(JournalEntryRoute(id = it)) },
-                        openFinance = { navController.navigate(FinanceRoute) },
-                        openVault = { navController.navigate(VaultRoute) },
+                        openFinance = { navController.navigate(FinanceRoute()) },
+                        openVault = { navController.navigate(VaultRoute()) },
                         reflect = { period, from, to ->
                             navController.navigate(JournalEntryRoute(date = Dates.today(), template = if (period == ReviewPeriod.Month) "month" else "week", from = from, to = to))
                         },
@@ -709,8 +713,8 @@ private fun TaskifyNavHost(
         composable<FilesRoute> {
             Screen { FilesScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
         }
-        composable<SandiRoute> {
-            Screen { SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }) }
+        composable<SandiRoute> { entry ->
+            Screen { SandiScreen(contentPadding = contentPadding, onBack = navController.backIfPossible(), backButton = { BackButton(it) }, initialTab = entry.toRoute<SandiRoute>().tab) }
         }
         composable<SnippetRoute> { entry ->
             Screen { SnippetEditorScreen(entry.toRoute<SnippetRoute>().id, onBack = { navController.popBackStack() }) }
@@ -729,10 +733,13 @@ private fun TaskifyNavHost(
         composable<ZipRoute> { entry ->
             Screen { ZipViewerScreen(entry.toRoute<ZipRoute>().attachmentId, onBack = { navController.popBackStack() }) }
         }
-        composable<FinanceRoute> {
+        composable<FinanceRoute> { entry ->
             Screen {
+                val route = entry.toRoute<FinanceRoute>()
                 FinanceScreen(
                     contentPadding = contentPadding,
+                    initialTab = route.tab,
+                    initialWalletId = route.walletId,
                     onOpenTx = { navController.navigate(TransactionRoute(id = it)) },
                     onNewTx = { walletId -> navController.navigate(TransactionRoute(walletId = walletId)) },
                     onBack = navController.backIfPossible(),
@@ -747,10 +754,11 @@ private fun TaskifyNavHost(
                 TxEditorScreen(TxEditorArgs(route.id, route.date, route.walletId), onBack = { navController.popBackStack() })
             }
         }
-        composable<JournalRoute> {
+        composable<JournalRoute> { entry ->
             Screen {
                 JournalScreen(
                     contentPadding = contentPadding,
+                    initialTab = entry.toRoute<JournalRoute>().tab,
                     onOpenEntry = { navController.navigate(JournalEntryRoute(id = it)) },
                     onNewEntry = { navController.navigate(JournalEntryRoute(date = it)) },
                     onBack = navController.backIfPossible(),

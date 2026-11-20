@@ -68,6 +68,36 @@ object SampleData {
             ActivityItem(ActivityKind.Task, "d", "Siram tanaman", "", done = true),
         ),
         loaded = true,
+        pinned = homePinned,
+        recent = homeRecent,
+    )
+
+    /** Pintasan Hari ini: tampilan cepat + isi modul yang disematkan. */
+    val homePinned = listOf(
+        com.rosyidputrar.taskify.core.domain.home.HomeShortcut(
+            com.rosyidputrar.taskify.core.domain.home.ShortcutRef.view(com.rosyidputrar.taskify.core.domain.home.QuickView.TasksOverdue),
+            "Tugas terlambat", pinned = true,
+        ),
+        com.rosyidputrar.taskify.core.domain.home.HomeShortcut(
+            com.rosyidputrar.taskify.core.domain.home.ShortcutRef(com.rosyidputrar.taskify.core.domain.home.ShortcutType.Note, "n-ide"),
+            "Ide fitur Taskify", "2026-10-05", pinned = true,
+        ),
+        com.rosyidputrar.taskify.core.domain.home.HomeShortcut(
+            com.rosyidputrar.taskify.core.domain.home.ShortcutRef(com.rosyidputrar.taskify.core.domain.home.ShortcutType.Wallet, "w-bca"),
+            "BCA", "bank", pinned = true,
+        ),
+    )
+
+    /** "Lanjutkan" otomatis (tanpa waktu → keterangan stabil di tangkapan layar). */
+    val homeRecent = listOf(
+        com.rosyidputrar.taskify.core.domain.home.HomeShortcut(
+            com.rosyidputrar.taskify.core.domain.home.ShortcutRef(com.rosyidputrar.taskify.core.domain.home.ShortcutType.Snippet, "s-retry"),
+            "Retry dengan backoff", "kotlin",
+        ),
+        com.rosyidputrar.taskify.core.domain.home.HomeShortcut(
+            com.rosyidputrar.taskify.core.domain.home.ShortcutRef(com.rosyidputrar.taskify.core.domain.home.ShortcutType.AiChat, "a-libur"),
+            "Rencana liburan akhir tahun", "gpt-4.1-mini",
+        ),
     )
 
     fun calendarState(): com.rosyidputrar.taskify.feature.calendar.CalendarUiState {

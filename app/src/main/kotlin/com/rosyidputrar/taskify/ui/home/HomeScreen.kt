@@ -5,6 +5,8 @@ import com.rosyidputrar.taskify.core.domain.device.formatDuration
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.FilledTonalButton
 import com.rosyidputrar.taskify.core.domain.home.HomeTile
+import com.rosyidputrar.taskify.core.domain.home.QuickView
+import com.rosyidputrar.taskify.core.domain.home.ShortcutRef
 import com.rosyidputrar.taskify.core.domain.home.HomeSection
 import com.rosyidputrar.taskify.core.domain.home.HomeLayout
 import com.rosyidputrar.taskify.core.domain.calendar.DayActivity
@@ -91,7 +93,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    HomeContent(state, displayName, contentPadding, onOpenModule, onOpenTask, viewModel::toggle, viewModel::quickAdd, viewModel::setLayout)
+    HomeContent(state, displayName, contentPadding, onOpenModule, onOpenTask, viewModel::toggle, viewModel::quickAdd, viewModel::setLayout, shortcutActions = viewModel)
 }
 
 @Composable
@@ -104,10 +106,13 @@ fun HomeContent(
     onToggle: (Task) -> Unit,
     onQuickAdd: (String) -> Unit,
     onLayoutChange: (HomeLayout) -> Unit = {},
+    shortcutActions: HomeShortcutActions = object : HomeShortcutActions {},
+    nowMs: Long = System.currentTimeMillis(),
 ) {
     val today = state.today
     val layout = state.layout
     var arranging by rememberSaveable { mutableStateOf(false) }
+    var addingShortcut by rememberSaveable { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") { TodayHeader(today, homeGreeting(Dates.greeting(), displayName), onArrange = { arranging = true }) }
         if (state.rejectedChanges > 0) {
@@ -133,12 +138,26 @@ fun HomeContent(
             when (section) {
                 HomeSection.Week -> item(key = "week") { WeekRibbon(today, state.week, onSelect = { day -> AppEvents.send(AppEvent.OpenCalendar(day)) }) }
                 HomeSection.Focus -> item(key = "focus") { FocusCard(state, onToggle, onOpenTask, onQuickAdd, onSeeAll = { onOpenModule(TaskifyModule.Tasks) }) }
-                HomeSection.Summary -> if (layout.visibleTiles.isNotEmpty()) item(key = "summary") { SummaryBento(state, layout.visibleTiles, onOpenModule) }
+                HomeSection.Shortcuts -> item(key = "shortcuts") {
+                    val row = state.shortcutRow
+                    ShortcutsSection(
+                        row, pinnedCount = row.count { it.pinned }, nowMs = nowMs, actions = shortcutActions,
+                        onAdd = { addingShortcut = true }, onArrange = { arranging = true },
+                    )
+                }
+                HomeSection.Summary -> if (layout.visibleTiles.isNotEmpty()) item(key = "summary") { SummaryBento(state, layout.visibleTiles, onOpenModule, shortcutActions::open) }
                 HomeSection.Activity -> activitySection(state, onOpenTask)
             }
         }
     }
-    if (arranging) HomeLayoutSheet(layout, onLayoutChange, onDismiss = { arranging = false })
+    if (arranging) {
+        HomeLayoutSheet(
+            layout, onLayoutChange, onDismiss = { arranging = false },
+            pinned = state.pinned, shortcutActions = shortcutActions,
+            onAddShortcut = { arranging = false; addingShortcut = true },
+        )
+    }
+    if (addingShortcut) ShortcutPickerSheet(state, shortcutActions, onDismiss = { addingShortcut = false })
 }
 
 private fun LazyListScope.activitySection(state: HomeUiState, onOpenTask: (String) -> Unit) {
@@ -356,20 +375,29 @@ private fun FocusCard(state: HomeUiState, onToggle: (Task) -> Unit, onOpenTask: 
 }
 
 
-private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String, val icon: ImageVector? = null)
+/** [ref] = buka tampilan yang relevan (mis. "2 terlambat" → filter Terlambat), bukan halaman depan modul. */
+private data class Tile(val module: TaskifyModule, val label: String, val value: String, val hint: String, val icon: ImageVector? = null, val ref: ShortcutRef? = null)
 
 @Composable
-private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModule: (TaskifyModule) -> Unit) {
+private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModule: (TaskifyModule) -> Unit, onOpenShortcut: (ShortcutRef) -> Unit) {
     val s = state.summary
     val mood = s.moodToday?.roundToInt()?.coerceIn(1, 5)
     val tiles = visible.map { tile ->
         when (tile) {
-            HomeTile.Tasks -> Tile(TaskifyModule.Tasks, tile.label, "${s.tasksTodayDone}/${s.tasksToday}", if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat")
-            HomeTile.Mood -> Tile(TaskifyModule.Journal, tile.label, moodLabel(mood) ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", moodIcon(mood))
-            HomeTile.Spending -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.expenseToday), "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}")
+            HomeTile.Tasks -> Tile(
+                TaskifyModule.Tasks, tile.label, "${s.tasksTodayDone}/${s.tasksToday}",
+                if (s.tasksOverdue > 0) "${s.tasksOverdue} terlambat" else "tidak ada yang terlambat",
+                ref = ShortcutRef.view(if (s.tasksOverdue > 0) QuickView.TasksOverdue else QuickView.TasksToday),
+            )
+            HomeTile.Mood -> Tile(
+                TaskifyModule.Journal, tile.label, moodLabel(mood) ?: "—", if (s.journalToday > 0) "${s.journalToday} catatan jurnal" else "Belum menulis", moodIcon(mood),
+                // Belum menulis → langsung ke halaman hari ini; sudah → rak jurnal.
+                ref = if (s.journalToday == 0) ShortcutRef.view(QuickView.JournalToday) else null,
+            )
+            HomeTile.Spending -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.expenseToday), "bulan ini Rp ${Rupiah.compact(s.expenseMonth)}", ref = ShortcutRef.view(QuickView.FinanceTransactions))
             HomeTile.Streak -> Tile(TaskifyModule.Review, tile.label, "${state.streak}", "hari berturut-turut")
             HomeTile.Balance -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.balance), if (s.balance < 0) "lebih banyak keluar" else "total semua dompet")
-            HomeTile.Income -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.incomeMonth), "keluar Rp ${Rupiah.compact(s.expenseMonth)}")
+            HomeTile.Income -> Tile(TaskifyModule.Finance, tile.label, rupiahShort(s.incomeMonth), "keluar Rp ${Rupiah.compact(s.expenseMonth)}", ref = ShortcutRef.view(QuickView.FinanceTransactions))
             HomeTile.ScreenTime -> Tile(
                 TaskifyModule.Wellbeing, tile.label,
                 state.device.screenMs?.let(::formatDuration) ?: "—",
@@ -385,7 +413,7 @@ private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModu
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Max)) {
-                row.forEach { tile -> BentoTile(tile, onOpenModule) }
+                row.forEach { tile -> BentoTile(tile, onOpenModule, onOpenShortcut) }
                 // Jumlah ubin ganjil: ubin terakhir tetap selebar setengah supaya grid rapi.
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -394,11 +422,11 @@ private fun SummaryBento(state: HomeUiState, visible: List<HomeTile>, onOpenModu
 }
 
 @Composable
-private fun RowScope.BentoTile(tile: Tile, onOpenModule: (TaskifyModule) -> Unit) {
+private fun RowScope.BentoTile(tile: Tile, onOpenModule: (TaskifyModule) -> Unit, onOpenShortcut: (ShortcutRef) -> Unit) {
     IndexCard(
         tile.module,
-        onClick = { onOpenModule(tile.module) },
-        onClickLabel = "Buka ${tile.module.label}",
+        onClick = { tile.ref?.let(onOpenShortcut) ?: onOpenModule(tile.module) },
+        onClickLabel = tile.ref?.view?.let { "Buka ${it.label}" } ?: "Buka ${tile.module.label}",
         modifier = Modifier.weight(1f).fillMaxHeight(),
         contentPadding = 14.dp,
     ) {

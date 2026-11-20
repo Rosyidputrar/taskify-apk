@@ -59,8 +59,12 @@ class TaskifyApplication : Application() {
         com.rosyidputrar.taskify.core.designsystem.component.FocusLauncher.install { taskId ->
             com.rosyidputrar.taskify.ui.shell.AppEvents.send(com.rosyidputrar.taskify.ui.shell.AppEvent.OpenFocus(taskId))
         }
+        val appScope = get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER)
+        val homeShortcuts = get<com.rosyidputrar.taskify.core.store.home.HomeShortcutRepository>()
         com.rosyidputrar.taskify.core.designsystem.component.RecentEntities.install { type, id, title ->
             com.rosyidputrar.taskify.widget.EntityShortcuts.report(this, type, id, title, pinActive = lock.state.value.config != null)
+            // "Lanjutkan" di Hari ini: dibuka (baca saja) juga dihitung, bukan hanya diubah.
+            appScope.launch { runCatching { homeShortcuts.recordOpen(type, id) } }
         }
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launchPinShortcutGuard(lock, this)
         // Widget "Hari ini" mengikuti perubahan tugas (lokal maupun dari sinkron).

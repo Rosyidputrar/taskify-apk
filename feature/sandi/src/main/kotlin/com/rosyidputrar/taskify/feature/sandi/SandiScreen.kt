@@ -1,5 +1,6 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import com.rosyidputrar.taskify.core.designsystem.component.ApplyOnce
 import androidx.compose.runtime.LaunchedEffect
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.component.TaskifyHaptics
@@ -81,8 +82,11 @@ fun SandiScreen(
     onBack: (() -> Unit)? = null,
     backButton: @Composable (() -> Unit) -> Unit = {},
     viewModel: SandiViewModel = koinViewModel(),
+    /** Tab awal dari pintasan Hari ini (nama `SandiTab`). */
+    initialTab: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    ApplyOnce(initialTab) { SandiTab.entries.firstOrNull { it.name == initialTab }?.let(viewModel::setTab) }
     // Detak 1 dtk dibaca HANYA oleh baris kode 2FA (bukan seluruh layar) → daftar tidak disusun ulang tiap detik.
     val clock = viewModel.clock.collectAsStateWithLifecycle()
     SecureWindow()

@@ -1,5 +1,8 @@
 package com.rosyidputrar.taskify.feature.ai
 
+import com.rosyidputrar.taskify.core.designsystem.component.RecentEntities
+import com.rosyidputrar.taskify.core.domain.home.ShortcutType
+import com.rosyidputrar.taskify.core.ui.home.TodayPinMenuItem
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
@@ -156,6 +159,8 @@ fun AiChatContent(
     onDeleted: () -> Unit,
 ) {
     val haptics = rememberHaptics()
+    // "Lanjutkan" di Hari ini: percakapan yang baru dibuka.
+    LaunchedEffect(state.sessionId, state.title) { state.sessionId?.let { RecentEntities.report("ai_session", it, state.title.ifBlank { "Percakapan" }) } }
     // TextFieldValue: teks yang diisi dari luar (Ubah, saran) menaruh kursor di AKHIR, bukan di awal.
     var input by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     fun fill(text: String) { input = TextFieldValue(text, TextRange(text.length)) }
@@ -233,6 +238,7 @@ private fun ChatTopBar(
                 if (state.sessionId != null) {
                     DropdownMenuItem(text = { Text("Ganti nama") }, onClick = { menu = false; dialog = "rename" })
                     DropdownMenuItem(text = { Text("System prompt percakapan ini") }, onClick = { menu = false; dialog = "prompt" })
+                    TodayPinMenuItem(ShortcutType.AiChat, state.sessionId, state.title.ifBlank { "Percakapan" }, onDone = { menu = false })
                 }
                 DropdownMenuItem(text = { Text("Pengaturan AI") }, leadingIcon = { Icon(Icons.Outlined.Tune, null) }, onClick = { menu = false; onSettings() })
                 if (state.sessionId != null) {

@@ -186,6 +186,15 @@ Pengaturan › Tampilan: mode Terang/Gelap/Ikuti sistem, **palet warna**, dan **
 - **Susun Beranda** (ikon di samping sapaan): urutkan atau sembunyikan pita minggu, Fokus, Ringkasan,
   dan Aktivitas; pilih ubin ringkasan (termasuk *Saldo semua dompet* dan *Masuk bulan ini*). Pita
   minggu menampilkan titik tugas/jurnal/catatan/transaksi per hari.
+- **Pintasan di Hari ini**: baris kartu yang langsung membuka *isi* modul, bukan halaman depannya.
+  - *Disematkan* (maks. 12): catatan, jurnal, snippet, project, konfigurasi, chat asisten, daftar
+    tugas, dompet, tag, dan *tampilan cepat* (Tugas terlambat, Kode 2FA, Anggaran, Tulis jurnal, …).
+    Sematkan lewat kartu "Tambah pintasan" (ada pencarian), menu ⋮ di layar isi (*Sematkan ke
+    Hari ini*), atau tekan lama kartu "Lanjutkan".
+  - *Lanjutkan* otomatis: isi yang terakhir dibuka di HP ini atau diubah, bisa dimatikan.
+  - Tekan lama kartu → lepas / geser kiri-kanan; semuanya juga bisa diatur di Susun Beranda.
+  - Disimpan di tabel lokal `home_pins` & `home_recent` (tidak disinkronkan; ikut terhapus saat Keluar).
+  - Ubin ringkasan membuka tampilan yang relevan (mis. "2 terlambat" → filter Terlambat).
 
 ### Isi otomatis Sandi
 
