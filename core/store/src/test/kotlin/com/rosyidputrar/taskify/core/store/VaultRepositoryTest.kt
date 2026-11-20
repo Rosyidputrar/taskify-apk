@@ -84,6 +84,15 @@ class VaultRepositoryTest {
         assertEquals("v2", project.latestLabel)
     }
 
+    @Test fun versionsCreatedBackToBackKeepTheirOrder() = runBlocking {
+        // Unggahan beruntun bisa jatuh di milidetik yang sama: urutan & "versi terbaru" harus tetap pasti.
+        val p = vault.saveProject(null, "Burst", null, null)
+        val labels = (1..30).map { "v$it" }
+        labels.forEach { files.create(NewAttachment(EntityType.CodeProject, p, "b.zip", "application/zip", 10, "sha-$it", versionLabel = it)) }
+        assertEquals("v30", vault.watchProject(p).first()!!.latestLabel)
+        assertEquals(labels.reversed(), files.watch(EntityType.CodeProject, p).first().map { it.versionLabel })
+    }
+
     @Test fun projectsWithVersionsAndAttachmentLifecycle() = runBlocking {
         val p = vault.saveProject(null, "Taskify", "Aplikasi produktivitas", "https://github.com/x/y")
         val v1 = files.create(NewAttachment(EntityType.CodeProject, p, "taskify.zip", "application/zip", 1_000, "aaa", versionLabel = "v1"))

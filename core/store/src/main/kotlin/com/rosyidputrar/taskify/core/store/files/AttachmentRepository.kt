@@ -81,7 +81,15 @@ class AttachmentRepository(private val db: PowerSyncDatabase, private val users:
     suspend fun create(input: NewAttachment): Attachment {
         val id = Ids.newId()
         val userId = users.require()
-        val now = Timestamps.nowIso()
+        // Versi diurutkan menurut created_at. Dua unggahan beruntun bisa jatuh di milidetik yang
+        // sama → urutan & "versi terbaru" jadi acak. Jamin selalu SETELAH lampiran terakhir entitas ini.
+        val last = db.get(
+            "SELECT COALESCE(MAX(created_at), '') FROM attachments WHERE entity_type = ? AND entity_id = ?",
+            listOf(input.entityType.value, input.entityId),
+        ) { it.getString(0) ?: "" }
+        val lastMs = Timestamps.parseMillis(last)
+        val nowMs = System.currentTimeMillis().let { if (lastMs != null && it <= lastMs) lastMs + 1 else it }
+        val now = Timestamps.nowIso(nowMs)
         val name = input.fileName.take(255).ifEmpty { "file" }
         val key = storageKey(userId, id, name)
         db.execute(
