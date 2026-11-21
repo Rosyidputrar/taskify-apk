@@ -78,11 +78,12 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
     fun load() {
         _state.update { it.copy(loading = true, error = null) }
         launchSafe {
-            run { _state.update { it.copy(factors = auth.verifiedTotpFactors(), loading = false) } }
+            attempt { _state.update { it.copy(factors = auth.verifiedTotpFactors(), loading = false) } }
         }
     }
 
-    private suspend fun run(block: suspend () -> Unit) {
+    /** Jalankan aksi; galat → pesan di state. (Bukan `run`: di dalam launchSafe nama itu tertangkap stdlib `CoroutineScope.run` sehingga galat lolos.) */
+    private suspend fun attempt(block: suspend () -> Unit) {
         try {
             block()
         } catch (e: CancellationException) {
@@ -96,14 +97,14 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
 
     fun startAdd(name: String) {
         _state.update { it.copy(busy = true, error = null) }
-        launchSafe { run { _state.update { it.copy(enrollment = auth.startEnrollment(name.ifBlank { "Authenticator cadangan" }), busy = false) } } }
+        launchSafe { attempt { _state.update { it.copy(enrollment = auth.startEnrollment(name.ifBlank { "Authenticator cadangan" }), busy = false) } } }
     }
 
     fun confirmAdd(code: String) {
         val e = _state.value.enrollment ?: return
         _state.update { it.copy(busy = true, error = null) }
         launchSafe {
-            run {
+            attempt {
                 auth.verify(e.factorId, code, remember = null)
                 _state.update { it.copy(enrollment = null, busy = false, message = "Authenticator ditambahkan") }
                 load()
@@ -117,7 +118,7 @@ class AuthenticatorsViewModel(private val auth: AuthRepository) : ViewModel() {
         if (_state.value.factors.size <= 1) { _state.update { it.copy(error = "Authenticator terakhir tidak bisa dihapus — verifikasi dua langkah wajib.") }; return }
         _state.update { it.copy(busy = true, error = null) }
         launchSafe {
-            run {
+            attempt {
                 auth.unenroll(factor.id)
                 _state.update { it.copy(busy = false, message = "Authenticator dihapus") }
                 load()

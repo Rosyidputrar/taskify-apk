@@ -38,6 +38,35 @@ data class TotpFactor(val id: String, val name: String)
 
 data class TotpEnrollment(val factorId: String, val secret: String, val uri: String)
 
+/** Tantangan WebAuthn dari server: [optionsJson] diteruskan apa adanya ke Credential Manager. */
+data class PasskeyChallenge(val challengeId: String, val optionsJson: String)
+
+/** Passkey terdaftar di akun. Waktu dalam epoch ms (null = belum pernah dipakai). */
+data class Passkey(val id: String, val name: String, val createdAtMs: Long?, val lastUsedAtMs: Long?)
+
+/**
+ * Operasi passkey akun (Supabase Auth `/passkeys/…`). Antarmuka supaya ViewModel bisa dites
+ * tanpa server; implementasinya [AuthRepository].
+ */
+/** Masuk dengan email & password (antarmuka supaya layar masuk bisa dites tanpa server). */
+interface PasswordAuth {
+    suspend fun signIn(email: String, password: String)
+}
+
+interface PasskeyAuth {
+    /** Tantangan masuk tanpa email (discoverable credential). */
+    suspend fun passkeySignInChallenge(): PasskeyChallenge
+
+    /** Kirim jawaban Credential Manager; sukses → sesi tersimpan & status jadi masuk. */
+    suspend fun passkeySignIn(challengeId: String, credentialJson: String)
+
+    suspend fun passkeyRegistrationChallenge(): PasskeyChallenge
+    suspend fun passkeyRegister(challengeId: String, credentialJson: String): Passkey
+    suspend fun passkeys(): List<Passkey>
+    suspend fun renamePasskey(id: String, name: String): Passkey
+    suspend fun deletePasskey(id: String)
+}
+
 /** Error auth yang sudah diklasifikasi untuk diterjemahkan ke pesan (lihat AuthMessages). */
 class AuthError(val failure: AuthFailure) : Exception(failure.message)
 
@@ -45,12 +74,14 @@ class AuthError(val failure: AuthFailure) : Exception(failure.message)
  * Sumber kebenaran status login + gerbang MFA. Sesi Supabase disimpan di perangkat dan
  * di-refresh otomatis, jadi saat offline aplikasi tetap terbuka dengan sesi terakhir.
  */
+// Passkey supabase-kt 3.9.0 masih @SupabaseExperimental (API server sudah stabil di Supabase Auth).
+@OptIn(io.github.jan.supabase.annotations.SupabaseExperimental::class)
 class AuthRepository(
     private val supabase: SupabaseClient,
     private val trustStore: MfaTrustStore,
     private val network: NetworkMonitor,
     scope: CoroutineScope,
-) {
+) : PasswordAuth, PasskeyAuth {
     private val auth get() = supabase.auth
 
     /** User yang sudah lolos gerbang sejak aplikasi dibuka (proses ini hidup). */
@@ -87,7 +118,7 @@ class AuthRepository(
      * Masuk dengan batas waktu: tanpa ini, permintaan yang menggantung (jaringan setengah putus,
      * server tidak menjawab) membuat tombol "Masuk" berputar tanpa akhir.
      */
-    suspend fun signIn(email: String, password: String) = guard {
+    override suspend fun signIn(email: String, password: String): Unit = guard {
         try {
             withTimeout(SIGN_IN_TIMEOUT_MS) {
                 auth.signInWith(Email) {
@@ -98,6 +129,38 @@ class AuthRepository(
         } catch (e: TimeoutCancellationException) {
             throw AuthError(AuthFailure(network = true, status = null, code = "timeout", message = "Server tidak menjawab dalam ${SIGN_IN_TIMEOUT_MS / 1000} detik."))
         }
+    }
+
+    // ================================================================== passkey
+
+    override suspend fun passkeySignInChallenge(): PasskeyChallenge = guard {
+        auth.passkeys.startAuthentication().let { PasskeyChallenge(it.challengeId, it.options.toString()) }
+    }
+
+    override suspend fun passkeySignIn(challengeId: String, credentialJson: String) {
+        guard { auth.passkeys.verifyAuthentication(challengeId, credentialJson) }
+    }
+
+    override suspend fun passkeyRegistrationChallenge(): PasskeyChallenge = guard {
+        auth.passkeys.startRegistration().let { PasskeyChallenge(it.challengeId, it.options.toString()) }
+    }
+
+    override suspend fun passkeyRegister(challengeId: String, credentialJson: String): Passkey = guard {
+        auth.passkeys.verifyRegistration(challengeId, credentialJson).let {
+            Passkey(it.id, it.friendlyName.orEmpty(), it.createdAt.toEpochMilliseconds(), null)
+        }
+    }
+
+    override suspend fun passkeys(): List<Passkey> = guard {
+        auth.passkeys.list().map { Passkey(it.id, it.friendlyName.orEmpty(), it.createdAt?.toEpochMilliseconds(), it.lastUsedAt?.toEpochMilliseconds()) }
+    }
+
+    override suspend fun renamePasskey(id: String, name: String): Passkey = guard {
+        auth.passkeys.update(id, name.trim()).let { Passkey(it.id, it.friendlyName.orEmpty(), it.createdAt?.toEpochMilliseconds(), it.lastUsedAt?.toEpochMilliseconds()) }
+    }
+
+    override suspend fun deletePasskey(id: String) {
+        guard { auth.passkeys.delete(id) }
     }
 
     /**
