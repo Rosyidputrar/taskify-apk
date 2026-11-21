@@ -188,7 +188,7 @@ fun CaptureForm(
                 }
             }
             Text(
-                "Contoh: \"besok jam 9 rapat #kerja\", \"makan siang 35rb\", \"j: hari yang tenang\".",
+                "Contoh: \"ingatkan cancel Netflix 6 feb 2027\", \"besok jam 9 rapat #kerja\", \"makan siang 35rb\", \"j: hari yang tenang\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -219,16 +219,25 @@ private fun CaptureKind.placeholder(): String = when (this) {
 
 /** Keterangan tujuan simpan di bawah kotak teks (pratinjau hasil parser). */
 private fun CaptureKind.hint(text: String): String {
-    val c = parseCapture(text, Dates.today())
+    val today = Dates.today()
+    val c = parseCapture(text, today)
+    fun taskPreview(): String {
+        if (text.isBlank()) return "Disimpan sebagai tugas."
+        val parts = buildList {
+            c.date?.let { d -> add(Dates.relativeDayLabel(d, today) + (c.time?.let { " $it" } ?: "")) }
+            if (c.remind && c.date != null) add("pengingat ${c.time ?: com.rosyidputrar.taskify.core.domain.tasks.MORNING}")
+        }
+        return if (parts.isEmpty()) "Disimpan sebagai tugas." else "Tugas · ${parts.joinToString(" · ")}."
+    }
     return when (this) {
         CaptureKind.Auto -> when (c.type) {
             CaptureType.Journal -> "Disimpan ke jurnal hari ini."
             CaptureType.Note -> "Disimpan sebagai catatan bebas."
             CaptureType.Expense -> "Pengeluaran ${Rupiah.format(c.amount ?: 0)}" + (c.categoryHint?.let { " · kategori $it" } ?: "") + "."
             CaptureType.Income -> "Pemasukan ${Rupiah.format(c.amount ?: 0)}."
-            CaptureType.Task -> if (text.isBlank()) "Awali \"j:\" untuk jurnal, \"c:\" untuk catatan; nominal jadi transaksi." else "Disimpan sebagai tugas."
+            CaptureType.Task -> if (text.isBlank()) "Awali \"ingatkan\" untuk alarm, \"j:\" jurnal, \"c:\" catatan; nominal jadi transaksi." else taskPreview()
         }
-        CaptureKind.Task -> "Disimpan sebagai tugas."
+        CaptureKind.Task -> taskPreview()
         CaptureKind.Journal -> "Disimpan ke jurnal hari ini."
         CaptureKind.Note -> "Disimpan sebagai catatan bebas."
         CaptureKind.Transaction -> c.amount?.let { "${if (c.type == CaptureType.Income) "Pemasukan" else "Pengeluaran"} ${Rupiah.format(it)} ke dompet pertama." } ?: "Sertakan nominal, mis. \"kopi 25rb\"."

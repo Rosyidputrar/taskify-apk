@@ -129,6 +129,8 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     // Pengingat kustom = dialog dua langkah: tanggal lalu jam.
     var pendingReminderDate by rememberSaveable { mutableStateOf<String?>(null) }
+    // Jika pengguna mengetuk Pengingat saat tanggal belum diisi, buka pemilih tanggal lalu langsung lanjut ke menu Pengingat.
+    var openRemindAfterDate by rememberSaveable { mutableStateOf(false) }
     val accent = TaskifyTheme.modules.accent(TaskifyModule.Tasks)
     val inTrash = task.deletedAt != null
 
@@ -213,7 +215,14 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
                     preset == ReminderPreset.Custom -> Dates.isoToLocal(task.remindAt!!)?.let { (d, t) -> "${Dates.relativeDayLabel(d, today)} $t" } ?: "Pengingat"
                     else -> preset.label
                 }
-                MetaChip(Icons.Outlined.NotificationsNone, label, task.remindAt != null) { dialog = if (task.dueDate == null) "date" else "remind" }
+                MetaChip(Icons.Outlined.NotificationsNone, label, task.remindAt != null) {
+                    if (task.dueDate == null) {
+                        openRemindAfterDate = true
+                        dialog = "date"
+                    } else {
+                        dialog = "remind"
+                    }
+                }
                 DropdownMenu(expanded = dialog == "remind", onDismissRequest = { dialog = null }) {
                     presetsFor(task.dueTime != null).forEach { p ->
                         DropdownMenuItem(
@@ -305,7 +314,16 @@ private fun TaskDetailContent(task: Task, state: TaskDetailState, today: String,
     }
 
     when (dialog) {
-        "date" -> DatePickerSheet(task.dueDate, today, onPick = { vm.setSchedule(it, task.dueTime?.take(5)); dialog = null }, onDismiss = { dialog = null })
+        "date" -> DatePickerSheet(
+            task.dueDate,
+            today,
+            onPick = { picked ->
+                vm.setSchedule(picked, task.dueTime?.take(5))
+                dialog = if (openRemindAfterDate && picked != null) "remind" else null
+                openRemindAfterDate = false
+            },
+            onDismiss = { openRemindAfterDate = false; dialog = null },
+        )
         "time" -> TimePickerDialog(task.dueTime, onPick = { vm.setSchedule(task.dueDate, it); dialog = null }, onDismiss = { dialog = null })
         "repeat" -> RecurrenceDialog(task.rrule, task.dueDate ?: today, today, onSave = { vm.setRecurrence(it); dialog = null }, onDismiss = { dialog = null })
         "remindDate" -> DatePickerSheet(task.dueDate, today, allowClear = false, onPick = { picked -> pendingReminderDate = picked; dialog = if (picked != null) "remindTime" else null }, onDismiss = { dialog = null })

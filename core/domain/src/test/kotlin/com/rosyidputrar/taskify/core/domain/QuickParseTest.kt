@@ -77,4 +77,33 @@ class QuickParseTest {
     @Test fun recognisedTokensAreReported() {
         assertEquals(listOf("#kerja", "!2", "jam 9", "besok"), parseQuickAdd("Rapat besok jam 9 !2 #kerja", today).tokens)
     }
+
+    @Test fun explicitIndonesianAndIsoDates() {
+        assertEquals(QuickParse("Cancel pembayaran", "2027-02-06"), p("Cancel pembayaran feb 2027 tgl 6"))
+        assertEquals(QuickParse("Cancel pembayaran", "2027-02-06", "09:00"), p("Cancel pembayaran 6 feb 2027 jam 9"))
+        assertEquals(QuickParse("Perpanjang domain", "2027-02-06"), p("Perpanjang domain tanggal 6 februari 2027"))
+        assertEquals(QuickParse("Audit tahunan", "2027-02-06"), p("Audit tahunan 2027-02-06"))
+        assertEquals(QuickParse("Bayar kos", "2027-02-06"), p("Bayar kos 6/2/2027"))
+        // Tanpa tahun: 15 Nov masih di tahun ini (today = 7 Okt 2026); 6 Feb sudah lewat → tahun depan (2027).
+        assertEquals("2026-11-15", p("Kontrol gigi 15 nov").dueDate)
+        assertEquals("2027-02-06", p("Cancel Netflix 6 feb").dueDate)
+        // Tanggal tidak valid ditolak aman.
+        assertEquals(QuickParse("Tes 31 feb 2027"), p("Tes 31 feb 2027"))
+    }
+
+    @Test fun reminderPrefixEnablesDefaultRemindAt() {
+        val r = p("Ingatkan aku untuk cancel pembayaran feb 2027 tgl 6")
+        assertEquals(QuickParse("cancel pembayaran", "2027-02-06", remind = true), r)
+        assertEquals("2027-02-06T02:00:00.000Z", r.defaultRemindAt())
+
+        val withTime = p("Ingatkan bayar cicilan 6 feb 2027 jam 14:30")
+        assertEquals(QuickParse("bayar cicilan", "2027-02-06", "14:30", remind = true), withTime)
+        assertEquals("2027-02-06T07:30:00.000Z", withTime.defaultRemindAt())
+
+        // Di parseCapture, awalan "ingatkan …" tetap Tugas (bukan transaksi) walau menyebut nominal.
+        val cap = com.rosyidputrar.taskify.core.domain.capture.parseCapture("Ingatkan bayar listrik 350rb 6 feb 2027", today)
+        assertEquals(com.rosyidputrar.taskify.core.domain.capture.CaptureType.Task, cap.type)
+        assertEquals("2027-02-06", cap.date)
+        assertEquals(true, cap.remind)
+    }
 }

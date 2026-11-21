@@ -86,10 +86,12 @@ class CaptureViewModel(
 
     private suspend fun saveTask(text: String, today: String): Boolean {
         val p = parseQuickAdd(text, today)
-        val id = tasks.create(NewTask(p.title, dueDate = p.dueDate, dueTime = p.dueTime, priority = p.priority ?: 0))
+        val remindAt = p.defaultRemindAt()
+        val id = tasks.create(NewTask(p.title, dueDate = p.dueDate, dueTime = p.dueTime, priority = p.priority ?: 0, remindAt = remindAt))
         if (p.tags.isNotEmpty()) tags.addByName("task", id, p.tags)
         val whenLabel = p.dueDate?.let { " · " + Dates.relativeDayLabel(it, today).lowercase() + (p.dueTime?.let { t -> " $t" } ?: "") } ?: ""
-        messenger.undoable("Tugas ditambahkan$whenLabel") { tasks.get(id)?.let { tasks.remove(it) } }
+        val remindLabel = if (remindAt != null) " · pengingat aktif" else ""
+        messenger.undoable("Tugas ditambahkan$whenLabel$remindLabel") { tasks.get(id)?.let { tasks.remove(it) } }
         return true
     }
 

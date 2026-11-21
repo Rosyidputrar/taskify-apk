@@ -13,8 +13,12 @@ enum class ReminderPreset(val label: String, val needsTime: Boolean = false, val
     Min30("30 menit sebelum", needsTime = true),
     Hour1("1 jam sebelum", needsTime = true),
     DayBefore("1 hari sebelum", needsTime = true),
+    Days3Before("3 hari sebelum", needsTime = true),
+    WeekBefore("1 minggu sebelum", needsTime = true),
     Morning("Hari itu, $MORNING", allDayOnly = true),
     MorningBefore("Sehari sebelum, $MORNING", allDayOnly = true),
+    Morning3DaysBefore("3 hari sebelum, $MORNING", allDayOnly = true),
+    MorningWeekBefore("1 minggu sebelum, $MORNING", allDayOnly = true),
     Custom("Waktu lain…"),
 }
 
@@ -29,6 +33,8 @@ private val MINUTES = mapOf(
     ReminderPreset.Min30 to 30,
     ReminderPreset.Hour1 to 60,
     ReminderPreset.DayBefore to 24 * 60,
+    ReminderPreset.Days3Before to 3 * 24 * 60,
+    ReminderPreset.WeekBefore to 7 * 24 * 60,
 )
 
 /** Hitung remind_at (ISO UTC) dari preset. null = tidak ada / tidak valid. */
@@ -36,6 +42,8 @@ fun computeRemindAt(preset: ReminderPreset, dueDate: String?, dueTime: String?):
     if (preset == ReminderPreset.None || preset == ReminderPreset.Custom || dueDate == null) return null
     if (preset == ReminderPreset.Morning) return Dates.localDateTimeToIso(dueDate, MORNING)
     if (preset == ReminderPreset.MorningBefore) return Dates.localDateTimeToIso(Dates.addDays(dueDate, -1), MORNING)
+    if (preset == ReminderPreset.Morning3DaysBefore) return Dates.localDateTimeToIso(Dates.addDays(dueDate, -3), MORNING)
+    if (preset == ReminderPreset.MorningWeekBefore) return Dates.localDateTimeToIso(Dates.addDays(dueDate, -7), MORNING)
     val minutes = MINUTES[preset] ?: return null
     if (dueTime.isNullOrBlank()) return null
     val due = Dates.localDateTimeToMillis(dueDate, dueTime)
