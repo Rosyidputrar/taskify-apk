@@ -24,6 +24,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rosyidputrar.taskify.core.domain.auth.GateStatus
 import com.rosyidputrar.taskify.ui.gate.GateHost
 import com.rosyidputrar.taskify.ui.gate.GateUi
+import com.rosyidputrar.taskify.ui.gate.gateContentKey
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -110,5 +117,39 @@ class GateHostTest {
         gate = GateUi.Open("Nama baru")
         compose.waitForIdle()
         compose.onNodeWithTag("draft").assertTextContains("x")
+    }
+
+    @Test fun gateContentKeyDistinguishesMfaStatuses() {
+        assertNotEquals(gateContentKey(GateUi.Mfa(GateStatus.Enroll)), gateContentKey(GateUi.Mfa(GateStatus.Challenge)))
+        assertNotEquals(gateContentKey(GateUi.Mfa(GateStatus.Challenge)), gateContentKey(GateUi.Mfa(GateStatus.Reverify)))
+        assertEquals("open", gateContentKey(GateUi.Open("A")))
+        assertEquals("open", gateContentKey(GateUi.Open("B")))
+    }
+
+    class TrackedGateVm : ViewModel() {
+        var cleared = false
+        override fun onCleared() { cleared = true }
+    }
+
+    @Test fun gateViewModelStoreIsClearedWhenLeavingGateScreen() {
+        var captured: TrackedGateVm? = null
+        gate = GateUi.Locked
+        compose.setContent {
+            GateHost(
+                gate = gate,
+                gateScreen = {
+                    val owner = LocalViewModelStoreOwner.current!!
+                    captured = ViewModelProvider(owner)[TrackedGateVm::class.java]
+                    Text("Locked")
+                },
+            ) { Text("Open") }
+        }
+        compose.waitForIdle()
+        val first = captured!!
+        assertEquals(false, first.cleared)
+
+        gate = GateUi.Open("Rosyid")
+        compose.waitForIdle()
+        assertTrue(first.cleared, "ViewModel gerbang harus dibersihkan setelah gerbang ditinggalkan")
     }
 }

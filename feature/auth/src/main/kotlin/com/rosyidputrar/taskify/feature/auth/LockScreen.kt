@@ -70,16 +70,18 @@ class LockViewModel(
     private val auth: AuthRepository,
     private val network: NetworkMonitor,
 ) : ViewModel() {
-    val pinLength: Int = lock.state.value.config?.length ?: LockPolicy.MIN_PIN_LENGTH
+    val pinLength: Int get() = lock.state.value.config?.length ?: LockPolicy.MIN_PIN_LENGTH
+    val lockState: StateFlow<com.rosyidputrar.taskify.core.auth.LockState> = lock.state
     private val _state = MutableStateFlow(LockUiState(cooldownUntil = lock.state.value.attempts.cooldownUntil))
     val state: StateFlow<LockUiState> = _state.asStateFlow()
 
     fun digit(d: Char) {
         val s = _state.value
-        if (s.checking || s.entered.length >= pinLength || s.cooldownUntil.isActive()) return
+        val targetLength = pinLength
+        if (s.checking || s.entered.length >= targetLength || s.cooldownUntil.isActive()) return
         val next = s.entered + d
         _state.update { it.copy(entered = next, message = null) }
-        if (next.length == pinLength) check(next)
+        if (next.length == targetLength) check(next)
     }
 
     fun backspace() = _state.update { it.copy(entered = it.entered.dropLast(1)) }
@@ -87,7 +89,14 @@ class LockViewModel(
     private fun check(pin: String) {
         _state.update { it.copy(checking = true) }
         launchSafe {
-            when (val result = lock.unlock(pin)) {
+            val result = try {
+                lock.unlock(pin)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                UnlockResult.Corrupt
+            }
+            when (result) {
                 UnlockResult.Success -> _state.value = LockUiState()
                 is UnlockResult.Wrong -> _state.value = LockUiState(message = "PIN salah. Sisa ${result.remaining} percobaan.")
                 is UnlockResult.CoolingDown -> _state.value = LockUiState(cooldownUntil = result.untilMillis)
@@ -114,6 +123,7 @@ class LockViewModel(
                     try {
                         auth.signIn(email, password)
                         lock.disable()
+                        _state.value = LockUiState()
                     } catch (e: AuthError) {
                         val f = e.failure
                         val message = when {
@@ -135,8 +145,9 @@ class LockViewModel(
 @Composable
 fun LockScreen(viewModel: LockViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lockState by viewModel.lockState.collectAsStateWithLifecycle()
     LockContent(
-        pinLength = viewModel.pinLength,
+        pinLength = lockState.config?.length ?: LockPolicy.MIN_PIN_LENGTH,
         state = state,
         onDigit = viewModel::digit,
         onBackspace = viewModel::backspace,

@@ -11,8 +11,11 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 data class AutofillTarget(val packageName: String, val webDomain: String? = null, val scheme: String? = null) {
     val isBrowser: Boolean get() = packageName in KNOWN_BROWSERS
 
-    /** Label untuk pengguna: domain situs, atau nama paket aplikasi. */
-    val label: String get() = webDomain?.let { AutofillMatch.host(it) } ?: packageName
+    /** Domain web hanya dipercaya bila peminta adalah browser yang dikenal (anti-spoofing ViewNode.webDomain). */
+    val trustedWebDomain: String? get() = if (isBrowser) webDomain else null
+
+    /** Label untuk pengguna: domain situs (khusus browser), atau nama paket aplikasi. */
+    val label: String get() = trustedWebDomain?.let { AutofillMatch.host(it) } ?: packageName
 
     companion object {
         /** Browser umum: tanpa domain web, permintaannya tidak dicocokkan dengan nama paket. */
@@ -141,10 +144,10 @@ object AutofillMatch {
      * Browser tanpa domain web (dikenal maupun tidak): tidak ada tebakan dari nama paket.
      */
     fun strength(item: ItemPayload, target: AutofillTarget): MatchStrength {
-        val web = target.webDomain?.let(::host)
+        val web = target.trustedWebDomain?.let(::host)
         if (web != null) {
             val itemHost = host(item.url) ?: return MatchStrength.None
-            if (target.scheme == "http" && schemeOf(item.url) == "https") return MatchStrength.None
+            if (target.scheme == "http" && schemeOf(item.url) != "http") return MatchStrength.None
             return when {
                 itemHost == web -> MatchStrength.Exact
                 registrable(itemHost) == registrable(web) -> MatchStrength.Domain
@@ -167,7 +170,7 @@ object AutofillMatch {
 
     /** Isi kolom URL item baru yang disimpan dari formulir. */
     fun urlFor(target: AutofillTarget): String {
-        val web = target.webDomain?.let(::host)
+        val web = target.trustedWebDomain?.let(::host)
         if (web != null) {
             val scheme = target.scheme?.takeIf { it == "http" || it == "https" } ?: "https"
             return "$scheme://$web"

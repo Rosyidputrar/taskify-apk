@@ -134,6 +134,21 @@ class LockManagerTest {
         assertIs<UnlockResult.Corrupt>(m.unlock("246810"))
     }
 
+    @Test fun missingSaltFailsClosedInsteadOfUnlocking() = runTest {
+        manager().enable("246810", 1)
+        prefs.prefs.edit().remove("lock_salt").commit()
+        val m = manager()
+        assertTrue(m.state.value.locked)
+        assertTrue(m.state.value.config?.corrupt == true)
+        assertIs<UnlockResult.Corrupt>(m.unlock("246810"))
+    }
+
+    @Test fun brokenKeystoreMacReturnsCorruptInsteadOfThrowing() = runTest {
+        manager().enable("246810", 1)
+        val broken = LockManager(prefs, PinMac { throw java.security.InvalidKeyException("Keystore wiped") }) { clock }
+        assertIs<UnlockResult.Corrupt>(broken.unlock("246810"))
+    }
+
     /** D-04: lockout kedua jedanya dua kali lipat (30 dtk → 60 dtk). */
     @Test fun secondLockoutCooldownDoubles() = runTest {
         manager().enable("246810", 1)

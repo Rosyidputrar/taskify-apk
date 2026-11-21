@@ -22,6 +22,8 @@ import com.rosyidputrar.taskify.navigation.NoteEditRoute
 import com.rosyidputrar.taskify.navigation.TasksRoute
 import com.rosyidputrar.taskify.navigation.parseTaskifyDeepLink
 import com.rosyidputrar.taskify.ui.shell.AppEvent
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,6 +69,19 @@ class DeepLinkTest {
         assertNull(parseTaskifyDeepLink(Uri.parse("taskify://note")))
         assertNull(parseTaskifyDeepLink(Uri.parse("https://example.com/task/t1")))
         assertNull(parseTaskifyDeepLink(Uri.parse("taskify://task")))
+        // Parameter tanggal rusak/kosong harus ditolak (mencegah DateTimeParseException).
+        assertNull(parseTaskifyDeepLink(Uri.parse("taskify://journal?date=")))
+        assertNull(parseTaskifyDeepLink(Uri.parse("taskify://journal?date=bukan-tanggal")))
+        assertNull(parseTaskifyDeepLink(Uri.parse("taskify://note?date=2026-99-99")))
+    }
+
+    @Test fun eventQueueClearDrainsPendingEvents() {
+        val q = com.rosyidputrar.taskify.ui.shell.EventQueue<AppEvent>()
+        q.send(AppEvent.OpenTask("old-account-task"))
+        q.clear()
+        q.send(AppEvent.OpenTask("new-account-task"))
+        val first = runBlocking { q.events.first() }
+        assertEquals(AppEvent.OpenTask("new-account-task"), first)
     }
 
     /** NavHost kecil dengan deklarasi deep link yang sama seperti TaskifyApp. */

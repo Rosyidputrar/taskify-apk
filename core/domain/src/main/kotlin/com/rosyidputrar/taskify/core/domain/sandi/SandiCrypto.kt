@@ -285,11 +285,12 @@ object SandiCrypto {
     }
 
     private fun sealJson(dek: Dek, value: JsonObject, aad: String, ref: String): String =
-        frame(ref, seal(dek.bytes(), pad(value.toString().toByteArray(Charsets.UTF_8)), aad))
+        dek.useKey { key -> frame(ref, seal(key, pad(value.toString().toByteArray(Charsets.UTF_8)), aad)) }
 
     private fun openJson(dek: Dek, enc: String, aad: String, what: String): JsonObject {
         val bytes = try { fromB64(splitEnc(enc).body) } catch (_: Exception) { throw SandiException(SandiException.Code.Corrupt, "Data $what rusak.") }
-        val plain = open(dek.bytes(), bytes, aad)?.let(::unpad) ?: throw SandiException(SandiException.Code.Corrupt, "${what.replaceFirstChar { it.uppercase() }} tidak bisa dibuka dengan kunci ini.")
+        val plain = dek.useKey { key -> open(key, bytes, aad) }?.let(::unpad)
+            ?: throw SandiException(SandiException.Code.Corrupt, "${what.replaceFirstChar { it.uppercase() }} tidak bisa dibuka dengan kunci ini.")
         return try {
             json.parseToJsonElement(plain.toString(Charsets.UTF_8)) as? JsonObject ?: throw IllegalStateException()
         } catch (_: Exception) {
@@ -362,14 +363,41 @@ data class KeyRecord(
 
 /**
  * Kunci data brankas (DEK) di memori. Hanya ada selama brankas terbuka; [destroy] menolkan
- * byte-nya saat dikunci.
+ * byte-nya saat dikunci. Dilindungi read-write lock agar enkripsi/dekripsi paralel tidak pernah
+ * membaca kunci yang sedang/sudah dinolkan (`0x00...`).
  */
 class Dek(private val raw: ByteArray) {
+    private val lock = java.util.concurrent.locks.ReentrantReadWriteLock()
+    private var destroyed = false
+
     init { require(raw.size == 32) { "DEK harus 32 byte" } }
-    internal fun bytes(): ByteArray = raw
+
+    internal fun <T> useKey(block: (ByteArray) -> T): T {
+        val rl = lock.readLock()
+        rl.lock()
+        try {
+            if (destroyed) throw SandiException(SandiException.Code.Invalid, "Brankas terkunci. Buka brankas lagi.")
+            return block(raw)
+        } finally {
+            rl.unlock()
+        }
+    }
+
     /** Salinan byte untuk dibungkus Keystore ("ingat perangkat"). Nolkan setelah dipakai. */
-    fun export(): ByteArray = raw.copyOf()
-    fun destroy() = raw.fill(0)
+    fun export(): ByteArray = useKey { it.copyOf() }
+
+    fun destroy() {
+        val wl = lock.writeLock()
+        wl.lock()
+        try {
+            if (!destroyed) {
+                destroyed = true
+                raw.fill(0)
+            }
+        } finally {
+            wl.unlock()
+        }
+    }
 }
 
 data class NewVault(val record: KeyRecord, val dek: Dek, val recoveryKey: String)

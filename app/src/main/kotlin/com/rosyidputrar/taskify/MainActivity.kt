@@ -102,7 +102,7 @@ class MainActivity : FragmentActivity() {
                 GateUi.Loading -> Unit
                 GateUi.ConfigMissing -> if (preview) shell(null) else ConfigMissingScreen(onPreview = { preview = true })
                 GateUi.SignedOut -> LoginScreen()
-                is GateUi.Mfa -> MfaScreen(target.status)
+                is GateUi.Mfa -> MfaScreen(target.status, onSignOut = { coordinator.requestLogout() })
                 GateUi.Preparing -> {
                     val prepareError by coordinator.prepareError.collectAsStateWithLifecycle()
                     PreparingScreen(prepareError, onRetry = { coordinator.retryPrepare() }, onSignOut = { coordinator.requestLogout() })

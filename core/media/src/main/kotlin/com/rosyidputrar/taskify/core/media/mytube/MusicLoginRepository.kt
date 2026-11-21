@@ -179,18 +179,12 @@ open class MusicLoginRepository(
             cookieAttached = !initial.cookie.isNullOrBlank(),
         )
 
+        val previousAuth = authStore.loadAuthState()
+        fun restoreAuth() {
+            myTube.applyAuthState(previousAuth)
+        }
+
         myTube.applyAuthState(initial.copy(dataSyncId = null))
-        // Fallback verifikasi (PLAN music-login-raw-error): bila
-        // `verifyAccount()` gagal dengan `MusicLoginError.UnrecognizedResponse`,
-        // JANGAN langsung gagal — coba `myTube.selectedAccount()` (fallback
-        // `accounts_list`). Sukses → pakai `info` itu sebagai `accountInfo`
-        // dan `dataSyncId` dari `SelectedAccount` bila ada (langkah 3 resolve
-        // dataSyncId dilewati bila dataSyncId sudah didapat dari fallback;
-        // bila fallback tidak membawa dataSyncId, langkah 3 jalan seperti
-        // biasa dengan kandidat WebView). Gagal → kembalikan
-        // `UnrecognizedResponse` dengan `rawDetail` dari kegagalan
-        // `account_menu` (bukan dari fallback). Urutan ini sengaja:
-        // account_menu dulu, accounts_list cadangan.
         var fallbackDataSyncId: String? = null
         val accountInfo = try {
             verifyAccount().getOrElse { cause ->
@@ -203,17 +197,21 @@ open class MusicLoginRepository(
                         return@getOrElse selected.info
                     }
                 }
+                restoreAuth()
                 val rawDetail = rawDetailForVerification(error, cause, names, diagnostics)
                 logFailure("verifikasi", error, cause, rawDetail = rawDetail, cookies = names)
                 return Result.failure(MusicLoginException(error, rawDetail))
             }
         } catch (e: CancellationException) {
+            restoreAuth()
             throw e
         } catch (e: IOException) {
+            restoreAuth()
             val error = MusicLoginError.Network
             logFailure("verifikasi", error, e, cookies = names)
             return Result.failure(MusicLoginException(error))
         } catch (e: Exception) {
+            restoreAuth()
             val error = classifyVerificationFailure(e)
             val rawDetail = rawDetailForVerification(error, e, names, diagnostics)
             logFailure("verifikasi", error, e, rawDetail = rawDetail, cookies = names)
@@ -227,12 +225,14 @@ open class MusicLoginRepository(
                 if (result.isFailure) dataSyncIdFailure = result.exceptionOrNull()
                 result.getOrNull()?.normalizeDataSyncId()
             } catch (e: CancellationException) {
+                restoreAuth()
                 throw e
             } catch (e: Exception) {
                 dataSyncIdFailure = e
                 null
             } ?: initial.dataSyncId
             ?: run {
+                restoreAuth()
                 // Gagal total: jaringan mengembalikan failure, atau respons
                 // sukses tapi tidak berisi dataSyncId (parse null).
                 val error = dataSyncIdFailure?.let(::classifyVerificationFailure)
@@ -251,12 +251,19 @@ open class MusicLoginRepository(
     }
 
     /**
-     * Keluar: hapus seluruh konteks auth + identitas akun, turunkan
-     * [account] dan [sessionExpired]. Pemutar dihentikan pemanggil (VM).
+     * Keluar: hapus seluruh konteks auth (store, memori `MyTube`, cookie WebView) + identitas
+     * akun, turunkan [account] dan [sessionExpired]. Pemutar dihentikan pemanggil (VM/Coordinator).
      */
     fun logout() {
         authStore.clear()
         authStore.clearAccount()
+        myTube.applyAuthState(PlaybackAuthState())
+        runCatching {
+            android.webkit.CookieManager.getInstance().apply {
+                removeAllCookies(null)
+                flush()
+            }
+        }
         _account.value = null
         _sessionExpired.value = false
     }
