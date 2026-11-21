@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,14 +29,17 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
@@ -45,9 +49,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,12 +75,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.component.rememberHaptics
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
+import com.rosyidputrar.taskify.core.domain.focus.DigestKind
 import com.rosyidputrar.taskify.core.domain.focus.FocusPhase
 import com.rosyidputrar.taskify.core.domain.focus.FocusRun
+import com.rosyidputrar.taskify.core.domain.focus.FocusSessionDigest
 import com.rosyidputrar.taskify.core.domain.focus.MINUTE
 import com.rosyidputrar.taskify.core.domain.focus.PomodoroConfig
 import com.rosyidputrar.taskify.core.domain.focus.formatClock
@@ -81,6 +91,7 @@ import com.rosyidputrar.taskify.core.domain.focus.formatMinutes
 import com.rosyidputrar.taskify.core.domain.tasks.Task
 import com.rosyidputrar.taskify.core.domain.tasks.TaskStatus
 import com.rosyidputrar.taskify.core.domain.time.Dates
+import com.rosyidputrar.taskify.core.media.LocalRadioStations
 import com.rosyidputrar.taskify.feature.tasks.component.TaskCheck
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
@@ -125,6 +136,11 @@ fun FocusContent(
             value = System.currentTimeMillis()
         }
     }
+    // Di Android 14+ tanpa izin Exact Alarm, alarm latar bisa terlambat → majukan fase saat jam layar mencapai 00:00.
+    val phaseExpired = now == null && run != null && !run.isPaused && run.isFinished(clock)
+    LaunchedEffect(phaseExpired, run?.phaseStartedAt) {
+        if (phaseExpired) actions.catchUp()
+    }
     // Layar tetap menyala selama hitung mundur berjalan.
     val view = LocalView.current
     DisposableEffect(running) {
@@ -151,6 +167,10 @@ fun FocusContent(
 private fun FocusSetup(state: FocusUiState, actions: FocusActions) {
     val haptics = rememberHaptics()
     val context = LocalContext.current
+    state.digest?.let { digest ->
+        Spacer(Modifier.height(8.dp))
+        PostFocusDigestCard(digest, actions)
+    }
     Spacer(Modifier.height(8.dp))
     Text("Mau fokus ke apa?", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
     Text(
@@ -220,6 +240,32 @@ private fun FocusSetup(state: FocusUiState, actions: FocusActions) {
                 runCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }) { Text("Beri akses") }
         }
+    }
+    val defaultStation = remember { LocalRadioStations.FALLBACK.firstOrNull { !it.vocals } ?: LocalRadioStations.FALLBACK.first() }
+    val selectedStationName = remember(state.autoMusicStationId) {
+        LocalRadioStations.FALLBACK.firstOrNull { it.id == state.autoMusicStationId }?.name ?: defaultStation.name
+    }
+    val autoMusicOn = state.autoMusicStationId != null
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(autoMusicOn, role = Role.Switch) { on ->
+                haptics.toggle(on)
+                actions.setAutoMusicStation(if (on) (state.autoMusicStationId ?: defaultStation.id) else null)
+            }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Putar musik fokus otomatis", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (autoMusicOn) "Memutar $selectedStationName saat fokus mulai dan menjeda saat istirahat."
+                else "Otomatis memutar radio fokus saat mulai dan menjeda saat istirahat.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = autoMusicOn, onCheckedChange = null)
     }
     Spacer(Modifier.height(16.dp))
     Button(
@@ -342,6 +388,10 @@ private fun FocusRunning(state: FocusUiState, run: FocusRun, now: Long, actions:
             Text("Tandai tugas selesai")
         }
     }
+    if (!isFocus && state.digest != null) {
+        Spacer(Modifier.height(16.dp))
+        PostFocusDigestCard(state.digest, actions)
+    }
     if (state.subtasks.isNotEmpty()) {
         Spacer(Modifier.height(16.dp))
         val done = state.subtasks.count { it.status == TaskStatus.Done }
@@ -364,6 +414,79 @@ private fun FocusRunning(state: FocusUiState, run: FocusRun, now: Long, actions:
     }
     Spacer(Modifier.height(16.dp))
     TodayLine(state)
+}
+
+@Composable
+private fun PostFocusDigestCard(digest: FocusSessionDigest, actions: FocusActions) {
+    val haptics = rememberHaptics()
+    var createdTaskIds by remember(digest.startedAtMs) { mutableStateOf(emptySet<String>()) }
+    IndexCard(TaskifyModule.Tasks, tinted = true, modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("RINGKASAN PASCA-FOKUS", style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Tasks))
+                Text(
+                    buildString {
+                        append("Sesi ${formatMinutes(digest.focusedMinutes)}")
+                        if (digest.totalNotifs == 0) append(" · tidak ada notifikasi masuk")
+                        else append(" · ${digest.totalNotifs} notifikasi tertahan")
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            IconButton(onClick = { haptics.tap(); actions.dismissDigest() }) {
+                Icon(Icons.Rounded.Close, contentDescription = "Tutup ringkasan")
+            }
+        }
+        if (digest.highlights.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            digest.highlights.forEach { item ->
+                val isCreated = item.id in createdTaskIds
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${item.kind.label} · ${item.headline}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val subline = item.detail?.takeIf { !it.equals(item.appLabel, ignoreCase = true) }
+                            ?.let { "${item.appLabel} — $it" }
+                            ?: item.appLabel
+                        Text(
+                            subline,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (item.kind != DigestKind.Transaction) {
+                        if (isCreated) {
+                            Text(
+                                "✓ Terbuat",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TaskifyTheme.modules.accent(TaskifyModule.Tasks),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            )
+                        } else {
+                            TextButton(
+                                onClick = {
+                                    createdTaskIds = createdTaskIds + item.id
+                                    haptics.success()
+                                    actions.makeTaskFromDigest(item)
+                                },
+                            ) {
+                                Text("+ Tugas")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

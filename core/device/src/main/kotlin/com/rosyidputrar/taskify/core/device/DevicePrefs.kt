@@ -16,9 +16,12 @@ data class NotifSettings(
     val draftAlerts: Boolean = true,
     /** Paket bank/e-wallet → id dompet Taskify (diingat setelah pertama kali dipilih). */
     val wallets: Map<String, String> = emptyMap(),
+    /** Kunci merchant/pengirim (ternormalisasi) → id kategori Taskify (dipelajari otomatis saat menyimpan draf). */
+    val merchantCategories: Map<String, String> = emptyMap(),
 ) {
     companion object {
         val RETENTION_CHOICES = listOf(1, 3, 7, 14, 30)
+        const val MAX_LEARNED_MERCHANTS = 200
     }
 }
 
@@ -65,7 +68,13 @@ class DeviceModulePrefs(context: Context) {
     }
 
     fun updateNotif(block: (NotifSettings) -> NotifSettings) {
-        val next = block(_notif.value)
+        val raw = block(_notif.value)
+        // Batasi memori merchant agar SharedPreferences tetap ringan.
+        val next = if (raw.merchantCategories.size > NotifSettings.MAX_LEARNED_MERCHANTS) {
+            raw.copy(merchantCategories = raw.merchantCategories.entries.toList().takeLast(NotifSettings.MAX_LEARNED_MERCHANTS).associate { it.key to it.value })
+        } else {
+            raw
+        }
         prefs.edit {
             putString(K_LEVEL, next.level.name)
             putInt(K_RETENTION, next.retentionDays)
@@ -73,6 +82,7 @@ class DeviceModulePrefs(context: Context) {
             putBoolean(K_IGNORE_ONGOING, next.ignoreOngoing)
             putBoolean(K_DRAFT_ALERTS, next.draftAlerts)
             putStringSet(K_WALLETS, next.wallets.map { (k, v) -> "$k=$v" }.toSet())
+            putStringSet(K_MERCHANT_CATEGORIES, next.merchantCategories.map { (k, v) -> "$k=$v" }.toSet())
         }
         _notif.value = next
     }
@@ -104,6 +114,9 @@ class DeviceModulePrefs(context: Context) {
         wallets = prefs.getStringSet(K_WALLETS, emptySet()).orEmpty().mapNotNull { e ->
             e.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }.toMap(),
+        merchantCategories = prefs.getStringSet(K_MERCHANT_CATEGORIES, emptySet()).orEmpty().mapNotNull { e ->
+            e.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }.toMap(),
     )
 
     private fun readUsage() = UsageSettings(
@@ -119,6 +132,7 @@ class DeviceModulePrefs(context: Context) {
         const val K_IGNORE_ONGOING = "notif_ignore_ongoing"
         const val K_DRAFT_ALERTS = "notif_draft_alerts"
         const val K_WALLETS = "notif_wallets"
+        const val K_MERCHANT_CATEGORIES = "notif_merchant_categories"
         const val K_CONNECTED = "listener_connected"
         const val K_CONNECTED_AT = "listener_connected_at"
         const val K_DISCONNECTED_AT = "listener_disconnected_at"

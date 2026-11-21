@@ -162,4 +162,26 @@ class FocusControllerTest {
         assertTrue(records.isEmpty())
         assertNull(FocusController(app, record = {}, now = { clock }).run.value)
     }
+
+    @Test fun autoMusicStartsDuringFocusPausesOnBreakAndPublishesDigestWindow() = runBlocking<Unit> {
+        val events = mutableListOf<String>()
+        val controller = FocusController(
+            app,
+            record = { records += it },
+            now = { clock },
+            onAutoMusicStart = { events += "start:$it" },
+            onAutoMusicPause = { events += "pause" },
+        )
+        controller.setAutoMusicStation("lofi")
+        controller.start("t1", "Audit")
+        assertEquals(listOf("start:lofi"), events)
+        clock += 10 * MINUTE
+        controller.skip() // masuk istirahat → musik dijeda & jendela digest terisi
+        assertEquals(listOf("start:lofi", "pause"), events)
+        val ended = controller.lastEndedFocus.value
+        assertEquals(10L, ended?.minutes)
+        assertEquals("Audit", ended?.taskTitle)
+        controller.dismissDigest()
+        assertNull(controller.lastEndedFocus.value)
+    }
 }

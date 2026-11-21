@@ -174,6 +174,7 @@ fun BudgetSheet(budget: BudgetStatus?, categories: List<Category>, usedCategoryI
 // ===================================================================== Berulang
 
 private val FREQS = listOf(RecurrenceFreq.Daily to "Harian", RecurrenceFreq.Weekly to "Mingguan", RecurrenceFreq.Monthly to "Bulanan", RecurrenceFreq.Yearly to "Tahunan")
+private val REMIND_LEAD_OPTIONS: List<Pair<Long?, String>> = listOf(null to "Tidak", 1L to "H-1", 3L to "H-3", 7L to "H-7")
 
 @Composable
 fun RecurringSheet(
@@ -184,6 +185,7 @@ fun RecurringSheet(
     onDismiss: () -> Unit,
     onSave: (RecurringInput) -> Unit,
     onDelete: (() -> Unit)?,
+    onSaveWithReminder: ((RecurringInput, Long?) -> Unit)? = null,
 ) {
     var kind by rememberSaveable { mutableStateOf(item?.kind ?: TxKind.Expense) }
     var title by rememberSaveable { mutableStateOf(item?.title ?: "") }
@@ -196,6 +198,7 @@ fun RecurringSheet(
     var freq by rememberSaveable { mutableStateOf(item?.let { parseRule(it.rrule).freq.takeIf { f -> f != RecurrenceFreq.None && f != RecurrenceFreq.Weekdays } } ?: RecurrenceFreq.Monthly) }
     var interval by rememberSaveable { mutableStateOf(item?.let { parseRule(it.rrule).interval } ?: 1) }
     var autoPost by rememberSaveable { mutableStateOf(item?.autoPost ?: false) }
+    var remindDaysBefore by rememberSaveable { mutableStateOf<Long?>(null) }
     var note by rememberSaveable { mutableStateOf(item?.note ?: "") }
     val parsed = Rupiah.parse(amount)
     // Mingguan ikut hari mulai; bulanan/tahunan ikut tanggal mulai (sama dengan webapp).
@@ -205,12 +208,15 @@ fun RecurringSheet(
         if (item == null) "Transaksi berulang" else "Ubah transaksi berulang",
         onDismiss,
         onSave = {
-            onSave(
-                RecurringInput(
-                    item?.id, kind, parsed ?: 0, walletId, toWalletId.ifEmpty { null }, categoryId.ifEmpty { null }, title, note.ifBlank { null },
-                    rule!!, startOn, endOn, autoPost,
-                ),
+            val input = RecurringInput(
+                item?.id, kind, parsed ?: 0, walletId, toWalletId.ifEmpty { null }, categoryId.ifEmpty { null }, title, note.ifBlank { null },
+                rule!!, startOn, endOn, autoPost,
             )
+            if (onSaveWithReminder != null) {
+                onSaveWithReminder(input, if (kind == TxKind.Expense) remindDaysBefore else null)
+            } else {
+                onSave(input)
+            }
         },
         saveEnabled = title.isNotBlank() && parsed != null && parsed > 0 && walletId.isNotEmpty() && transferOk && rule != null,
         onDelete = onDelete,
@@ -250,6 +256,17 @@ fun RecurringSheet(
                 )
             }
             Switch(checked = autoPost, onCheckedChange = null)
+        }
+        if (kind == TxKind.Expense && onSaveWithReminder != null) {
+            FieldLabel("Pengingat sebelum jatuh tempo")
+            ChoiceRow(REMIND_LEAD_OPTIONS, { it.first == remindDaysBefore }, { it.second }, { remindDaysBefore = it.first })
+            if (remindDaysBefore != null) {
+                Text(
+                    "Otomatis membuat tugas + alarm pukul 09:00 H-$remindDaysBefore untuk meninjau / membatalkan langganan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         OutlinedTextField(note, { note = it }, label = { Text("Catatan (opsional)") }, modifier = Modifier.fillMaxWidth())
     }

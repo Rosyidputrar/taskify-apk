@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.outlined.CallReceived
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,7 +49,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.common.Rupiah
 import com.rosyidputrar.taskify.core.designsystem.component.EmptyState
+import com.rosyidputrar.taskify.core.designsystem.component.IndexCard
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTextStyles
+import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.domain.finance.BudgetLevel
 import com.rosyidputrar.taskify.core.domain.finance.BudgetStatus
 import com.rosyidputrar.taskify.core.domain.finance.Category
@@ -56,6 +60,7 @@ import com.rosyidputrar.taskify.core.domain.finance.CategoryKind
 import com.rosyidputrar.taskify.core.domain.finance.Debt
 import com.rosyidputrar.taskify.core.domain.finance.DebtDirection
 import com.rosyidputrar.taskify.core.domain.finance.Recurring
+import com.rosyidputrar.taskify.core.domain.finance.SubscriptionBurn
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
 import com.rosyidputrar.taskify.core.domain.finance.debtSummary
@@ -152,6 +157,7 @@ fun LazyListScope.recurringTab(state: FinanceUiState, actions: FinanceActions, o
     val items = state.recurring
     val net = monthlyNet(items)
     val active = items.count { it.active }
+    val burn = state.subscriptionBurn
     tabHeader(
         "rec",
         "Transaksi berulang",
@@ -159,12 +165,89 @@ fun LazyListScope.recurringTab(state: FinanceUiState, actions: FinanceActions, o
         "Berulang",
     ) { onDialog(FinanceDialog.RecurringForm(null)) }
     if (state.due.isNotEmpty()) item(key = "rec-due") { DueCard(state.due, state.today, actions) }
+    if (burn.activeExpenseCount > 0) item(key = "rec-sub-guard") { SubscriptionGuardCard(burn, actions) }
     if (state.loaded && items.isEmpty()) {
         item(key = "rec-empty") {
             EmptyState(TaskifyModule.Finance, "Belum ada transaksi berulang", "Gaji, langganan, cicilan, tagihan listrik — catat sekali, Taskify mengirim notifikasi saat jatuh tempo (Catat / Lewati) atau mencatatnya otomatis — walau aplikasi tidak dibuka.")
         }
     }
     items(items, key = { "r-${it.id}" }) { r -> RecurringRow(r, state.today, actions) { onDialog(FinanceDialog.RecurringForm(r)) } }
+}
+
+@Composable
+private fun SubscriptionGuardCard(burn: SubscriptionBurn, actions: FinanceActions) {
+    var scheduledIds by remember { mutableStateOf(emptySet<String>()) }
+    IndexCard(
+        TaskifyModule.Finance,
+        tinted = true,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+        contentPadding = 14.dp,
+    ) {
+        Text("PENJAGA LANGGANAN & TAGIHAN", style = TaskifyTextStyles.indexLabel, color = TaskifyTheme.modules.accent(TaskifyModule.Finance))
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.Bottom) {
+            Text(Rupiah.format(burn.monthlyExpense), style = MaterialTheme.typography.titleLarge)
+            Text(" / bulan", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
+        }
+        Text(
+            "${burn.activeExpenseCount} pengeluaran rutin aktif · estimasi ${Rupiah.compact(burn.yearlyExpense)}/tahun",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (burn.upcoming.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("SEGERA JATUH TEMPO (14 HARI)", style = TaskifyTextStyles.indexLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            burn.upcoming.take(4).forEach { up ->
+                val whenText = when (up.daysUntil) {
+                    0L -> "hari ini"
+                    1L -> "besok (${Dates.format(up.nextDate, "d MMM")})"
+                    else -> "${up.daysUntil} hari lagi (${Dates.format(up.nextDate, "d MMM")})"
+                }
+                val (leadDays, btnLabel) = when {
+                    up.daysUntil > 3L -> 3L to "Ingatkan H-3"
+                    up.daysUntil >= 2L -> 1L to "Ingatkan H-1"
+                    else -> 0L to "Ingatkan"
+                }
+                val isScheduled = up.recurring.id in scheduledIds
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${up.recurring.title} · ${Rupiah.format(up.recurring.amount)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            whenText + if (up.recurring.autoPost) " · auto-debit" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (isScheduled) {
+                        Text(
+                            "✓ Diingatkan",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TaskifyTheme.modules.accent(TaskifyModule.Finance),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
+                    } else {
+                        TextButton(
+                            onClick = {
+                                scheduledIds = scheduledIds + up.recurring.id
+                                actions.scheduleCancelReminder(up.recurring, leadDays)
+                            },
+                        ) {
+                            Icon(Icons.Outlined.NotificationsActive, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(btnLabel)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -203,6 +286,11 @@ private fun RecurringRow(r: Recurring, today: String, actions: FinanceActions, o
                 if (r.active && next != null) {
                     DropdownMenuItem(text = { Text("Catat sekarang (${Dates.format(next, "d MMM")})") }, onClick = { menu = false; actions.postOccurrence(r) })
                     DropdownMenuItem(text = { Text("Lewati kejadian ini") }, onClick = { menu = false; actions.skipOccurrence(r) })
+                    if (r.kind == TxKind.Expense) {
+                        DropdownMenuItem(text = { Text("Ingatkan H-3 sebelum jatuh tempo") }, onClick = { menu = false; actions.scheduleCancelReminder(r, 3) })
+                        DropdownMenuItem(text = { Text("Ingatkan H-7 sebelum jatuh tempo") }, onClick = { menu = false; actions.scheduleCancelReminder(r, 7) })
+                        DropdownMenuItem(text = { Text("Tandai sudah dibatalkan") }, onClick = { menu = false; actions.cancelSubscription(r) })
+                    }
                 }
                 DropdownMenuItem(text = { Text("Hapus") }, onClick = { menu = false; actions.removeRecurring(r) })
             }

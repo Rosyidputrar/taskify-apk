@@ -32,6 +32,9 @@ import kotlinx.coroutines.sync.withLock
 /** Satu sesi fokus yang selesai/dihentikan, siap dicatat ke riwayat (Review). */
 data class FocusRecord(val taskId: String?, val taskTitle: String?, val day: String, val startedAt: String, val endedAt: String, val minutes: Long)
 
+/** Jendela sesi fokus terakhir yang baru selesai (dipakai untuk Ringkasan Pasca-Fokus). */
+data class EndedFocusWindow(val startedAtMs: Long, val endedAtMs: Long, val minutes: Long, val taskTitle: String?)
+
 /**
  * Mode Fokus (Pomodoro) untuk seluruh aplikasi.
  *
@@ -46,6 +49,10 @@ class FocusController(
     /** Pengaturan "Sembunyikan isi notifikasi": judul tugas tidak ditampilkan. */
     private val hideContent: () -> Boolean = { false },
     private val now: () -> Long = System::currentTimeMillis,
+    /** Otomatisasi Deep Work: nyalakan stasiun radio fokus saat fase Fokus mulai/lanjut. */
+    private val onAutoMusicStart: (stationId: String) -> Unit = {},
+    /** Otomatisasi Deep Work: jeda musik fokus saat istirahat/jeda/berhenti (hanya bila dinyalakan otomatis). */
+    private val onAutoMusicPause: () -> Unit = {},
 ) {
     private val prefs = context.getSharedPreferences("focus", Context.MODE_PRIVATE)
     private val mutex = Mutex()
@@ -58,6 +65,16 @@ class FocusController(
     private val _dnd = MutableStateFlow(prefs.getBoolean(KEY_DND, false))
     /** Pengguna ingin "Jangan Ganggu" menyala selama fase fokus. */
     val dnd: StateFlow<Boolean> = _dnd.asStateFlow()
+
+    private val _autoMusicStationId = MutableStateFlow(prefs.getString(KEY_AUTO_MUSIC, null))
+    /** Stasiun radio fokus yang otomatis diputar selama fase Fokus (null = mati). */
+    val autoMusicStationId: StateFlow<String?> = _autoMusicStationId.asStateFlow()
+
+    private val _lastEndedFocus = MutableStateFlow<EndedFocusWindow?>(null)
+    /** Sesi fokus terakhir yang baru tuntas, untuk menampilkan Ringkasan Notifikasi Pasca-Fokus. */
+    val lastEndedFocus: StateFlow<EndedFocusWindow?> = _lastEndedFocus.asStateFlow()
+
+    private var autoMusicActive = false
 
     private val notifications get() = context.getSystemService(NotificationManager::class.java)
     private val alarms get() = context.getSystemService(AlarmManager::class.java)
@@ -81,10 +98,21 @@ class FocusController(
         _run.value?.let { applyDnd(it) }
     }
 
+    fun setAutoMusicStation(stationId: String?) {
+        _autoMusicStationId.value = stationId
+        prefs.edit { if (stationId == null) remove(KEY_AUTO_MUSIC) else putString(KEY_AUTO_MUSIC, stationId) }
+        applyAutoMusic(_run.value)
+    }
+
+    fun dismissDigest() {
+        _lastEndedFocus.value = null
+    }
+
     /** Izin akses "Jangan Ganggu" diberikan pengguna di Setelan sistem. */
     fun dndAccessGranted(): Boolean = notifications?.isNotificationPolicyAccessGranted == true
 
     suspend fun start(taskId: String?, taskTitle: String?) = mutex.withLock {
+        _lastEndedFocus.value = null
         _run.value?.let { finishFocus(it, now()) }
         set(FocusRun.start(taskId, taskTitle, now(), _config.value))
     }
@@ -143,9 +171,15 @@ class FocusController(
         _run.value = null
         // Pulihkan DND SEBELUM menghapus prefs: restoreDnd() membaca KEY_DND_APPLIED dari prefs.
         restoreDnd()
+        if (autoMusicActive) {
+            autoMusicActive = false
+            runCatching { onAutoMusicPause() }
+        }
         prefs.edit { clear() }
         _config.value = PomodoroConfig()
         _dnd.value = false
+        _autoMusicStationId.value = null
+        _lastEndedFocus.value = null
         cancelAlarm()
         NotificationManagerCompat.from(context).cancel(ID_RUNNING)
         refreshTile()
@@ -155,8 +189,10 @@ class FocusController(
         val focused = r.focusedMs(at)
         if (r.phase != FocusPhase.Focus || focused < FocusRun.MIN_RECORD_MS) return
         val started = at - focused
+        val minutes = (focused + MINUTE / 2) / MINUTE
+        _lastEndedFocus.value = EndedFocusWindow(started, at, minutes, r.taskTitle)
         runCatching {
-            record(FocusRecord(r.taskId, r.taskTitle, Dates.today(started), Dates.millisToIso(started), Dates.millisToIso(at), (focused + MINUTE / 2) / MINUTE))
+            record(FocusRecord(r.taskId, r.taskTitle, Dates.today(started), Dates.millisToIso(started), Dates.millisToIso(at), minutes))
         }
     }
 
@@ -176,7 +212,20 @@ class FocusController(
             applyDnd(r)
             postRunning(r)
         }
+        applyAutoMusic(r)
         refreshTile()
+    }
+
+    private fun applyAutoMusic(r: FocusRun?) {
+        val stationId = _autoMusicStationId.value
+        val wantMusic = stationId != null && r != null && r.phase == FocusPhase.Focus && !r.isPaused
+        if (wantMusic) {
+            autoMusicActive = true
+            runCatching { onAutoMusicStart(stationId!!) }
+        } else if (autoMusicActive) {
+            autoMusicActive = false
+            runCatching { onAutoMusicPause() }
+        }
     }
 
     private fun refresh(r: FocusRun) {
@@ -349,6 +398,7 @@ class FocusController(
         private const val KEY_CONFIG = "config"
         private const val KEY_DND = "dnd"
         private const val KEY_DND_APPLIED = "dnd_applied"
+        private const val KEY_AUTO_MUSIC = "auto_music_station"
         const val CHANNEL_RUNNING = "focus_running"
         const val CHANNEL_ALERT = "focus_alert"
         const val ID_RUNNING = 42_001

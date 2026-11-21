@@ -13,11 +13,16 @@ import com.rosyidputrar.taskify.core.domain.finance.DayTotals
 import com.rosyidputrar.taskify.core.domain.finance.Debt
 import com.rosyidputrar.taskify.core.domain.finance.PeriodTotals
 import com.rosyidputrar.taskify.core.domain.finance.Recurring
+import com.rosyidputrar.taskify.core.domain.finance.RecurringSchedule
+import com.rosyidputrar.taskify.core.domain.finance.SubscriptionBurn
 import com.rosyidputrar.taskify.core.domain.finance.Transaction
 import com.rosyidputrar.taskify.core.domain.finance.TxDay
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
+import com.rosyidputrar.taskify.core.domain.finance.buildCancelReminderPlan
+import com.rosyidputrar.taskify.core.domain.finance.firstOccurrenceFrom
 import com.rosyidputrar.taskify.core.domain.finance.groupByDay
+import com.rosyidputrar.taskify.core.domain.finance.summarizeSubscriptions
 import com.rosyidputrar.taskify.core.domain.finance.transactionsCsv
 import com.rosyidputrar.taskify.core.domain.finance.transactionsCsvName
 import com.rosyidputrar.taskify.core.domain.time.Dates
@@ -28,6 +33,8 @@ import com.rosyidputrar.taskify.core.store.finance.FinanceRepository
 import com.rosyidputrar.taskify.core.store.finance.RecurringInput
 import com.rosyidputrar.taskify.core.store.finance.TxFilter
 import com.rosyidputrar.taskify.core.store.finance.WalletInput
+import com.rosyidputrar.taskify.core.store.tasks.NewTask
+import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +88,7 @@ data class FinanceUiState(
     val totalBalance: Long get() = activeWallets.sumOf { it.balance }
     val days: List<TxDay> get() = groupByDay(transactions)
     val due: List<Recurring> get() = recurring.filter { it.isDue(today) }
+    val subscriptionBurn: SubscriptionBurn get() = summarizeSubscriptions(recurring, today)
 }
 
 /** Semua aksi layar Keuangan — dipisah agar konten bisa dirender tanpa database. */
@@ -96,6 +104,9 @@ interface FinanceActions {
     fun setRecurringActive(r: Recurring, active: Boolean)
     fun removeRecurring(r: Recurring)
     fun saveRecurring(input: RecurringInput, onDone: () -> Unit)
+    fun saveRecurringWithReminder(input: RecurringInput, remindDaysBefore: Long?, onDone: () -> Unit) = saveRecurring(input, onDone)
+    fun scheduleCancelReminder(r: Recurring, daysBefore: Long) {}
+    fun cancelSubscription(r: Recurring) {}
     fun saveBudget(id: String?, categoryId: String?, amount: Long, alertPct: Int, onDone: () -> Unit)
     fun removeBudget(b: BudgetStatus)
     fun createDebt(input: DebtInput, onDone: () -> Unit)
@@ -115,6 +126,7 @@ interface FinanceActions {
 class FinanceViewModel(
     private val repo: FinanceRepository,
     private val messenger: Messenger,
+    private val tasks: TaskRepository? = null,
 ) : ViewModel(), FinanceActions {
     private val today = todayFlow().stateIn(viewModelScope, SharingStarted.Eagerly, Dates.today())
     private val month = MutableStateFlow(Dates.monthStart(today.value))
@@ -196,6 +208,39 @@ class FinanceViewModel(
     override fun saveRecurring(input: RecurringInput, onDone: () -> Unit) = act {
         repo.saveRecurring(input, today.value)
         onDone()
+    }
+
+    override fun saveRecurringWithReminder(input: RecurringInput, remindDaysBefore: Long?, onDone: () -> Unit) = act {
+        repo.saveRecurring(input, today.value)
+        val taskRepo = tasks
+        if (taskRepo != null && remindDaysBefore != null && input.kind == TxKind.Expense) {
+            val next = firstOccurrenceFrom(RecurringSchedule(input.rrule, input.startOn, input.endOn), today.value)
+            val plan = next?.let { buildCancelReminderPlan(input.title, input.amount, it, remindDaysBefore, today.value, input.autoPost) }
+            if (plan != null) {
+                val id = taskRepo.create(NewTask(title = plan.title, dueDate = plan.dueDate, remindAt = plan.remindAt, notes = plan.notes))
+                messenger.undoable("Pengingat dipasang (${Dates.relativeDayLabel(plan.remindDate, today.value)} 09:00)") {
+                    taskRepo.get(id)?.let { taskRepo.remove(it) }
+                }
+            }
+        }
+        onDone()
+    }
+
+    override fun scheduleCancelReminder(r: Recurring, daysBefore: Long) = act {
+        val taskRepo = tasks ?: return@act
+        val next = r.nextRunOn ?: return@act
+        val plan = buildCancelReminderPlan(r.title, r.amount, next, daysBefore, today.value, r.autoPost) ?: return@act
+        val id = taskRepo.create(NewTask(title = plan.title, dueDate = plan.dueDate, remindAt = plan.remindAt, notes = plan.notes))
+        messenger.undoable("Pengingat ${r.title} dipasang (${Dates.relativeDayLabel(plan.remindDate, today.value)} 09:00)") {
+            taskRepo.get(id)?.let { taskRepo.remove(it) }
+        }
+    }
+
+    override fun cancelSubscription(r: Recurring) = act {
+        repo.setRecurringActive(r, false, today.value)
+        messenger.undoable("${r.title} ditandai dibatalkan") {
+            repo.setRecurringActive(r, true, today.value)
+        }
     }
 
     override fun saveBudget(id: String?, categoryId: String?, amount: Long, alertPct: Int, onDone: () -> Unit) = act {

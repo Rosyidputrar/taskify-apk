@@ -207,6 +207,7 @@ fun FinanceContent(
             d.item, state.activeWallets, state.categories, state.today, close,
             onSave = { actions.saveRecurring(it, close) },
             onDelete = d.item?.let { r -> { actions.removeRecurring(r); close() } },
+            onSaveWithReminder = { input, leadDays -> actions.saveRecurringWithReminder(input, leadDays, close) },
         )
         FinanceDialog.NewDebt -> DebtSheet(state.activeWallets, state.today, close) { actions.createDebt(it, close) }
         is FinanceDialog.Settle -> SettleDialog(d.debt, state.activeWallets, close) { walletId -> actions.settleDebt(d.debt, walletId); close() }
@@ -275,5 +276,11 @@ private class HapticFinanceActions(private val a: FinanceActions, private val h:
     override fun postOccurrence(r: Recurring) { h.success(); a.postOccurrence(r) }
     override fun settleDebt(d: Debt, walletId: String?) { h.success(); a.settleDebt(d, walletId) }
     override fun setRecurringActive(r: Recurring, active: Boolean) { h.toggle(active); a.setRecurringActive(r, active) }
+    override fun scheduleCancelReminder(r: Recurring, daysBefore: Long) { h.success(); a.scheduleCancelReminder(r, daysBefore) }
+    override fun cancelSubscription(r: Recurring) { h.tap(); a.cancelSubscription(r) }
+    override fun saveRecurringWithReminder(input: com.rosyidputrar.taskify.core.store.finance.RecurringInput, remindDaysBefore: Long?, onDone: () -> Unit) {
+        h.success()
+        a.saveRecurringWithReminder(input, remindDaysBefore, onDone)
+    }
     override fun setWalletArchived(w: Wallet, archived: Boolean) { h.toggle(archived); a.setWalletArchived(w, archived) }
 }
