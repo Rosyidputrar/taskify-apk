@@ -1,7 +1,9 @@
 package com.rosyidputrar.taskify.feature.sandi
 
+import android.app.Activity
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -36,6 +38,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,7 +50,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.material3.ModalBottomSheetProperties
+import com.google.android.gms.common.moduleinstall.InstallStatusListener
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate
 import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.rosyidputrar.taskify.core.designsystem.theme.SerifFamily
@@ -137,34 +149,177 @@ fun AuthImportContent(
 internal fun AuthImportHost(state: SandiUiState, actions: SandiActions) {
     val ui = state.authImport ?: return
     val context = LocalContext.current
+    var scanBusy by remember { mutableStateOf<String?>(null) }
+    var activeInstallCleanup by remember { mutableStateOf<(() -> Unit)?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            activeInstallCleanup?.invoke()
+            activeInstallCleanup = null
+        }
+    }
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { actions.addAuthImage(it?.toString()) }
+    val effectiveState = if (scanBusy != null && state.busy == null) state.copy(busy = scanBusy) else state
     ModalBottomSheet(
-        onDismissRequest = { if (state.busy == null) actions.closeAuthImport() },
+        onDismissRequest = { if (effectiveState.busy == null) actions.closeAuthImport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         // Label akun tidak boleh masuk screenshot / Recents.
         properties = ModalBottomSheetProperties(securePolicy = SecureFlagPolicy.SecureOn),
     ) {
         AuthImportContent(
-            ui, state, actions,
-            onScan = { scanQr(context, actions) },
-            onPhoto = { photo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            onPaste = { pasteFromClipboard(context, actions) },
+            ui, effectiveState, actions,
+            onScan = {
+                actions.clearError()
+                activeInstallCleanup?.invoke()
+                activeInstallCleanup = scanQr(
+                    context = context,
+                    actions = actions,
+                    onBusy = { scanBusy = it },
+                )
+            },
+            onPhoto = {
+                actions.clearError()
+                photo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onPaste = {
+                actions.clearError()
+                pasteFromClipboard(context, actions)
+            },
         )
     }
 }
 
-/** Pemindai QR Google Play Services: UI-nya milik Google, Taskify tidak butuh izin kamera. */
-private fun scanQr(context: Context, actions: SandiActions) {
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+/**
+ * Pemindai QR Google Play Services: UI-nya milik Google, Taskify tidak butuh izin kamera.
+ * Pada APK sideload, modul `barcode_ui` Play Services sering belum terpasang — cek dan unduh
+ * dulu lewat [ModuleInstall] sambil menampilkan status di dalam lembar impor agar tidak gagal
+ * diam-diam.
+ */
+private fun scanQr(
+    context: Context,
+    actions: SandiActions,
+    onBusy: (String?) -> Unit,
+): () -> Unit {
+    val host: Context = context.findActivity() ?: context
     val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).enableAutoZoom().build()
-    try {
-        GmsBarcodeScanning.getClient(context, options).startScan()
-            .addOnSuccessListener { code -> code.rawValue?.let(actions::addAuthText) ?: actions.authImportProblem("QR terbaca tapi isinya kosong.") }
-            .addOnFailureListener { e ->
-                actions.authImportProblem("Pemindai Google tidak tersedia di HP ini (${e.message ?: "Play Services"}). Pakai \"Dari foto\" atau \"Tempel teks\".")
-            }
+    val scanner = try {
+        GmsBarcodeScanning.getClient(host, options)
     } catch (e: Exception) {
-        actions.authImportProblem("Pemindai Google tidak tersedia di HP ini. Pakai \"Dari foto\" atau \"Tempel teks\".")
+        actions.authImportProblem(scannerErrorText(e))
+        return {}
     }
+
+    var disposed = false
+    var listener: InstallStatusListener? = null
+    val installer = runCatching { ModuleInstall.getClient(host) }.getOrNull()
+
+    fun cleanup() {
+        disposed = true
+        listener?.let { l -> installer?.let { runCatching { it.unregisterListener(l) } } }
+        listener = null
+    }
+
+    fun launchScanner(client: GmsBarcodeScanner) {
+        if (disposed) return
+        onBusy("Membuka pemindai QR…")
+        try {
+            client.startScan()
+                .addOnSuccessListener { code ->
+                    if (disposed) return@addOnSuccessListener
+                    onBusy(null)
+                    code.rawValue?.let(actions::addAuthText) ?: actions.authImportProblem("QR terbaca tapi isinya kosong.")
+                }
+                .addOnCanceledListener {
+                    if (!disposed) onBusy(null)
+                }
+                .addOnFailureListener { e ->
+                    if (disposed) return@addOnFailureListener
+                    onBusy(null)
+                    actions.authImportProblem(scannerErrorText(e))
+                }
+        } catch (e: Exception) {
+            onBusy(null)
+            actions.authImportProblem(scannerErrorText(e))
+        }
+    }
+
+    if (installer == null) {
+        launchScanner(scanner)
+        return ::cleanup
+    }
+
+    onBusy("Menyiapkan pemindai QR…")
+    installer.areModulesAvailable(scanner)
+        .addOnSuccessListener { availability ->
+            if (disposed) return@addOnSuccessListener
+            if (availability.areModulesAvailable()) {
+                launchScanner(scanner)
+                return@addOnSuccessListener
+            }
+            onBusy("Mengunduh modul pemindai QR Google…")
+            val statusListener = object : InstallStatusListener {
+                override fun onInstallStatusUpdated(update: ModuleInstallStatusUpdate) {
+                    if (disposed) return
+                    when (update.installState) {
+                        ModuleInstallStatusUpdate.InstallState.STATE_DOWNLOADING -> {
+                            val pct = update.progressInfo?.let { p ->
+                                if (p.totalBytesToDownload > 0) ((p.bytesDownloaded * 100) / p.totalBytesToDownload).toInt().coerceIn(0, 100) else null
+                            }
+                            onBusy(if (pct != null) "Mengunduh pemindai QR Google ($pct%)…" else "Mengunduh pemindai QR Google…")
+                        }
+                        ModuleInstallStatusUpdate.InstallState.STATE_INSTALLING -> onBusy("Memasang pemindai QR Google…")
+                        ModuleInstallStatusUpdate.InstallState.STATE_COMPLETED -> {
+                            runCatching { installer.unregisterListener(this) }
+                            listener = null
+                            launchScanner(scanner)
+                        }
+                        ModuleInstallStatusUpdate.InstallState.STATE_FAILED -> {
+                            runCatching { installer.unregisterListener(this) }
+                            listener = null
+                            onBusy(null)
+                            actions.authImportProblem("Gagal mengunduh pemindai QR Google (kode ${update.errorCode}). Periksa internet & Google Play Services, atau pakai \"Dari foto\" / \"Tempel teks\".")
+                        }
+                        ModuleInstallStatusUpdate.InstallState.STATE_CANCELED -> {
+                            runCatching { installer.unregisterListener(this) }
+                            listener = null
+                            onBusy(null)
+                        }
+                    }
+                }
+            }
+            listener = statusListener
+            val request = ModuleInstallRequest.newBuilder().addApi(scanner).setListener(statusListener).build()
+            installer.installModules(request)
+                .addOnSuccessListener { response ->
+                    if (disposed) return@addOnSuccessListener
+                    if (response.areModulesAlreadyInstalled()) {
+                        runCatching { installer.unregisterListener(statusListener) }
+                        listener = null
+                        launchScanner(scanner)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    if (disposed) return@addOnFailureListener
+                    runCatching { installer.unregisterListener(statusListener) }
+                    listener = null
+                    onBusy(null)
+                    actions.authImportProblem(scannerErrorText(e))
+                }
+        }
+        .addOnFailureListener {
+            if (!disposed) launchScanner(scanner)
+        }
+    return ::cleanup
+}
+
+internal fun scannerErrorText(e: Throwable): String {
+    val detail = e.message?.takeIf { it.isNotBlank() } ?: e::class.java.simpleName
+    return "Pemindai QR Google tidak bisa dibuka ($detail). Pastikan Google Play Services aktif, atau pakai \"Dari foto\" / \"Tempel teks\"."
 }
 
 /** Tempel dari papan klip; teks otpauth dihapus dari papan klip setelah dibaca (isinya kunci rahasia). */

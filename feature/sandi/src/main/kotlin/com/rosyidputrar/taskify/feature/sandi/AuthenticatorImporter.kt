@@ -48,6 +48,7 @@ class AuthenticatorImporter(
     private val save: suspend (List<ItemPayload>, List<Pair<String, ItemPayload>>) -> SandiService.ImportResult,
     private val show: (String) -> Unit,
     private val ttlMs: Long = TTL_MS,
+    private val onError: (String) -> Unit = show,
 ) {
     /** [version] berubah setiap ada QR baru (memicu hitung ulang ringkasan). */
     data class State(val open: Boolean = false, val attach: Boolean = true, val version: Int = 0)
@@ -68,13 +69,13 @@ class AuthenticatorImporter(
         val parsed = try {
             AuthenticatorImport.parse(text)
         } catch (e: ImportException) {
-            show(e.message ?: "QR tidak bisa dibaca.")
+            onError(e.message ?: "QR tidak bisa dibaca.")
             return false
         }
         // D-10: batas akun per sesi — satu sesi impor tidak boleh membanjiri brankas.
         val totalAfter = scans.sumOf { it.accounts.size } + parsed.sumOf { it.accounts.size }
         if (totalAfter > AuthenticatorImport.MAX_ACCOUNTS_PER_SESSION) {
-            show("Terlalu banyak akun (maks. ${AuthenticatorImport.MAX_ACCOUNTS_PER_SESSION} per sesi impor). Selesaikan dulu sesi ini, lalu impor sisanya.")
+            onError("Terlalu banyak akun (maks. ${AuthenticatorImport.MAX_ACCOUNTS_PER_SESSION} per sesi impor). Selesaikan dulu sesi ini, lalu impor sisanya.")
             return false
         }
         var fresh = 0
@@ -83,7 +84,7 @@ class AuthenticatorImporter(
             if (!repeat) { scans += s; fresh++ }
         }
         if (fresh == 0) {
-            show("QR ini sudah dipindai.")
+            onError("QR ini sudah dipindai.")
             return false
         }
         _state.update { it.copy(open = true, version = it.version + 1) }

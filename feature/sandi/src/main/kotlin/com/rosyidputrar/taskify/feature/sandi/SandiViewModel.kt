@@ -180,7 +180,12 @@ class SandiViewModel(
 
     private val exporter = SandiExporter(viewModelScope, service::verifyMaster, writer, messenger::show)
     private val importer = SandiImporter(viewModelScope, documents, { service.importItems(it) }, messenger::show)
-    private val authImporter = AuthenticatorImporter(viewModelScope, { add, attach -> service.importItems(add, attach) }, messenger::show)
+    private val authImporter = AuthenticatorImporter(
+        scope = viewModelScope,
+        save = { add, attach -> service.importItems(add, attach) },
+        show = messenger::show,
+        onError = { msg -> local.update { it.copy(error = msg) } },
+    )
 
     val state: StateFlow<SandiUiState> = combine(
         local,
@@ -430,8 +435,15 @@ class SandiViewModel(
 
     // ---------------------------------------------------------------- impor 2FA
 
-    override fun startAuthImport() = authImporter.open()
-    override fun addAuthText(text: String) { authImporter.add(text) }
+    override fun startAuthImport() {
+        local.update { it.copy(error = null) }
+        authImporter.open()
+    }
+
+    override fun addAuthText(text: String) {
+        local.update { it.copy(error = null) }
+        authImporter.add(text)
+    }
 
     override fun addAuthImage(uri: String?) {
         if (uri == null) return
@@ -441,7 +453,7 @@ class SandiViewModel(
             } catch (e: com.rosyidputrar.taskify.core.domain.sandi.ImportException) {
                 throw SandiUserException(e.message ?: "Gambar tidak bisa dibaca.")
             }
-            if (texts.isEmpty()) messenger.show("Tidak ada QR di gambar itu. Foto layar \"Transfer akun\" lebih dekat dan tidak buram.")
+            if (texts.isEmpty()) throw SandiUserException("Tidak ada QR di gambar itu. Foto layar \"Transfer akun\" lebih dekat dan tidak buram.")
             texts.forEach { authImporter.add(it) }
         }
     }
@@ -454,8 +466,15 @@ class SandiViewModel(
         authImporter.confirm(current.items)
     }
 
-    override fun closeAuthImport() = authImporter.close()
-    override fun authImportProblem(message: String) = messenger.show(message)
+    override fun closeAuthImport() {
+        local.update { it.copy(error = null) }
+        authImporter.close()
+    }
+
+    /** Tampilkan galat langsung di dalam lembar impor (bukan Snackbar di balik ModalBottomSheet). */
+    override fun authImportProblem(message: String) {
+        local.update { it.copy(error = message) }
+    }
 
     override fun onCleared() {
         exporter.clear()
