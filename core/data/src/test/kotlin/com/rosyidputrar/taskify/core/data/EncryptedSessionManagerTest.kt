@@ -5,10 +5,18 @@ import io.github.jan.supabase.auth.user.UserSession
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.Test
+import java.security.AlgorithmParameters
+import java.security.InvalidAlgorithmParameterException
+import java.security.Key
+import java.security.SecureRandom
+import java.security.spec.AlgorithmParameterSpec
+import javax.crypto.Cipher
+import javax.crypto.CipherSpi
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -145,5 +153,73 @@ class EncryptedSessionManagerTest {
         val stuck = RecoveringSessionCrypto(keyProvider = { bad }, resetKey = {})
         val e = assertFailsWith<Exception> { stuck.encrypt("x") }
         assertEquals(1, e.suppressed.size)
+    }
+
+    /**
+     * Mensimulasikan aturan AndroidKeyStore (`randomizedEncryptionRequired = true`):
+     * menolak caller-provided IV (`GCMParameterSpec`) pada `ENCRYPT_MODE` dengan
+     * `InvalidAlgorithmParameterException("Caller-provided IV not permitted")`.
+     */
+    private fun androidKeyStoreLikeCipher(): Cipher {
+        val delegate = Cipher.getInstance("AES/GCM/NoPadding")
+        val spi = object : CipherSpi() {
+            override fun engineSetMode(mode: String?) = Unit
+            override fun engineSetPadding(padding: String?) = Unit
+            override fun engineGetBlockSize(): Int = delegate.blockSize
+            override fun engineGetOutputSize(inputLen: Int): Int = delegate.getOutputSize(inputLen)
+            override fun engineGetIV(): ByteArray? = delegate.iv
+            override fun engineGetParameters(): AlgorithmParameters? = delegate.parameters
+
+            override fun engineInit(opmode: Int, key: Key?, random: SecureRandom?) {
+                delegate.init(opmode, key, random)
+            }
+
+            override fun engineInit(opmode: Int, key: Key?, params: AlgorithmParameterSpec?, random: SecureRandom?) {
+                if (opmode == Cipher.ENCRYPT_MODE && params != null) {
+                    throw InvalidAlgorithmParameterException("Caller-provided IV not permitted")
+                }
+                delegate.init(opmode, key, params, random)
+            }
+
+            override fun engineInit(opmode: Int, key: Key?, params: AlgorithmParameters?, random: SecureRandom?) {
+                if (opmode == Cipher.ENCRYPT_MODE && params != null) {
+                    throw InvalidAlgorithmParameterException("Caller-provided IV not permitted")
+                }
+                delegate.init(opmode, key, params, random)
+            }
+
+            override fun engineUpdate(input: ByteArray?, inputOffset: Int, inputLen: Int): ByteArray =
+                delegate.update(input, inputOffset, inputLen) ?: ByteArray(0)
+
+            override fun engineUpdate(input: ByteArray?, inputOffset: Int, inputLen: Int, output: ByteArray?, outputOffset: Int): Int =
+                delegate.update(input, inputOffset, inputLen, output, outputOffset)
+
+            override fun engineDoFinal(input: ByteArray?, inputOffset: Int, inputLen: Int): ByteArray =
+                delegate.doFinal(input, inputOffset, inputLen)
+
+            override fun engineDoFinal(input: ByteArray?, inputOffset: Int, inputLen: Int, output: ByteArray?, outputOffset: Int): Int =
+                delegate.doFinal(input, inputOffset, inputLen, output, outputOffset)
+        }
+        return object : Cipher(spi, delegate.provider, "AES/GCM/NoPadding") {}
+    }
+
+    @Test fun saveAndLoadWorkUnderAndroidKeyStoreNoCallerIvRule() = runBlocking {
+        val key = SecretKeySpec(ByteArray(32) { (it + 3).toByte() }, "AES")
+        val strictCrypto = AesGcmSessionCrypto(key, cipherFactory = ::androidKeyStoreLikeCipher)
+        val store = MapStore()
+        val errors = mutableListOf<Throwable>()
+        val manager = EncryptedSessionManager(store, strictCrypto, legacy = null, onSaveError = { errors += it })
+
+        manager.saveSession(session)
+        assertTrue(errors.isEmpty(), "saveSession tidak boleh gagal karena caller-provided IV: $errors")
+        val firstCipher = store.value!!
+        assertTrue(firstCipher.startsWith("v1:"))
+        assertEquals(session, manager.loadSession())
+
+        // Enkripsi ulang harus menghasilkan IV acak baru (ciphertext berbeda).
+        manager.saveSession(session)
+        assertTrue(errors.isEmpty())
+        assertNotEquals(firstCipher, store.value)
+        assertEquals(session, manager.loadSession())
     }
 }
