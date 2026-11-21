@@ -73,20 +73,28 @@ internal class ContentResolverFiles(private val context: Context) : SandiFileWri
     }
 
     /** Gambar diperkecil sampai sisi terpanjang ≤ 2048 px (cukup untuk QR, hemat memori). */
-    override suspend fun readQr(uri: String): List<String> = withContext(Dispatchers.Default) {
+    override suspend fun readQr(uri: String): List<String> = withContext(Dispatchers.IO) {
         val target = Uri.parse(uri)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(target)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: throw IOException("gambar tidak bisa dibuka")
+        // Jangan rangkai `?: throw` setelah `.use { BitmapFactory.decodeStream(..., inJustDecodeBounds = true) }`:
+        // decodeStream dengan inJustDecodeBounds = true SELALU mengembalikan null.
+        val boundsStream = context.contentResolver.openInputStream(target) ?: throw IOException("Gambar tidak bisa dibuka.")
+        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw ImportException("Berkas ini bukan gambar.")
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
-        val bitmap = context.contentResolver.openInputStream(target)?.use {
+        val decodeStream = context.contentResolver.openInputStream(target) ?: throw IOException("Gambar tidak bisa dibuka.")
+        val bitmap = decodeStream.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 })
         } ?: throw ImportException("Gambar tidak bisa dibaca.")
         try {
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            try { QrDecode.decode(pixels, bitmap.width, bitmap.height) } finally { pixels.fill(0) }
+            try {
+                withContext(Dispatchers.Default) { QrDecode.decode(pixels, bitmap.width, bitmap.height) }
+            } finally {
+                pixels.fill(0)
+            }
         } finally {
             bitmap.recycle()
         }

@@ -130,4 +130,23 @@ class AuthenticatorImporterTest {
         h.importer.open()
         assertEquals(0, h.importer.summary(emptyList())!!.scanned)
     }
+
+    @Test fun errorCallbackReceivesRejectionSeparatelyFromInfoShow() = runTest {
+        val infos = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+        val importer = AuthenticatorImporter(
+            scope = this,
+            save = { add, attach -> SandiService.ImportResult(add.size, emptyList(), attach.size) },
+            show = { infos += it },
+            onError = { errors += it },
+        )
+        importer.open()
+        assertFalse(importer.add("https://bukan-qr.example"))
+        assertTrue(infos.isEmpty())
+        assertTrue(errors.single().startsWith("Ini bukan QR authenticator"))
+        assertTrue(importer.add(codes[0]))
+        assertEquals(1, infos.size)
+        assertFalse(importer.add(codes[0]))
+        assertEquals("QR ini sudah dipindai.", errors.last())
+    }
 }
