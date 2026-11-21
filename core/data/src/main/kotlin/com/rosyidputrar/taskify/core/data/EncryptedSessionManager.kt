@@ -42,20 +42,43 @@ class EncryptedSessionManager(
      * Gagal menyimpan TIDAK boleh menggagalkan login: supabase-kt memanggil ini di dalam
      * `signInWith`, jadi exception di sini (Keystore rusak setelah pulihkan cadangan/ganti
      * kunci layar, serialisasi) dulu membuat tombol "Masuk" berputar tanpa akhir. Kini sesi tetap
-     * dipakai di memori; hanya belum tersimpan (masuk lagi setelah aplikasi ditutup).
+     * dipakai di memori.
+     *
+     * Perilaku saat simpan gagal (21 Nov 2026, audit "ingat device 30 hari"): sesi lama yang
+     * tersimpan TIDAK dihapus, supaya cold start berikutnya tetap bisa masuk dengan sesi lama
+     * itu. Pengecualian: bila sesi lama terbukti milik pengguna LAIN (login ganti akun), sesi
+     * lama dihapus agar buka berikutnya tidak masuk sebagai pengguna yang salah. Sesi legacy
+     * juga tidak dihapus bila simpan gagal, karena itu jalur cadangan `loadSession`.
      */
     override suspend fun saveSession(session: UserSession) {
         val result = runCatching {
             val plain = json.encodeToString(UserSession.serializer(), session)
             store.put(crypto.encrypt(plain))
         }
-        result.exceptionOrNull()?.let { e ->
-            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
-            onSaveError(e)
-            // Jangan tinggalkan sesi lama terenkripsi yang tidak cocok lagi dengan sesi aktif.
+        if (result.isSuccess) {
+            legacy?.clear()
+            return
+        }
+        val e = result.exceptionOrNull()!!
+        if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+        onSaveError(e)
+        // Hanya hapus sesi lama bila terbukti milik pengguna lain; bila tidak bisa
+        // dipastikan (mis. dekripsi gagal), biarkan — menghapusnya hanya menjamin
+        // pengguna harus login ulang tanpa memberi apa-apa.
+        if (storedUserDiffers(session)) {
             runCatching { store.remove() }
         }
-        legacy?.clear()
+    }
+
+    /** True bila sesi yang tersimpan bisa dibaca DAN user-nya berbeda dari [newSession]. */
+    private fun storedUserDiffers(newSession: UserSession): Boolean {
+        val newUserId = newSession.user?.id ?: return false
+        val stored = store.get() ?: return false
+        val oldUserId = runCatching {
+            val plain = crypto.decrypt(stored)
+            json.decodeFromString(UserSession.serializer(), plain).user?.id
+        }.getOrNull() ?: return false
+        return oldUserId != null && oldUserId != newUserId
     }
 
     override suspend fun loadSession(): UserSession {
@@ -172,7 +195,7 @@ fun createEncryptedSessionManager(context: Context, supabaseUrl: String): Sessio
         ),
         crypto = RecoveringSessionCrypto(keyProvider = ::sessionKey, resetKey = ::deleteSessionKey),
         legacy = DefaultLegacySessionReader(context, supabaseUrl),
-        onSaveError = { android.util.Log.w("Taskify", "Sesi tidak bisa disimpan terenkripsi; tetap masuk tanpa menyimpan", it) },
+        onSaveError = { android.util.Log.e("Taskify", "Sesi tidak bisa disimpan terenkripsi; login tetap jalan di memori, sesi lama dipertahankan bila ada", it) },
     )
 
 /**

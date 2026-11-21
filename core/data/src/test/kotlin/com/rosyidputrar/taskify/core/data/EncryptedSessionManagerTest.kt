@@ -121,14 +121,56 @@ class EncryptedSessionManagerTest {
         override fun decrypt(cipher: String): String = throw java.security.InvalidKeyException("Keystore operation failed")
     }
 
-    @Test fun saveFailureNeverBreaksSignInAndDropsStaleSession() = runBlocking {
+    @Test fun saveFailureNeverBreaksSignInAndKeepsStoredSession() = runBlocking {
         val store = MapStore().apply { value = "v1:sesi-lama" }
         val errors = mutableListOf<Throwable>()
         val m = EncryptedSessionManager(store, BrokenCrypto(), null, onSaveError = { errors += it })
         m.saveSession(session) // tidak melempar → login tidak menggantung
         assertEquals(1, errors.size)
-        assertNull(store.value, "sesi lama yang tak cocok lagi dibuang")
-        assertFailsWith<NoSessionFoundException> { m.loadSession() }
+        assertEquals("v1:sesi-lama", store.value, "sesi lama dipertahankan bila simpan gagal")
+        Unit
+    }
+
+    private val session2Json = """{"access_token":"tok-akses-kedua","refresh_token":"tok-refresh-kedua","provider_token":null,"provider_refresh_token":null,"expires_in":3600,"token_type":"bearer","user":{"id":"user-2","aud":"authenticated","email":"b@c.d"},"type":"bearer","expiresAt":"2030-01-01T00:00:00Z"}"""
+    private val session2: UserSession = json.decodeFromString(UserSession.serializer(), session2Json)
+
+    /** Enkripsi gagal, dekripsi jalan: mensimulasikan gagal simpan sementara (bukan kunci rusak total). */
+    private class EncryptBrokenCrypto(private val good: SessionCrypto) : SessionCrypto {
+        override fun encrypt(plain: String): String = throw java.security.InvalidKeyException("Keystore operation failed")
+        override fun decrypt(cipher: String): String = good.decrypt(cipher)
+    }
+
+    @Test fun saveFailureKeepsSameUserSessionSoColdStartStillSignsIn() = runBlocking {
+        val store = MapStore()
+        val good = manager(store)
+        good.saveSession(session) // sesi user-1 tersimpan dengan baik
+        val storedBefore = store.value!!
+        val errors = mutableListOf<Throwable>()
+        val broken = EncryptedSessionManager(store, EncryptBrokenCrypto(crypto()), null, onSaveError = { errors += it })
+        broken.saveSession(session) // simpan ulang sesi user-1 yang sama, Keystore gagal
+        assertEquals(1, errors.size)
+        assertEquals(storedBefore, store.value, "sesi user yang sama dipertahankan")
+        // Cold start berikutnya (enkripsi pulih): sesi lama tetap bisa dibaca.
+        assertEquals(session, manager(store).loadSession(), "cold start tetap masuk dengan sesi lama")
+        Unit
+    }
+
+    @Test fun saveFailureDropsStoredSessionOfDifferentUser() = runBlocking {
+        val store = MapStore()
+        manager(store).saveSession(session) // sesi user-1 tersimpan dengan baik
+        val broken = EncryptedSessionManager(store, EncryptBrokenCrypto(crypto()), null, onSaveError = {})
+        broken.saveSession(session2) // login sebagai user-2, simpan gagal
+        assertNull(store.value, "sesi user lain dihapus supaya tidak masuk sebagai pengguna yang salah")
+        assertFailsWith<NoSessionFoundException> { broken.loadSession() }
+        Unit
+    }
+
+    @Test fun saveFailureKeepsLegacyFallback() = runBlocking {
+        val legacy = FakeLegacy(sessionJson)
+        val broken = EncryptedSessionManager(MapStore(), BrokenCrypto(), legacy, onSaveError = {})
+        broken.saveSession(session) // simpan gagal → legacy jangan dihapus
+        assertFalse(legacy.cleared, "legacy dipertahankan sebagai cadangan bila simpan gagal")
+        assertEquals(sessionJson, legacy.value)
         Unit
     }
 

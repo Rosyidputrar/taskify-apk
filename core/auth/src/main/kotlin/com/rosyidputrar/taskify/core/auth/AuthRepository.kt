@@ -81,6 +81,11 @@ class AuthRepository(
     private val trustStore: MfaTrustStore,
     private val network: NetworkMonitor,
     scope: CoroutineScope,
+    private val passkeyChallengeApi: PasskeyChallengeApi = PasskeyChallengeApi(
+        defaultPasskeyHttpClient(),
+        supabase.supabaseUrl,
+        supabase.supabaseKey,
+    ),
 ) : PasswordAuth, PasskeyAuth {
     private val auth get() = supabase.auth
 
@@ -141,8 +146,12 @@ class AuthRepository(
         guard { auth.passkeys.verifyAuthentication(challengeId, credentialJson) }
     }
 
+    // Challenge pendaftaran diambil langsung dari GoTrue REST (lihat PasskeyChallengeApi):
+    // parser supabase-kt 3.9.0 gagal membaca `expires_at` angka dari server.
     override suspend fun passkeyRegistrationChallenge(): PasskeyChallenge = guard {
-        auth.passkeys.startRegistration().let { PasskeyChallenge(it.challengeId, it.options.toString()) }
+        val token = auth.currentSessionOrNull()?.accessToken
+            ?: throw IllegalStateException("Tidak ada sesi aktif untuk mendaftarkan passkey.")
+        passkeyChallengeApi.registrationOptions(token)
     }
 
     override suspend fun passkeyRegister(challengeId: String, credentialJson: String): Passkey = guard {
