@@ -35,11 +35,26 @@ class EncryptedSessionManager(
     private val crypto: SessionCrypto,
     private val legacy: LegacySessionReader?,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val onSaveError: (Throwable) -> Unit = {},
 ) : SessionManager {
 
+    /**
+     * Gagal menyimpan TIDAK boleh menggagalkan login: supabase-kt memanggil ini di dalam
+     * `signInWith`, jadi exception di sini (Keystore rusak setelah pulihkan cadangan/ganti
+     * kunci layar, serialisasi) dulu membuat tombol "Masuk" berputar tanpa akhir. Kini sesi tetap
+     * dipakai di memori; hanya belum tersimpan (masuk lagi setelah aplikasi ditutup).
+     */
     override suspend fun saveSession(session: UserSession) {
-        val plain = json.encodeToString(UserSession.serializer(), session)
-        store.put(crypto.encrypt(plain))
+        val result = runCatching {
+            val plain = json.encodeToString(UserSession.serializer(), session)
+            store.put(crypto.encrypt(plain))
+        }
+        result.exceptionOrNull()?.let { e ->
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+            onSaveError(e)
+            // Jangan tinggalkan sesi lama terenkripsi yang tidak cocok lagi dengan sesi aktif.
+            runCatching { store.remove() }
+        }
         legacy?.clear()
     }
 
@@ -155,9 +170,44 @@ fun createEncryptedSessionManager(context: Context, supabaseUrl: String): Sessio
         store = SharedPreferencesSessionStore(
             context.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE),
         ),
-        crypto = AesGcmSessionCrypto(sessionKey()),
+        crypto = RecoveringSessionCrypto(keyProvider = ::sessionKey, resetKey = ::deleteSessionKey),
         legacy = DefaultLegacySessionReader(context, supabaseUrl),
+        onSaveError = { android.util.Log.w("Taskify", "Sesi tidak bisa disimpan terenkripsi; tetap masuk tanpa menyimpan", it) },
     )
+
+/**
+ * Kunci Keystore bisa menjadi tidak valid (mis. setelah ganti kunci layar, pulihkan cadangan ke HP
+ * lain, atau bug vendor). Enkripsi yang gagal → kunci lama dibuang, kunci baru dibuat, dicoba sekali
+ * lagi. Sesi lama yang dienkripsi kunci lama memang tidak terbaca lagi (= masuk ulang), bukan macet.
+ */
+class RecoveringSessionCrypto(
+    private val keyProvider: () -> SecretKey,
+    private val resetKey: () -> Unit,
+) : SessionCrypto {
+    @Volatile private var current: AesGcmSessionCrypto? = null
+
+    private fun crypto(): AesGcmSessionCrypto = current ?: AesGcmSessionCrypto(keyProvider()).also { current = it }
+
+    override fun encrypt(plain: String): String = try {
+        crypto().encrypt(plain)
+    } catch (first: Exception) {
+        current = null
+        runCatching { resetKey() }
+        try {
+            crypto().encrypt(plain)
+        } catch (second: Exception) {
+            current = null
+            second.addSuppressed(first)
+            throw second
+        }
+    }
+
+    override fun decrypt(cipher: String): String = crypto().decrypt(cipher)
+}
+
+private fun deleteSessionKey() {
+    KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }.deleteEntry(SESSION_KEY_ALIAS)
+}
 
 private fun sessionKey(): SecretKey {
     val store = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }

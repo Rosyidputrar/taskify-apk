@@ -53,6 +53,7 @@ class MainActivity : FragmentActivity() {
     private val shareInbox: com.rosyidputrar.taskify.ui.share.ShareInbox by inject()
     private val lock: LockManager by inject()
     private val focus: com.rosyidputrar.taskify.focus.FocusController by inject()
+    private val coordinator: com.rosyidputrar.taskify.session.SessionCoordinator by inject()
     private val recents = RecentsPrivacy(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,7 +103,10 @@ class MainActivity : FragmentActivity() {
                 GateUi.ConfigMissing -> if (preview) shell(null) else ConfigMissingScreen(onPreview = { preview = true })
                 GateUi.SignedOut -> LoginScreen()
                 is GateUi.Mfa -> MfaScreen(target.status)
-                GateUi.Preparing -> PreparingScreen()
+                GateUi.Preparing -> {
+                    val prepareError by coordinator.prepareError.collectAsStateWithLifecycle()
+                    PreparingScreen(prepareError, onRetry = { coordinator.retryPrepare() }, onSignOut = { coordinator.requestLogout() })
+                }
                 GateUi.Locked -> LockScreen()
                 is GateUi.Open -> Unit // ditangani GateHost
             }

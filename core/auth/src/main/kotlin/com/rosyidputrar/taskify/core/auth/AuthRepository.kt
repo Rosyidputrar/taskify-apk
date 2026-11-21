@@ -18,6 +18,8 @@ import io.github.jan.supabase.exceptions.HttpRequestException
 import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -81,10 +83,20 @@ class AuthRepository(
 
     private fun refreshGate() { gateTick.value++ }
 
+    /**
+     * Masuk dengan batas waktu: tanpa ini, permintaan yang menggantung (jaringan setengah putus,
+     * server tidak menjawab) membuat tombol "Masuk" berputar tanpa akhir.
+     */
     suspend fun signIn(email: String, password: String) = guard {
-        auth.signInWith(Email) {
-            this.email = email.trim()
-            this.password = password
+        try {
+            withTimeout(SIGN_IN_TIMEOUT_MS) {
+                auth.signInWith(Email) {
+                    this.email = email.trim()
+                    this.password = password
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            throw AuthError(AuthFailure(network = true, status = null, code = "timeout", message = "Server tidak menjawab dalam ${SIGN_IN_TIMEOUT_MS / 1000} detik."))
         }
     }
 
@@ -187,5 +199,15 @@ class AuthRepository(
         throw AuthError(AuthFailure(network = true, status = null, code = null, message = e.message))
     } catch (e: IOException) {
         throw AuthError(AuthFailure(network = true, status = null, code = null, message = e.message))
+    } catch (e: AuthError) {
+        throw e
+    } catch (e: Exception) {
+        // Error di luar HTTP (Keystore, serialisasi sesi, R8, …): tetap jadi AuthError supaya
+        // layar menampilkan pesan dan berhenti memuat — dulu lolos dan tombol berputar selamanya.
+        throw AuthError(AuthFailure(network = false, status = null, code = e::class.java.simpleName, message = e.message ?: e::class.java.name))
+    }
+
+    companion object {
+        const val SIGN_IN_TIMEOUT_MS = 30_000L
     }
 }

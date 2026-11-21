@@ -115,4 +115,35 @@ class EncryptedSessionManagerTest {
         assertEquals("sesi-penting", c.decrypt(cipher))
         assertFailsWith<Exception> { c.decrypt(cipher.dropLast(4) + "AAAA") }
     }
+
+    private class BrokenCrypto : SessionCrypto {
+        override fun encrypt(plain: String): String = throw java.security.InvalidKeyException("Keystore operation failed")
+        override fun decrypt(cipher: String): String = throw java.security.InvalidKeyException("Keystore operation failed")
+    }
+
+    @Test fun saveFailureNeverBreaksSignInAndDropsStaleSession() = runBlocking {
+        val store = MapStore().apply { value = "v1:sesi-lama" }
+        val errors = mutableListOf<Throwable>()
+        val m = EncryptedSessionManager(store, BrokenCrypto(), null, onSaveError = { errors += it })
+        m.saveSession(session) // tidak melempar → login tidak menggantung
+        assertEquals(1, errors.size)
+        assertNull(store.value, "sesi lama yang tak cocok lagi dibuang")
+        assertFailsWith<NoSessionFoundException> { m.loadSession() }
+        Unit
+    }
+
+    @Test fun recoveringCryptoRegeneratesKeyOnce() {
+        val good = SecretKeySpec(ByteArray(32) { 7 }, "AES")
+        val bad = SecretKeySpec(ByteArray(3) { 1 }, "AES") // panjang kunci tidak sah → encrypt gagal
+        var resets = 0
+        var key: javax.crypto.SecretKey = bad
+        val c = RecoveringSessionCrypto(keyProvider = { key }, resetKey = { resets++; key = good })
+        val cipher = c.encrypt("halo")
+        assertEquals(1, resets)
+        assertEquals("halo", c.decrypt(cipher))
+        // Kunci tetap rusak setelah reset → error asli dilempar (dengan percobaan pertama terlampir).
+        val stuck = RecoveringSessionCrypto(keyProvider = { bad }, resetKey = {})
+        val e = assertFailsWith<Exception> { stuck.encrypt("x") }
+        assertEquals(1, e.suppressed.size)
+    }
 }
