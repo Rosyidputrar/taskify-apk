@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -36,7 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rosyidputrar.taskify.core.auth.AuthError
-import com.rosyidputrar.taskify.core.auth.AuthRepository
+import com.rosyidputrar.taskify.core.auth.PasskeyAuth
+import com.rosyidputrar.taskify.core.auth.PasswordAuth
 import com.rosyidputrar.taskify.core.auth.LoginNameStore
 import com.rosyidputrar.taskify.core.domain.auth.loginGreeting
 import com.rosyidputrar.taskify.core.domain.auth.translateLoginError
@@ -49,13 +51,41 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
-data class LoginUiState(val loading: Boolean = false, val error: String? = null)
+data class LoginUiState(val loading: Boolean = false, val error: String? = null, val passkeyLoading: Boolean = false) {
+    val busy: Boolean get() = loading || passkeyLoading
+}
 
-class LoginViewModel(private val auth: AuthRepository, loginNames: LoginNameStore) : ViewModel() {
+class LoginViewModel(private val auth: PasswordAuth, loginNames: LoginNameStore, private val passkeys: PasskeyAuth? = auth as? PasskeyAuth) : ViewModel() {
     val greeting: String = loginGreeting(loginNames.read())
 
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
+
+    /**
+     * Masuk dengan passkey (tanpa email: Credential Manager menawarkan passkey yang tersimpan).
+     * Setelah berhasil, gerbang tetap meminta verifikasi dua langkah bila akun mewajibkannya.
+     */
+    fun signInWithPasskey(device: PasskeyDevice) {
+        val api = passkeys ?: return
+        if (_state.value.busy) return
+        _state.value = LoginUiState(passkeyLoading = true)
+        launchSafe {
+            try {
+                val challenge = api.passkeySignInChallenge()
+                val credential = device.get(challenge.optionsJson)
+                api.passkeySignIn(challenge.challengeId, credential)
+                _state.update { it.copy(passkeyLoading = false) }
+            } catch (e: PasskeyProblem) {
+                _state.value = LoginUiState(error = e.userMessage())
+            } catch (e: AuthError) {
+                _state.value = LoginUiState(error = passkeyErrorText(e.failure))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = LoginUiState(error = "Passkey gagal.\n${e::class.java.simpleName}: ${e.message.orEmpty()}".trimEnd(' ', ':'))
+            }
+        }
+    }
 
     fun submit(email: String, password: String) {
         if (email.isBlank() || password.isEmpty()) {
@@ -83,11 +113,21 @@ class LoginViewModel(private val auth: AuthRepository, loginNames: LoginNameStor
 @Composable
 fun LoginScreen(viewModel: LoginViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LoginContent(greeting = viewModel.greeting, state = state, onSubmit = viewModel::submit)
+    val device = rememberPasskeyDevice()
+    LoginContent(
+        greeting = viewModel.greeting, state = state, onSubmit = viewModel::submit,
+        onPasskey = device?.let { d -> { viewModel.signInWithPasskey(d) } },
+    )
 }
 
 @Composable
-fun LoginContent(greeting: String, state: LoginUiState, onSubmit: (email: String, password: String) -> Unit) {
+fun LoginContent(
+    greeting: String,
+    state: LoginUiState,
+    onSubmit: (email: String, password: String) -> Unit,
+    /** null = passkey tidak tersedia (tombol disembunyikan). */
+    onPasskey: (() -> Unit)? = null,
+) {
     val haptics = rememberHaptics()
     LaunchedEffect(state.error) { if (state.error != null) haptics.error() }
     var email by rememberSaveable { mutableStateOf("") }
@@ -133,8 +173,19 @@ fun LoginContent(greeting: String, state: LoginUiState, onSubmit: (email: String
             modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
         )
         ErrorText(state.error)
-        Button(onClick = { onSubmit(email, password) }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { onSubmit(email, password) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             if (state.loading) TaskifyLoadingIndicator(size = 24.dp, color = androidx.compose.material3.LocalContentColor.current) else Text("Masuk")
+        }
+        if (onPasskey != null) {
+            androidx.compose.material3.OutlinedButton(onClick = onPasskey, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                if (state.passkeyLoading) {
+                    TaskifyLoadingIndicator(size = 24.dp, color = androidx.compose.material3.LocalContentColor.current)
+                } else {
+                    Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                    Text("Masuk dengan passkey")
+                }
+            }
         }
     }
 }

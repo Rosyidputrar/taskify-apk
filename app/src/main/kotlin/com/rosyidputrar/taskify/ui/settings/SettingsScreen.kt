@@ -82,6 +82,7 @@ fun SettingsScreen(
         item { SecuritySection(viewModel) }
         if (viewModel.hasAccount) item {
             SettingsSection("Verifikasi dua langkah") { AuthenticatorSettings(onMessage = viewModel::show) }
+            SettingsSection("Passkey") { com.rosyidputrar.taskify.feature.auth.PasskeySettings(onMessage = viewModel::show) }
         }
         item { NotificationSection(viewModel) }
         if (viewModel.hasAccount) item { SyncSection(viewModel) }

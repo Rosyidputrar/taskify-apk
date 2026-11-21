@@ -52,11 +52,15 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --console=plain
 
-      - name: Sidik jari sertifikat rilis (untuk assetlinks.json)
+      - name: Sidik jari sertifikat rilis (untuk assetlinks.json & origin passkey)
         if: env.RELEASE_KEYSTORE_BASE64 != ''
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep -i "SHA-256" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Origin Android untuk Supabase Auth → WebAuthn (passkey): base64url tanpa padding dari SHA-256 sertifikat.
+          HEX=$("$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep -m1 -i "SHA-256 digest" | sed 's/.*: //')
+          ORIGIN="android:apk-key-hash:$(python3 -c 'import base64,sys; print(base64.urlsafe_b64encode(bytes.fromhex(sys.argv[1])).decode().rstrip("="))' "$HEX")"
+          echo "Origin passkey Android: $ORIGIN" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

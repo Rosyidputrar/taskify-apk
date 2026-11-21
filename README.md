@@ -296,4 +296,34 @@ origin web perlu menyajikan `/.well-known/assetlinks.json` berisi package
 `com.rosyidputrar.taskify` dan sidik jari SHA-256 sertifikat penanda tangan APK. Tanpa berkas itu,
 tautan tetap terbuka di browser (halaman webapp) dan aplikasi bisa dipilih lewat "Buka dengan".
 
+### Passkey (masuk tanpa password)
+
+Layar masuk punya tombol **Masuk dengan passkey**; passkey ditambah, diganti nama, dan dihapus di
+Pengaturan → **Passkey**. Aplikasi memakai Credential Manager Android (Android 9+) dan API passkey
+Supabase Auth (`supabase-kt` `auth.passkeys`). Setelah masuk dengan passkey, verifikasi dua langkah
+tetap diminta bila akun mewajibkannya. Passkey **baru bisa dipakai setelah server disiapkan**:
+
+1. **Supabase Auth → aktifkan passkey** dan atur WebAuthn (dasbor, atau `config.toml` untuk lokal):
+   - `rp_id` = host webapp (host `PUBLIC_WEB_ORIGIN`, mis. `taskify.example.com`, tanpa `https://`);
+   - `rp_origins` = origin webapp **dan** origin Android
+     `android:apk-key-hash:<…>` — nilainya dicetak CI di ringkasan job *build* (langkah "Sidik jari
+     sertifikat rilis") dan tampil di aplikasi: Pengaturan → Passkey → **Info server**. APK debug
+     punya sertifikat lain → origin lain; daftarkan juga bila perlu.
+2. **Domain `rp_id` menyajikan `/.well-known/assetlinks.json`** yang menaut aplikasi untuk kredensial,
+   bukan hanya untuk tautan (`get_login_creds` wajib untuk passkey):
+
+   ```json
+   [{
+     "relation": ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
+     "target": { "namespace": "android_app", "package_name": "com.rosyidputrar.taskify",
+                 "sha256_cert_fingerprints": ["<SHA-256 sertifikat rilis, format AA:BB:…>"] }
+   }]
+   ```
+
+Galat yang mungkin muncul dan artinya:
+- *"Passkey belum diaktifkan di server"* (HTTP 404 / `*_disabled`): langkah 1 belum dilakukan.
+- *"Passkey belum disiapkan di server untuk aplikasi ini"* (SecurityError / RP ID): `rp_id`,
+  origin Android, atau `assetlinks.json` belum cocok.
+- *"Belum ada passkey Taskify di perangkat ini"*: masuk dengan email dulu, lalu tambahkan passkey.
+
 Font: Fraunces, Instrument Sans, JetBrains Mono (SIL Open Font License, lihat `licenses/`).
