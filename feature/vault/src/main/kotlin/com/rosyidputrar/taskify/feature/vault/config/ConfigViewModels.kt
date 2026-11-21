@@ -158,11 +158,21 @@ class ConfigEditorViewModel(
     init {
         if (fileId != null) launchSafe {
             val file = repo.watchFile(fileId).first()
-            val latest = service.versions(fileId).first { it.ready || service.session.vault.value == null }.versions.firstOrNull()
+            local.update {
+                it.copy(
+                    name = file?.name ?: "",
+                    format = file?.format ?: ConfigFormat.Env,
+                    environment = file?.environment ?: "",
+                    projectId = file?.projectId,
+                )
+            }
+            // Tunggu sampai brankas Sandi terbuka lalu muat versi terbaru terdekripsi.
+            // Tanpa ini, membuka editor saat brankas terkunci membuat isi kosong permanen.
+            service.session.vault.first { it != null }
+            val latest = service.versions(fileId).first { it.ready }.versions.firstOrNull()
             val text = latest?.payload?.text ?: ""
             local.update {
-                it.copy(loaded = true, name = file?.name ?: "", format = file?.format ?: ConfigFormat.Env, environment = file?.environment ?: "",
-                    projectId = file?.projectId, text = text, baseText = text)
+                it.copy(loaded = true, text = text, baseText = text)
             }
         }
     }

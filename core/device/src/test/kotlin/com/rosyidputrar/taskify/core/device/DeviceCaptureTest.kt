@@ -70,6 +70,20 @@ class DeviceCaptureTest {
         assertNull(d.notif.text)
     }
 
+    @Test fun moneyDraftUsesAppLabelFallbackForUnlistedBankPackage() {
+        val r = raw(
+            pkg = "id.co.bankpapua.mobile.v2",
+            title = "Pembayaran QRIS berhasil",
+            text = "Pembayaran QRIS untuk MyTelkomsel Apps sebesar 13.500 telah berhasil.",
+        )
+        val d = NotificationCapture.decide(r, NotifSettings(), own, "Bank Papua") as CaptureDecision.Log
+        assertEquals(NotifCategory.Money, d.notif.category)
+        assertEquals(13_500L, d.notif.money?.amount)
+        assertEquals(TxKind.Expense, d.notif.money?.kind)
+        assertEquals("MyTelkomsel Apps", d.notif.money?.counterparty)
+        assertEquals("Bank Papua", d.notif.money?.source)
+    }
+
     private val day = "2026-11-16"
     private val w = UsageMath.window(day)
     private fun at(h: Int, m: Int = 0) = w.first + h * UsageMath.HOUR + m * 60_000L
@@ -92,5 +106,33 @@ class DeviceCaptureTest {
         val again = UsageCollector.plan(events, now = at(9), firstDay = yesterday, today = day, dayStartHour = 0, lastStored = day, ignore = setOf("launcher"))
         assertEquals(listOf(day), again.map { it.day })
         assertEquals(emptyList(), UsageCollector.plan(emptyList(), at(9), yesterday, day, 0, null, emptySet()))
+    }
+
+    @Test fun otpInTextIsRedactedWhenKeywordOnlyInTitle() {
+        val d = NotificationCapture.decide(
+            raw(title = "Kode Verifikasi Login", text = "482913 berlaku 5 menit"),
+            NotifSettings(), own, "Bank",
+        ) as CaptureDecision.Log
+        assertEquals("•••••• berlaku 5 menit", d.notif.text)
+    }
+
+    @Test fun planNeverFreezesTodayWhenNoOvernightEvents() {
+        // Tidak ada event sebelum jam 07.00 (pengguna tidur semalaman): earliest > window.first,
+        // namun hari ini (day == today) tetap WAJIB dihitung ulang meski lastStored == today.
+        val events = listOf(
+            UsageEvent("a", Kind.Resumed, at(7, 0)),
+            UsageEvent("a", Kind.Paused, at(8, 0)),
+        )
+        val plans = UsageCollector.plan(
+            events = events,
+            now = at(9, 0),
+            firstDay = "2026-11-15",
+            today = day,
+            dayStartHour = 0,
+            lastStored = day,
+            ignore = emptySet(),
+        )
+        assertEquals(listOf(day), plans.map { it.day })
+        assertEquals(60 * 60_000L, plans.single().device.screenMs)
     }
 }

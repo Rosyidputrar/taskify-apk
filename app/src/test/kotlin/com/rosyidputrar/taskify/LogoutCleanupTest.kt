@@ -77,6 +77,15 @@ class LogoutCleanupTest {
         assertTrue(ran)
     }
 
+    @Test fun errorInSafeLaunchIsReportedOnNonSupervisorScope(): Unit = runBlocking {
+        val reported = mutableListOf<Throwable>()
+        UiErrors.install { reported += it }
+        // Mensimulasikan rememberCoroutineScope() yang memakai Job biasa (bukan SupervisorJob).
+        val scope = CoroutineScope(kotlinx.coroutines.Job() + Dispatchers.Unconfined)
+        scope.launchSafe { throw IllegalStateException("gagal undo") }.join()
+        assertIs<IllegalStateException>(reported.single())
+    }
+
     @Test fun cancellationIsNotReported() = runBlocking {
         val reported = mutableListOf<Throwable>()
         UiErrors.install { reported += it }

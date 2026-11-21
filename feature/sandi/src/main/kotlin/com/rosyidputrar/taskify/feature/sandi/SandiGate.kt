@@ -117,8 +117,9 @@ internal fun SetupPanel(state: SandiUiState, actions: SandiActions) {
         }
         return
     }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirm by rememberSaveable { mutableStateOf("") }
+    // Jangan pakai rememberSaveable untuk master password (tidak boleh masuk Bundle savedInstanceState).
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
     val (strength, problem) = rememberMasterCheck(actions, password)
     val mismatch = confirm.isNotEmpty() && confirm != password
     val canCreate = password.isNotEmpty() && problem == null && strength != null && confirm == password && state.busy == null
@@ -148,7 +149,7 @@ private fun Bullet(text: String) {
 @Composable
 internal fun UnlockPanel(state: SandiUiState, actions: SandiActions, onQuickCheck: () -> Unit) {
     LaunchedEffect(Unit) { actions.tryTrusted() }
-    var password by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var remember by rememberSaveable { mutableStateOf(false) }
     var recover by rememberSaveable { mutableStateOf(false) }
     if (recover) {
@@ -193,9 +194,10 @@ internal fun UnlockPanel(state: SandiUiState, actions: SandiActions, onQuickChec
 
 @Composable
 private fun RecoverPanel(state: SandiUiState, actions: SandiActions, onCancel: () -> Unit) {
-    var key by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirm by rememberSaveable { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    // Jangan pakai rememberSaveable untuk master password (tidak boleh masuk Bundle savedInstanceState).
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
     val (strength, problem) = rememberMasterCheck(actions, password)
     val ok = key.isNotBlank() && password.isNotEmpty() && problem == null && strength != null && confirm == password && state.busy == null
     GateCard(Icons.Outlined.Key, "Pulihkan dengan kunci pemulihan", "Ketik kunci pemulihan (26 karakter, tanda hubung boleh diabaikan), lalu pilih master password baru. Kunci pemulihan lama tidak berlaku lagi setelah ini.") {

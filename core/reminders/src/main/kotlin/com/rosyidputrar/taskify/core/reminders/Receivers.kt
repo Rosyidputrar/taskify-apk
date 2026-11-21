@@ -3,7 +3,9 @@ package com.rosyidputrar.taskify.core.reminders
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.rosyidputrar.taskify.core.store.tasks.TaskRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,6 +19,10 @@ private fun BroadcastReceiver.runAsync(block: suspend () -> Unit) {
     CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
         try {
             block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("Taskify", "Reminder receiver gagal", e)
         } finally {
             pending.finish()
         }
@@ -51,6 +57,7 @@ class ReminderReceiver : BroadcastReceiver(), KoinComponent {
 class ReminderActionReceiver : BroadcastReceiver(), KoinComponent {
     private val tasks: TaskRepository by inject()
     private val notifier: ReminderNotifier by inject()
+    private val scheduler: ReminderScheduler by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra(ReminderReceiver.EXTRA_TASK_ID) ?: return
@@ -59,8 +66,14 @@ class ReminderActionReceiver : BroadcastReceiver(), KoinComponent {
             notifier.cancel(taskId)
             val task = tasks.get(taskId) ?: return@runAsync
             when (action) {
-                ACTION_DONE -> if (task.status.isActive) tasks.toggle(task)
-                ACTION_SNOOZE -> tasks.snoozeReminder(taskId, SNOOZE_MINUTES)
+                ACTION_DONE -> if (task.status.isActive) {
+                    tasks.toggle(task)
+                    scheduler.rescheduleNow()
+                }
+                ACTION_SNOOZE -> {
+                    tasks.snoozeReminder(taskId, SNOOZE_MINUTES)
+                    scheduler.rescheduleNow()
+                }
             }
         }
     }

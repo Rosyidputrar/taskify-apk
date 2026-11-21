@@ -416,4 +416,27 @@ class ChatEngineTest {
         advanceUntilIdle()
         assertEquals(listOf("simpan" to "{\"wallet_id\":\"w-1\",\"wallet\":\"Tunai\"}"), tools.ran)
     }
+
+    @Test fun turningOffDataAccessMidStreamPreventsToolExecution() = runTest {
+        store.newSession(dataAccess = true)
+        val client = ScriptedClient(
+            {
+                emit(AiEvent.Text("Sebentar..."))
+                // Pengguna mematikan sakelar akses data saat respons masih di-stream.
+                store.sessions["s1"] = store.sessions["s1"]!!.copy(dataAccess = false)
+                emit(AiEvent.ToolCalls(listOf(AiToolCall("c1", "baca", "{}"), AiToolCall("w1", "simpan", "{}"))))
+                emit(AiEvent.Done("tool_calls"))
+            },
+            { emit(AiEvent.Text("Akses data telah dimatikan.")); emit(AiEvent.Done("stop")) },
+        )
+        val e = engine(client)
+        e.send("s1", "cek dan simpan")
+        advanceUntilIdle()
+        assertTrue(tools.ran.isEmpty())
+        assertEquals(
+            listOf(ChatRole.User to ChatState.Done, ChatRole.Assistant to ChatState.Done, ChatRole.Tool to ChatState.Error, ChatRole.Tool to ChatState.Error, ChatRole.Assistant to ChatState.Done),
+            store.roles(),
+        )
+        assertTrue(store.list[2].content.contains("Akses data Taskify sedang mati"))
+    }
 }

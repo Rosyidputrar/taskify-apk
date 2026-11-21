@@ -105,7 +105,12 @@ object MarkdownEdit {
             val text = prev.text.substring(0, lineStart) + prev.text.substring(pos)
             return EditState(text, lineStart)
         }
-        val nextMarker = if (num.isNotEmpty()) "${num.toInt() + 1}. " else marker.replace(Regex("\\[[xX]]"), "[ ]")
+        val nextMarker = if (num.isNotEmpty()) {
+            val n = num.toLongOrNull()?.takeIf { it < Long.MAX_VALUE } ?: return null
+            "${n + 1}. "
+        } else {
+            marker.replace(Regex("\\[[xX]]"), "[ ]")
+        }
         val insert = "\n$indent$nextMarker"
         val text = prev.text.substring(0, pos) + insert + prev.text.substring(pos)
         return EditState(text, pos + insert.length)

@@ -141,7 +141,8 @@ private fun Message(title: String, body: String) {
 
 @Composable
 private fun UnlockPanel(state: AutofillUiState, actions: AutofillActions) {
-    var password by rememberSaveable { mutableStateOf("") }
+    // Jangan pakai rememberSaveable untuk master password agar tidak pernah masuk Bundle savedInstanceState.
+    var password by remember { mutableStateOf("") }
     val haptics = rememberHaptics()
     Column(Modifier.fillMaxWidth().padding(20.dp).widthIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

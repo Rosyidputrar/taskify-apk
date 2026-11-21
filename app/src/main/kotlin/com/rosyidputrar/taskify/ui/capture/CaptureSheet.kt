@@ -107,6 +107,7 @@ fun CaptureSheet(
                 if (draftConflict) draftConflict = false else text = ""
             },
             onRestoreDraft = { text = viewModel.draftText; draftConflict = false; restored = true },
+            draftConflict = draftConflict,
             onDismiss = onDismiss,
             // Menyimpan teks baru saat konflik belum selesai tidak boleh menghapus draf lama:
             // draf lama tetap tersimpan dan ditawarkan lagi saat sheet dibuka berikutnya.

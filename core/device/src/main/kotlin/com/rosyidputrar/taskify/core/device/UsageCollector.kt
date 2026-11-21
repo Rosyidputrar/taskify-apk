@@ -124,7 +124,10 @@ class UsageCollector(
             var day = firstDay
             while (day <= today) {
                 val window = UsageMath.window(day, dayStartHour)
-                val partial = earliest > window.first
+                // Hari yang sedang berjalan (`day == today`) SELALU dihitung ulang: ketiadaan
+                // event dini hari (tidur semalaman) bukan pemotongan data OS. Hanya hari lampau
+                // (`day < today`) yang dilindungi dari penimpaan oleh jendela terpotong.
+                val partial = day < today && earliest > window.first
                 if (!partial || lastStored == null || day > lastStored) {
                     val clipped = UsageMath.clip(sessions, window.first until minOf(window.last + 1, now))
                     out += DayData(day, clipped, UsageMath.perApp(clipped), UsageMath.deviceDay(day, events, clipped, window))

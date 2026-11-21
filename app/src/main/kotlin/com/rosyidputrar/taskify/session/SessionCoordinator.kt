@@ -53,6 +53,8 @@ class SessionCoordinator(
     private val music: com.rosyidputrar.taskify.core.media.MusicPlayer,
     private val leftovers: DeviceLeftovers,
     private val musicLogin: com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository? = null,
+    /** Jadwalkan ulang pekerjaan latar (pengingat kontekstual, Wellbeing) setelah login/re-login. */
+    private val onSessionOpen: () -> Unit = {},
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -115,6 +117,7 @@ class SessionCoordinator(
         runCatching { search.setup() }
         _readyUser.value = userId
         database.connect(connector)
+        runCatching { onSessionOpen() }
         // Isi Sampah > 30 hari dihapus permanen sekali per sesi, SETELAH sinkron awal (sama dengan
         // webapp) — sebelum itu data lokal belum lengkap.
         scope.launch {
