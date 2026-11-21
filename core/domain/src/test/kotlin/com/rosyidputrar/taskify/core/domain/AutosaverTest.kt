@@ -2,7 +2,9 @@ package com.rosyidputrar.taskify.core.domain
 
 import com.rosyidputrar.taskify.core.domain.editor.Autosaver
 import com.rosyidputrar.taskify.core.domain.editor.SaveState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -57,5 +59,30 @@ class AutosaverTest {
         saver.queue(mapOf("content" to ""), immediate = true)
         runCurrent()
         assertEquals(SaveState.Idle, saver.state.value)
+    }
+
+    @Test fun cancelledFlushWhileWaitingForMutexDoesNotLosePendingPatch() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val saved = mutableListOf<Map<String, Any?>>()
+        val saver = Autosaver(backgroundScope) { patch ->
+            if (patch["step"] == 1) gate.await()
+            saved += patch
+            true
+        }
+        val first = launch {
+            saver.queue(mapOf("step" to 1))
+            saver.flush()
+        }
+        runCurrent()
+        saver.queue(mapOf("step" to 2, "content" to "penting"))
+        val second = launch { saver.flush() }
+        runCurrent()
+        // Batalkan flush kedua saat masih menunggu mutex dari flush pertama.
+        second.cancel()
+        gate.complete(Unit)
+        first.join()
+        // Patch kedua tidak boleh hilang; flush berikutnya masih menyimpannya.
+        saver.flush()
+        assertEquals(listOf(mapOf<String, Any?>("step" to 1), mapOf<String, Any?>("step" to 2, "content" to "penting")), saved)
     }
 }

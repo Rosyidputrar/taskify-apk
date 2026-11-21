@@ -293,7 +293,15 @@ private val serverModule = module {
     single { FilesApi(get()) }
     single<VaultServer> { SupabaseVaultServer(get(), AppConfig.supabaseUrl) }
     single { AttachmentManager(androidContext(), get(), get(), get(), get(), get(APP_SCOPE)) }
-    single(createdAtStart = true) { SessionCoordinator(get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single(createdAtStart = true) {
+        SessionCoordinator(
+            get(), get(), get(), get(), get(), get(), get(APP_SCOPE), get(), get(), get(), get(), get(), get(), get(), get(),
+            onSessionOpen = {
+                get<com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler>().schedule()
+                get<com.rosyidputrar.taskify.core.device.DeviceScheduler>().schedule()
+            },
+        )
+    }
     single(createdAtStart = true) { AttachmentOutbox(get(), get(), get(), get(APP_SCOPE)) }
     single(createdAtStart = true) { RecurringProcessor(get(), get(), get(), get(), get(APP_SCOPE)) }
 }

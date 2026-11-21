@@ -43,6 +43,8 @@ data class TxDraft(
     val error: String? = null,
     /** Transaksi milik hutang/seri berulang: tetap bisa diubah, tapi diberi keterangan. */
     val linked: String? = null,
+    /** Tautan ke tugas asal (dipertahankan saat transaksi diedit agar task_id tidak terhapus). */
+    val taskId: String? = null,
 ) {
     val amount: Long? get() = Rupiah.parse(amountText)
 
@@ -51,14 +53,14 @@ data class TxDraft(
 
     /** Disimpan ke SavedStateHandle: draf bertahan saat sistem mematikan proses. */
     internal fun toSaved(): ArrayList<String?> = arrayListOf(
-        id, kind.name, amountText, walletId, toWalletId, categoryId, date, time, title, note, linked,
+        id, kind.name, amountText, walletId, toWalletId, categoryId, date, time, title, note, linked, taskId,
     )
 
     internal companion object {
         fun fromSaved(v: List<String?>): TxDraft = TxDraft(
             loaded = true, id = v[0], kind = TxKind.entries.firstOrNull { it.name == v[1] } ?: TxKind.Expense, amountText = v[2].orEmpty(),
             walletId = v[3].orEmpty(), toWalletId = v[4], categoryId = v[5], date = v[6].orEmpty(), time = v[7], title = v[8].orEmpty(),
-            note = v[9].orEmpty(), linked = v[10],
+            note = v[9].orEmpty(), linked = v[10], taskId = v.getOrNull(11),
         )
     }
 }
@@ -107,6 +109,7 @@ class TxEditorViewModel(
                         t.recurringId != null -> "Dicatat dari transaksi berulang."
                         else -> null
                     },
+                    taskId = t.taskId,
                 )
             } else {
                 draft.value = TxDraft(loaded = true, date = args.date ?: Dates.today(), walletId = args.walletId.orEmpty())
@@ -145,7 +148,7 @@ class TxEditorViewModel(
         }
         launchSafe {
             try {
-                val input = TxInput(d.kind, amount, d.walletId, d.toWalletId, d.categoryId, d.date, d.time, d.title, d.note)
+                val input = TxInput(d.kind, amount, d.walletId, d.toWalletId, d.categoryId, d.date, d.time, d.title, d.note, taskId = d.taskId)
                 if (d.id == null) {
                     val id = repo.createTx(input)
                     messenger.undoable("${d.kind.label} ${Rupiah.format(amount)} dicatat") { repo.removeTx(id) }

@@ -51,5 +51,10 @@ class MarkdownEditTest {
         assertNull(MarkdownEdit.continueList(p4, n4))
         // Bukan ketikan Enter (mis. tempel) → tidak diubah.
         assertNull(MarkdownEdit.continueList(EditState("- a", 3), EditState("- a\nb", 5)))
+        // Angka 10+ digit dan overflow Long tidak boleh crash NumberFormatException.
+        val (pBig, nBig) = enter("12345678901. item besar")
+        assertEquals("12345678901. item besar\n12345678902. ", MarkdownEdit.continueList(pBig, nBig)?.text)
+        val (pHuge, nHuge) = enter("99999999999999999999999999999. terlalu besar")
+        assertNull(MarkdownEdit.continueList(pHuge, nHuge))
     }
 }

@@ -97,17 +97,21 @@ class TasksViewModel(
             val listId = (filter.value.view as? TaskView.List)?.listId
             // Di tampilan "Hari ini", tugas tanpa tanggal langsung jatuh hari ini.
             val defaultDate = if ((filter.value.view as? TaskView.Smart)?.view == SmartView.Today) today.value else null
+            val dueDate = parsed.dueDate ?: defaultDate
+            val remindAt = parsed.defaultRemindAt(dueDate)
             val id = tasks.create(
                 NewTask(
                     title = parsed.title,
                     listId = listId,
-                    dueDate = parsed.dueDate ?: defaultDate,
+                    dueDate = dueDate,
                     dueTime = parsed.dueTime,
                     priority = parsed.priority ?: 0,
+                    remindAt = remindAt,
                 ),
             )
             if (parsed.tags.isNotEmpty()) tags.addByName("task", id, parsed.tags)
-            messenger.undoable("Tugas ditambahkan") { tasks.get(id)?.let { tasks.remove(it) } }
+            val msg = if (remindAt != null) "Tugas & pengingat ditambahkan" else "Tugas ditambahkan"
+            messenger.undoable(msg) { tasks.get(id)?.let { tasks.remove(it) } }
         }
     }
 

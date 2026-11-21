@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AssistChip
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyModule
 import com.rosyidputrar.taskify.core.designsystem.theme.TaskifyTheme
 import com.rosyidputrar.taskify.core.designsystem.theme.namedColor
+import com.rosyidputrar.taskify.core.domain.tasks.MORNING
 import com.rosyidputrar.taskify.core.domain.tasks.parseQuickAdd
 import com.rosyidputrar.taskify.core.domain.tasks.priorityLabel
 import com.rosyidputrar.taskify.core.domain.time.Dates
@@ -78,7 +80,7 @@ fun QuickAddBar(today: String, onSubmit: (String) -> Unit, modifier: Modifier = 
             keyboardActions = KeyboardActions(onDone = { submit() }),
             modifier = Modifier.fillMaxWidth(),
         )
-        AnimatedVisibility(parsed != null && (parsed.dueDate != null || parsed.priority != null || parsed.tags.isNotEmpty())) {
+        AnimatedVisibility(parsed != null && (parsed.dueDate != null || parsed.priority != null || parsed.tags.isNotEmpty() || parsed.remind)) {
             val p = parsed ?: return@AnimatedVisibility
             FlowRow(
                 Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
@@ -86,6 +88,9 @@ fun QuickAddBar(today: String, onSubmit: (String) -> Unit, modifier: Modifier = 
             ) {
                 p.dueDate?.let { PreviewChip(Icons.Outlined.CalendarToday, Dates.relativeDayLabel(it, today)) }
                 p.dueTime?.let { PreviewChip(Icons.Outlined.Schedule, it) }
+                if (p.remind && p.dueDate != null) {
+                    PreviewChip(Icons.Outlined.NotificationsNone, "Ingatkan ${p.dueTime ?: MORNING}")
+                }
                 p.priority?.let { PreviewChip(Icons.Outlined.Flag, "Prioritas ${priorityLabel(it).lowercase()}") }
                 p.tags.forEach { tag ->
                     AssistChip(

@@ -53,12 +53,14 @@ class Autosaver(
     /** Simpan semua perubahan tertunda sekarang (dipanggil saat layar ditutup / aplikasi ke latar). */
     suspend fun flush() {
         val me = currentCoroutineContext()[Job]
-        val patch = synchronized(lock) {
-            timer?.takeIf { it !== me }?.cancel()
-            timer = null
-            pending.also { pending = emptyMap() }
-        }
         mutex.withLock {
+            // Ambil `pending` DI DALAM mutex supaya pembatalan saat menunggu mutex tidak
+            // pernah menghilangkan patch, dan flush paralel tidak bisa menimpa urutan terbaru.
+            val patch = synchronized(lock) {
+                timer?.takeIf { it !== me }?.cancel()
+                timer = null
+                pending.also { pending = emptyMap() }
+            }
             if (patch.isEmpty()) return
             _state.value = SaveState.Saving
             try {

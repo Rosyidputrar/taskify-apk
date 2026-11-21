@@ -141,11 +141,12 @@ class FocusController(
     /** Keluar akun: hentikan tanpa mencatat & bersihkan semuanya. */
     suspend fun clear() = mutex.withLock {
         _run.value = null
+        // Pulihkan DND SEBELUM menghapus prefs: restoreDnd() membaca KEY_DND_APPLIED dari prefs.
+        restoreDnd()
         prefs.edit { clear() }
         _config.value = PomodoroConfig()
         _dnd.value = false
         cancelAlarm()
-        restoreDnd()
         NotificationManagerCompat.from(context).cancel(ID_RUNNING)
         refreshTile()
     }

@@ -158,7 +158,7 @@ class LrcLibLyricsProvider(
     }
 
     private suspend fun fetch(path: String, params: Map<String, String>): LrclibFetch {
-        val client = http ?: defaultClient()
+        val client = http ?: sharedClient
         return try {
             val response = client.get("$BASE_URL$path") {
                 params.forEach { (k, v) -> parameter(k, v) }
@@ -181,15 +181,6 @@ class LrcLibLyricsProvider(
         }
     }
 
-    private fun defaultClient(): HttpClient = HttpClient(OkHttp) {
-        expectSuccess = false
-        install(HttpTimeout) {
-            requestTimeoutMillis = TIMEOUT_MS
-            connectTimeoutMillis = TIMEOUT_MS
-            socketTimeoutMillis = TIMEOUT_MS
-        }
-    }
-
     companion object {
         const val BASE_URL = "https://lrclib.net/api"
 
@@ -205,5 +196,17 @@ class LrcLibLyricsProvider(
         const val USER_AGENT = "Taskify/1.0 (https://github.com/Rosyidputrar/taskify-apk)"
 
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** Satu klien bersama agar tidak membocorkan HttpClient(OkHttp) & thread pool di tiap panggilan. */
+        private val sharedClient: HttpClient by lazy {
+            HttpClient(OkHttp) {
+                expectSuccess = false
+                install(HttpTimeout) {
+                    requestTimeoutMillis = TIMEOUT_MS
+                    connectTimeoutMillis = TIMEOUT_MS
+                    socketTimeoutMillis = TIMEOUT_MS
+                }
+            }
+        }
     }
 }

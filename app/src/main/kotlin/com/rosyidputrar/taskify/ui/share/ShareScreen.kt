@@ -182,7 +182,13 @@ class ShareViewModel(
                 "Versi project disimpan · mengunggah"
             }
             FileTarget.Snippet -> {
-                vault.saveSnippet(null, file.name, languageFromPath(file.name), file.file.readText(), "Dibagikan dari aplikasi lain")
+                val content = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (file.file.length() > MAX_SHARED_SNIPPET_BYTES) {
+                        throw IllegalArgumentException("Berkas terlalu besar untuk snippet (maks. 512 KB).")
+                    }
+                    file.file.readText()
+                }
+                vault.saveSnippet(null, file.name, languageFromPath(file.name), content, "Dibagikan dari aplikasi lain")
                 "Snippet dibuat"
             }
             FileTarget.Journal -> {
@@ -197,8 +203,11 @@ class ShareViewModel(
             FileTarget.PublicFile -> {
                 // Salinan terpisah: unggah berjalan di latar, sedangkan kotak masuk membersihkan berkasnya.
                 // Salinan ini dihapus pengunggah setelah selesai/gagal/batal (dan saat keluar akun).
-                val keep = File(file.file.parentFile?.parentFile, com.rosyidputrar.taskify.session.DeviceLeftovers.SHARE_UPLOAD_DIR).apply { mkdirs() }.let { File(it, file.key) }
-                file.file.copyTo(keep, overwrite = true)
+                val keep = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val dest = File(file.file.parentFile?.parentFile, com.rosyidputrar.taskify.session.DeviceLeftovers.SHARE_UPLOAD_DIR).apply { mkdirs() }.let { File(it, file.key) }
+                    file.file.copyTo(dest, overwrite = true)
+                    dest
+                }
                 tempFiles.start(PickedFile(Uri.fromFile(keep), file.name, keep.length(), file.mime), ExpiryOption.DEFAULT)
                 "Mengunggah ke Berkas (tautan 7 hari)"
             }
@@ -206,6 +215,10 @@ class ShareViewModel(
     }
 
     override fun finish() = inbox.clear()
+
+    private companion object {
+        const val MAX_SHARED_SNIPPET_BYTES = 512 * 1024L
+    }
 }
 
 @Composable

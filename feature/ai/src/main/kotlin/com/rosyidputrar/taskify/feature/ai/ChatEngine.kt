@@ -185,8 +185,11 @@ class ChatEngine(
             round++
             roundsUsed[sessionId] = round
             var waiting = false
+            // Cek ulang sakelar dataAccess sebelum mengeksekusi alat (cegah TOCTOU bila pengguna mematikannya di tengah jawaban).
+            val dataAllowed = repo.session(sessionId)?.dataAccess == true
             answer.calls.forEach { c ->
                 val result = answer.early[c.id] ?: when {
+                    !dataAllowed -> NO_ACCESS
                     toolbox.kind(c.name) == ToolKind.Write -> { waiting = true; null }
                     round > MAX_ROUNDS -> ToolResult("Batas pemanggilan alat untuk pesan ini tercapai. Jawab dengan data yang sudah ada.", "dilewati")
                     else -> runTool(c)
@@ -297,11 +300,12 @@ class ChatEngine(
         // selesai (bukan jawaban utuh), dan bisa minta lanjutan.
         if (stopReason == "length" || stopReason == "max_tokens") text.append(TRUNCATED_NOTE)
         // Akses data mati → tidak ada alat yang boleh jalan, walau model tetap memanggilnya
-        // (mis. meniru riwayat saat akses masih hidup). Alat tulis diperiksa dulu sebelum dikonfirmasi.
+        // (mis. meniru riwayat saat akses masih hidup, atau pengguna mematikan sakelar saat streaming berjalan).
+        val dataAllowed = repo.session(session.id)?.dataAccess == true
         val early = mutableMapOf<String, ToolResult>()
         calls = calls.map { c ->
             when {
-                !session.dataAccess -> c.also { early[it.id] = NO_ACCESS }
+                !dataAllowed -> c.also { early[it.id] = NO_ACCESS }
                 toolbox.kind(c.name) != ToolKind.Write -> c
                 else -> when (val p = prepare(c)) {
                     is Prepared.Ready -> c.copy(arguments = p.arguments)

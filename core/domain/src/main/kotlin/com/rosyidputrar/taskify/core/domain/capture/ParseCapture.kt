@@ -1,6 +1,7 @@
 package com.rosyidputrar.taskify.core.domain.capture
 
 import com.rosyidputrar.taskify.core.common.Rupiah
+import com.rosyidputrar.taskify.core.domain.tasks.REMIND_PREFIX_RE
 import com.rosyidputrar.taskify.core.domain.tasks.parseQuickAdd
 import com.rosyidputrar.taskify.core.domain.time.Dates
 
@@ -25,6 +26,7 @@ data class Capture(
     val time: String? = null,
     val priority: Int? = null,
     val categoryHint: String? = null,
+    val remind: Boolean = false,
 )
 
 private val INCOME_WORDS = Regex("\\b(gaji|gajian|bonus|thr|terima|diterima|dapat|pemasukan|transferan|freelance|komisi|dividen|refund)\\b", RegexOption.IGNORE_CASE)
@@ -87,6 +89,12 @@ fun parseCapture(input: String, today: String): Capture {
         return Capture(CaptureType.Note, body, body, tags)
     }
 
+    // Kalimat yang diawali "ingatkan …" / "remind …" selalu tugas pengingat (bukan transaksi walau ada nominal).
+    if (REMIND_PREFIX_RE.containsMatchIn(rawText)) {
+        val t = parseQuickAdd(text, today)
+        return Capture(CaptureType.Task, t.title, rawText, tags, date = t.dueDate, time = t.dueTime, priority = t.priority, remind = t.remind)
+    }
+
     val money = findMoney(text)
     val rawMoney = money?.groupValues?.get(3)
     val looksLikeYear = rawMoney != null && Regex("^\\d{4}$").matches(rawMoney) && rawMoney.toInt() in 1900..2100
@@ -108,7 +116,7 @@ fun parseCapture(input: String, today: String): Capture {
     }
 
     val t = parseQuickAdd(text, today)
-    return Capture(CaptureType.Task, t.title, rawText, tags, date = t.dueDate, time = t.dueTime, priority = t.priority)
+    return Capture(CaptureType.Task, t.title, rawText, tags, date = t.dueDate, time = t.dueTime, priority = t.priority, remind = t.remind)
 }
 
 /** Pilih kategori untuk petunjuk (awalan nama), atau kata di judul yang mengawali nama kategori. */

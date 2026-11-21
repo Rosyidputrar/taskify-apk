@@ -2,6 +2,7 @@ package com.rosyidputrar.taskify.core.designsystem.component
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -12,8 +13,7 @@ import kotlinx.coroutines.launch
  *
  * Tanpa ini, satu `throw` di `viewModelScope.launch` (mis. menyimpan saat belum masuk akun, atau
  * SQLite gagal menulis) langsung membuat aplikasi force close. Error dilaporkan ke [sink] yang
- * dipasang aplikasi (snackbar + log); [CancellationException][kotlinx.coroutines.CancellationException]
- * tidak pernah sampai ke sini.
+ * dipasang aplikasi (snackbar + log); [CancellationException] tidak pernah sampai ke sini.
  */
 object UiErrors {
     @Volatile
@@ -32,7 +32,19 @@ object UiErrors {
 }
 
 /** Seperti `viewModelScope.launch`, tetapi error dilaporkan ke pengguna, bukan crash. */
-fun ViewModel.launchSafe(block: suspend CoroutineScope.() -> Unit): Job = viewModelScope.launch(UiErrors.handler, block = block)
+fun ViewModel.launchSafe(block: suspend CoroutineScope.() -> Unit): Job = viewModelScope.launchSafe(block)
 
-/** Seperti `launch`, tetapi error dilaporkan ke pengguna, bukan crash. */
-fun CoroutineScope.launchSafe(block: suspend CoroutineScope.() -> Unit): Job = launch(UiErrors.handler, block = block)
+/**
+ * Seperti `launch`, tetapi error dilaporkan ke pengguna, bukan crash — termasuk pada
+ * `rememberCoroutineScope()` (yang memakai Job biasa sehingga `CoroutineExceptionHandler` saja
+ * tidak cukup).
+ */
+fun CoroutineScope.launchSafe(block: suspend CoroutineScope.() -> Unit): Job = launch(UiErrors.handler) {
+    try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        UiErrors.report(e)
+    }
+}

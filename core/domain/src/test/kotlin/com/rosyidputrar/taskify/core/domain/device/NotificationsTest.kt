@@ -47,6 +47,60 @@ class NotificationsTest {
         assertEquals(75_000L, money("ovo.id", "OVO", "Transaksi berhasil. IDR 75,000.00 telah didebet")?.amount)
     }
 
+    @Test fun qrisWithoutRpPrefixAndUntukMerchant() {
+        assertEquals(
+            MoneyNotif(13_500, TxKind.Expense, "MyTelkomsel Apps", "wondr by BNI"),
+            MoneyNotifParser.parse(
+                "id.bni.wondr",
+                "Pembayaran QRIS berhasil",
+                "Pembayaran QRIS untuk MyTelkomsel Apps sebesar 13.500 telah berhasil.",
+            ),
+        )
+        assertEquals(
+            MoneyNotif(25_000, TxKind.Expense, "Kopi Kenangan", "ShopeePay"),
+            MoneyNotifParser.parse(
+                "com.shopee.id",
+                "Pembayaran ShopeePay berhasil",
+                "Pembayaran ShopeePay untuk Kopi Kenangan sebesar Rp25.000 berhasil.",
+            ),
+        )
+    }
+
+    @Test fun payrollPayoutEnglishAndExtendedBanks() {
+        assertEquals(
+            MoneyNotif(5_000_000, TxKind.Income, "PT Nusantara", "Livin' Mandiri"),
+            money("id.bmri.livin", "Payroll Masuk", "Payroll dari PT NUSANTARA sebesar Rp5.000.000"),
+        )
+        assertEquals(
+            MoneyNotif(1_200_000, TxKind.Income, "PT Maju", "Bank Saqu"),
+            MoneyNotifParser.parse("id.banksaqu.app", "Payout", "Pay out dari PT MAJU sebesar 1.200.000 selesai"),
+        )
+        assertEquals(
+            MoneyNotif(750_000, TxKind.Income, null, "AstraPay"),
+            MoneyNotifParser.parse("com.astrapay.customer", "Pencairan Dana", "Pencairan dana sebesar Rp750.000 berhasil"),
+        )
+        assertEquals(
+            MoneyNotif(3_500_000, TxKind.Income, "Acme Corp", "HSBC Indonesia"),
+            MoneyNotifParser.parse("id.co.hsbc.hsbcindonesia", "Incoming Transfer", "You received IDR 3,500,000 from Acme Corp"),
+        )
+        // Bank BPD / Swasta / Syariah / E-Wallet dengan package ID baru tetap terdeteksi lewat appLabel.
+        assertEquals(
+            MoneyNotif(250_000, TxKind.Income, "Dinas", "Bank Kaltimtara"),
+            MoneyNotifParser.parse("id.co.bankaltimtara.v2", "Gaji", "Gaji dari Dinas sebesar Rp250.000 telah masuk", appLabel = "Bank Kaltimtara"),
+        )
+        assertEquals(
+            MoneyNotif(45_000, TxKind.Expense, "Indomaret", "i.saku"),
+            MoneyNotifParser.parse("com.indomarco.isaku.new", "Pembayaran Berhasil", "Pembayaran di Indomaret sebesar 45.000 berhasil", appLabel = "i.saku"),
+        )
+        assertEquals(
+            NotifCategory.Money,
+            NotifClassifier.category("id.co.banknagari.new", null, appLabel = "Bank Nagari"),
+        )
+        // Chat dengan nama kontak/label yang mengandung kata "Bank" tetap bukan Money.
+        assertEquals(NotifCategory.Chat, NotifClassifier.category("com.whatsapp", null, appLabel = "Bank"))
+        assertNull(MoneyNotifParser.parse("com.whatsapp", "Payroll", "Gaji masuk Rp5.000.000", appLabel = "Bank"))
+    }
+
     @Test fun incomeFromPartyAfterSuccessPhrase() {
         // "Transaksi berhasil ... dari X" = uang masuk, walau tanpa kata "diterima".
         assertEquals(

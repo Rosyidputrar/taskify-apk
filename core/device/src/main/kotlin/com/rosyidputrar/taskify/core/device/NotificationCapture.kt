@@ -36,18 +36,24 @@ object NotificationCapture {
         if (raw.pkg == ownPackage || raw.pkg in AppInfo.SYSTEM_UI || raw.pkg in settings.excluded) return CaptureDecision.Ignore
         if (raw.groupSummary) return CaptureDecision.Ignore
         if (settings.ignoreOngoing && (raw.ongoing || raw.androidCategory in SKIP_CATEGORIES)) return CaptureDecision.Ignore
-        val title = OtpRedactor.redact(raw.title?.trim()?.takeIf { it.isNotEmpty() })
-        val text = OtpRedactor.redact(raw.text?.trim()?.takeIf { it.isNotEmpty() })
+        val rawTitle = raw.title?.trim()?.takeIf { it.isNotEmpty() }
+        val rawText = raw.text?.trim()?.takeIf { it.isNotEmpty() }
+        val rawConversation = raw.conversation?.trim()?.takeIf { it.isNotEmpty() }
+        // Cek konteks OTP gabungan (judul + isi + percakapan) agar kode di isi tetap disensor
+        // meskipun kata "OTP"/"Kode verifikasi" hanya muncul di judul notifikasi.
+        val otpContext = OtpRedactor.hasContext(rawTitle) || OtpRedactor.hasContext(rawText) || OtpRedactor.hasContext(rawConversation)
+        val title = OtpRedactor.redact(rawTitle, forceContext = otpContext)
+        val text = OtpRedactor.redact(rawText, forceContext = otpContext)
         if (title == null && text == null) return CaptureDecision.Ignore
         val day = Dates.today(raw.postedAt)
         if (settings.level == NotifStorageLevel.CountOnly) return CaptureDecision.CountOnly(day, raw.pkg)
-        val category = NotifClassifier.category(raw.pkg, raw.androidCategory)
-        val money = MoneyNotifParser.parse(raw.pkg, title, text)
+        val category = NotifClassifier.category(raw.pkg, raw.androidCategory, label)
+        val money = MoneyNotifParser.parse(raw.pkg, title, text, label)
         val parcel = ParcelParser.parse(raw.pkg, title, text)
         val keepText = settings.level == NotifStorageLevel.Full
         // D-07: percakapan (judul grup/pengirim) disensor seperti judul & dibatasi panjangnya —
         // sebelumnya tersimpan mentah tanpa batas.
-        val conversation = OtpRedactor.redact(raw.conversation?.trim()?.takeIf { it.isNotEmpty() && keepText })?.take(MAX_TITLE)
+        val conversation = if (keepText) OtpRedactor.redact(rawConversation, forceContext = otpContext)?.take(MAX_TITLE) else null
         return CaptureDecision.Log(
             NewNotif(
                 pkg = raw.pkg,

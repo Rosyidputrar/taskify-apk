@@ -96,7 +96,7 @@ class SandiSession(private val prefs: SandiPrefs, private val clipboard: SecureC
         idleJob = scope.launch {
             while (isActive && _vault.value != null) {
                 delay(15_000)
-                if (hiddenAt == null && shouldLockSandi(System.currentTimeMillis(), lastActivity, null, prefs.autoLockMinutes)) lock()
+                if (shouldLockSandi(System.currentTimeMillis(), lastActivity, hiddenAt, prefs.autoLockMinutes)) lock()
             }
         }
     }
