@@ -146,7 +146,7 @@ private fun headings(status: GateStatus): Pair<String, String> = when (status) {
 
 /** Layar pengganti aplikasi selama sesi belum aal2: database & sync BELUM dibuka di sini. */
 @Composable
-fun MfaScreen(status: GateStatus, viewModel: MfaViewModel = koinViewModel()) {
+fun MfaScreen(status: GateStatus, onSignOut: (() -> Unit)? = null, viewModel: MfaViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val online by viewModel.online.collectAsStateWithLifecycle()
     LaunchedEffect(status, online) {
@@ -162,7 +162,7 @@ fun MfaScreen(status: GateStatus, viewModel: MfaViewModel = koinViewModel()) {
             retry = viewModel::loadFactors,
             startEnrollment = viewModel::startEnrollment,
             skipOffline = viewModel::skipOffline,
-            signOut = viewModel::signOut,
+            signOut = onSignOut ?: viewModel::signOut,
         ),
         canSkipOffline = viewModel.canSkipOffline,
     )

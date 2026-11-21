@@ -52,6 +52,7 @@ class SessionCoordinator(
     private val trash: com.rosyidputrar.taskify.core.store.cross.TrashRepository,
     private val music: com.rosyidputrar.taskify.core.media.MusicPlayer,
     private val leftovers: DeviceLeftovers,
+    private val musicLogin: com.rosyidputrar.taskify.core.media.mytube.MusicLoginRepository? = null,
 ) {
     private val mutex = Mutex()
     private val _readyUser = MutableStateFlow<String?>(null)
@@ -161,10 +162,16 @@ class SessionCoordinator(
                     // Unggahan Berkas yang sedang berjalan dibatalkan; overlay hasil server dilupakan.
                     LogoutStep("Berkas") { tempFiles.wipe() },
                     LogoutStep("indeks pencarian") { search.clear() },
-                    // Musik berhenti (token akun ini tidak berlaku lagi).
-                    LogoutStep("musik") { withContext(Dispatchers.Main) { music.wipe() } },
+                    // Musik berhenti & sesi akun Google/YouTube Music ikut dibersihkan (token & cookie tidak tertinggal).
+                    LogoutStep("musik") {
+                        musicLogin?.logout()
+                        withContext(Dispatchers.Main) { music.wipe() }
+                    },
                     LogoutStep("database") { database.wipe() },
-                    LogoutStep("sisa di perangkat") { leftovers.clear() },
+                    LogoutStep("sisa di perangkat") {
+                        com.rosyidputrar.taskify.ui.shell.AppEvents.clear()
+                        leftovers.clear()
+                    },
                     LogoutStep("sesi") { auth.signOut() },
                 ),
             )

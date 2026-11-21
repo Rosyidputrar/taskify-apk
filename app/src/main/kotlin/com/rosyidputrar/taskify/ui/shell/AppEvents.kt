@@ -45,6 +45,13 @@ class EventQueue<T>(capacity: Int = 16) {
     fun send(event: T) {
         channel.trySend(event)
     }
+
+    /** Buang semua peristiwa tertunda (mis. saat keluar akun supaya intent akun lama tidak ter-replay). */
+    fun clear() {
+        while (channel.tryReceive().isSuccess) {
+            // drain
+        }
+    }
 }
 
 object AppEvents {
@@ -52,4 +59,5 @@ object AppEvents {
     val events: Flow<AppEvent> = queue.events
 
     fun send(event: AppEvent) = queue.send(event)
+    fun clear() = queue.clear()
 }

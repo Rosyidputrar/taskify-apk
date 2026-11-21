@@ -722,22 +722,23 @@ class MusicPlayer(
         recoveryTracker.reset()
         autoResumeTracker.reset()
         consecutiveErrorTracker.reset()
-        cancelPrefetchExcept(null)
-        // C S-7: job latar details/radio/sponsor ikut dibatalkan — tanpanya
-        // `DetailsDone`/`RadioPage` yang telat datang masih dispatch ke
-        // state yang sudah dikosongkan `stop()`.
-        detailsJobs.values.forEach { it.cancel() }
-        detailsJobs.clear()
-        radioJob?.cancel()
-        radioJob = null
-        sponsorJobs.values.forEach { it.cancel() }
-        sponsorJobs.clear()
         if (exoCreated) { player.stop(); player.clearMediaItems() }
         loadedId = null
         loadedUrl = null
         resumeId = null
         _sleep.value = null
+        // Kosongkan state dulu sebelum membatalkan job latar supaya invokeOnCompletion tidak
+        // memicu efek di atas state lama, dan snapshot map sebelum cancel() untuk mencegah CME.
         dispatch(YtEvent.Clear)
+        cancelPrefetchExcept(null)
+        val detailsToCancel = detailsJobs.values.toList()
+        detailsJobs.clear()
+        detailsToCancel.forEach { it.cancel() }
+        radioJob?.cancel()
+        radioJob = null
+        val sponsorToCancel = sponsorJobs.values.toList()
+        sponsorJobs.clear()
+        sponsorToCancel.forEach { it.cancel() }
         context.stopService(Intent(context, MusicService::class.java))
     }
 
@@ -803,11 +804,11 @@ class MusicPlayer(
 
     /** Batalkan semua poll prefetch kecuali yang videonya ada di [keep] (null = batalkan semua). */
     private fun cancelPrefetchExcept(keep: Set<String>?) {
-        val it = prefetchJobs.entries.iterator()
-        while (it.hasNext()) {
-            val (id, job) = it.next()
-            if (keep == null || id !in keep) { job.cancel(); it.remove() }
-        }
+        val toCancel = prefetchJobs.entries
+            .filter { (id, _) -> keep == null || id !in keep }
+            .map { it.key to it.value }
+        toCancel.forEach { (id, _) -> prefetchJobs.remove(id) }
+        toCancel.forEach { (_, job) -> job.cancel() }
     }
 
     /**
@@ -1058,10 +1059,14 @@ class MusicPlayer(
         }
         prefetchJobs[videoId] = job
         job.invokeOnCompletion { cause ->
-            if (prefetchJobs[videoId] == job) prefetchJobs.remove(videoId)
-            // Poll yang dibatalkan harus keluar dari daftar prefetching, kalau tidak state
-            // mengira lagu itu masih disiapkan dan resolve-nya tidak pernah dimulai lagi.
-            if (cause is CancellationException) dispatch(YtEvent.PrefetchCancelled(videoId))
+            // invokeOnCompletion bisa terpanggil dari thread latar; mutasi map & dispatch()
+            // wajib selalu di Main (scope = Dispatchers.Main.immediate).
+            scope.launch {
+                if (prefetchJobs[videoId] == job) prefetchJobs.remove(videoId)
+                // Poll yang dibatalkan harus keluar dari daftar prefetching, kalau tidak state
+                // mengira lagu itu masih disiapkan dan resolve-nya tidak pernah dimulai lagi.
+                if (cause is CancellationException) dispatch(YtEvent.PrefetchCancelled(videoId))
+            }
         }
         job.start()
     }
@@ -1079,7 +1084,7 @@ class MusicPlayer(
             }
         }
         detailsJobs[videoId] = job
-        job.invokeOnCompletion { if (detailsJobs[videoId] == job) detailsJobs.remove(videoId) }
+        job.invokeOnCompletion { scope.launch { if (detailsJobs[videoId] == job) detailsJobs.remove(videoId) } }
     }
 
     private fun moreRadio(cursor: String) {
@@ -1113,7 +1118,7 @@ class MusicPlayer(
             }
         }
         sponsorJobs[id] = job
-        job.invokeOnCompletion { if (sponsorJobs[id] == job) sponsorJobs.remove(id) }
+        job.invokeOnCompletion { scope.launch { if (sponsorJobs[id] == job) sponsorJobs.remove(id) } }
     }
 
     private fun load(song: Song, url: String) {

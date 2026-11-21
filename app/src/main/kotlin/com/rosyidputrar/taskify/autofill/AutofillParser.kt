@@ -24,45 +24,55 @@ object AutofillParser {
         // Kumpulkan kolom per jendela beserta domain web jendela itu. Domain web diambil dari
         // jendela yang berisi kolom sandi pertama (bukan jendela pertama sembarang): jendela
         // overlay/iklan di atas bisa membawa domain lain dan meracuni target.
+        val pkg = structure.activityComponent.packageName
+        val isTrustedBrowser = pkg in AutofillTarget.KNOWN_BROWSERS
         val windows = (0 until structure.windowNodeCount).map { wi ->
             val nodes = mutableListOf<AssistStructure.ViewNode>()
             var webDomain: String? = null
+            var webScheme: String? = null
             fun visit(node: AssistStructure.ViewNode) {
-                if (webDomain == null) node.webDomain?.takeIf { it.isNotBlank() }?.let { webDomain = it }
+                if (isTrustedBrowser && webDomain == null) {
+                    node.webDomain?.takeIf { it.isNotBlank() }?.let { d ->
+                        webDomain = d
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            webScheme = node.webScheme?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+                        }
+                    }
+                }
                 if (node.autofillId != null && node.autofillType == View.AUTOFILL_TYPE_TEXT) nodes += node
                 for (i in 0 until node.childCount) visit(node.getChildAt(i))
             }
             visit(structure.getWindowNodeAt(wi).rootViewNode)
-            WindowNodes(nodes, webDomain)
+            WindowNodes(nodes, webDomain, webScheme)
         }
         val nodes = windows.flatMap { it.nodes }
         val form = FieldClassifier.classify(nodes.map(::info))
         if (form.passwords.isEmpty() && form.username == null) return null
         fun field(i: Int) = nodes[i].let { FormField(it.autofillId!!, it.autofillValue?.takeIf { v -> v.isText }?.textValue?.toString()) }
+        val (domain, scheme) = if (isTrustedBrowser) webOriginOf(windows, form) else (null to null)
         return ParsedForm(
-            // Skema halaman TIDAK disediakan framework (AssistStructure hanya memberi domain),
-            // jadi scheme = null (tidak diketahui). Penegakan https-vs-http di AutofillMatch
-            // berlaku bila skema diketahui (lihat AutofillTarget.scheme).
-            target = AutofillTarget(structure.activityComponent.packageName, domainOf(windows, form)),
+            // Hanya browser dikenal yang boleh menyuplai webDomain/webScheme (anti-spoofing aplikasi non-browser).
+            target = AutofillTarget(pkg, domain, scheme),
             username = form.username?.let(::field),
             passwords = form.passwords.map(::field),
         )
     }
 
-    private data class WindowNodes(val nodes: List<AssistStructure.ViewNode>, val webDomain: String?)
+    private data class WindowNodes(val nodes: List<AssistStructure.ViewNode>, val webDomain: String?, val webScheme: String?)
 
-    /** Domain web dari jendela berisi kolom sandi pertama (lalu nama pengguna, lalu jendela mana pun). */
-    private fun domainOf(windows: List<WindowNodes>, form: FormFields): String? {
+    /** Domain & skema web dari jendela berisi kolom sandi pertama (lalu nama pengguna, lalu jendela mana pun). */
+    private fun webOriginOf(windows: List<WindowNodes>, form: FormFields): Pair<String?, String?> {
         val anchor = form.passwords.firstOrNull() ?: form.username
         if (anchor != null) {
             var seen = 0
             for (w in windows) {
                 val next = seen + w.nodes.size
-                if (anchor in seen until next) return w.webDomain
+                if (anchor in seen until next) return w.webDomain to w.webScheme
                 seen = next
             }
         }
-        return windows.firstNotNullOfOrNull { it.webDomain }
+        val first = windows.firstOrNull { it.webDomain != null }
+        return first?.webDomain to first?.webScheme
     }
 
     private fun info(node: AssistStructure.ViewNode): FieldInfo {

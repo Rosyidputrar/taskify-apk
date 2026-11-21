@@ -82,8 +82,13 @@ class LockManager(
     private var backgroundAt: Long? = null
 
     private fun initialState(): LockState {
-        val config = readConfig()
-        return LockState(config = config, locked = config != null, attempts = readAttempts())
+        val config = readConfig() ?: return LockState()
+        return try {
+            LockState(config = config, locked = true, attempts = readAttempts())
+        } catch (_: Exception) {
+            // Kunci HMAC Keystore tidak bisa dipakai saat startup: gagal tertutup (jangan crash loop).
+            LockState(config = config.copy(corrupt = true), locked = true)
+        }
     }
 
     suspend fun enable(pin: String, autoLockMinutes: Int) {
@@ -118,25 +123,35 @@ class LockManager(
     }
 
     suspend fun unlock(pin: String): UnlockResult {
-        // Data PIN rusak/terhapus sebagian: gagal tertutup — jangan pernah buka tanpa hash.
+        // Data PIN rusak/terhapus sebagian: gagal tertutup — jangan pernah buka tanpa hash/salt.
         if (readConfig()?.corrupt == true) return UnlockResult.Corrupt
-        val current = LockPolicy.sanitize(readAttempts(), now())
-        current.cooldownUntil?.let { return UnlockResult.CoolingDown(it) }
-        val salt = prefs.getString(KEY_SALT, null)?.unb64() ?: return UnlockResult.Success.also { unlocked() }
-        val expected = prefs.getString(KEY_HASH, null)?.unb64() ?: return UnlockResult.Success.also { unlocked() }
+        val salt = try { prefs.getString(KEY_SALT, null)?.unb64() } catch (_: IllegalArgumentException) { null }
+            ?: return UnlockResult.Corrupt
+        val expected = try { prefs.getString(KEY_HASH, null)?.unb64() } catch (_: IllegalArgumentException) { null }
+            ?: return UnlockResult.Corrupt
         val version = prefs.getInt(KEY_HASH_VERSION, 1)
-        val ok = withContext(Dispatchers.Default) { LockPolicy.verify(pinMac::mac, salt, pin, expected, version) }
-        if (ok) {
-            // Migrasi: PIN lama (hash v1, sekali MAC) di-upgrade ke format baru saat berhasil dibuka.
-            if (version < LockPolicy.PIN_HASH_VERSION) upgradeHash(salt, pin)
-            unlocked()
-            return UnlockResult.Success
+        return try {
+            val current = LockPolicy.sanitize(readAttempts(), now())
+            current.cooldownUntil?.let { return UnlockResult.CoolingDown(it) }
+            val ok = withContext(Dispatchers.Default) { LockPolicy.verify(pinMac::mac, salt, pin, expected, version) }
+            if (ok) {
+                // Migrasi: PIN lama (hash v1, sekali MAC) di-upgrade ke format baru saat berhasil dibuka.
+                if (version < LockPolicy.PIN_HASH_VERSION) upgradeHash(salt, pin)
+                unlocked()
+                UnlockResult.Success
+            } else {
+                val next = LockPolicy.registerFailure(current, now())
+                writeAttempts(next)
+                _state.update { it.copy(attempts = next) }
+                next.cooldownUntil?.let { UnlockResult.CoolingDown(it) }
+                    ?: UnlockResult.Wrong(LockPolicy.MAX_ATTEMPTS - next.failedAttempts)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Kunci HMAC Keystore rusak/invalid → gagal tertutup dan arahkan ke "Lupa PIN" (jangan bekukan UI).
+            UnlockResult.Corrupt
         }
-        val next = LockPolicy.registerFailure(current, now())
-        writeAttempts(next)
-        _state.update { it.copy(attempts = next) }
-        return next.cooldownUntil?.let { UnlockResult.CoolingDown(it) }
-            ?: UnlockResult.Wrong(LockPolicy.MAX_ATTEMPTS - next.failedAttempts)
     }
 
     /** Hitung ulang hash ke format baru (v2) tanpa mengubah PIN pengguna. */
@@ -166,8 +181,8 @@ class LockManager(
     }
 
     private fun readConfig(): LockConfig? {
-        if (prefs.getString(KEY_HASH, null) == null) {
-            // Hash hilang tapi kunci PIN lain masih ada = data rusak/terhapus sebagian.
+        if (prefs.getString(KEY_HASH, null) == null || prefs.getString(KEY_SALT, null) == null) {
+            // Hash atau salt hilang tapi kunci PIN lain masih ada = data rusak/terhapus sebagian.
             // Jangan buka diam-diam (perilaku lama): kunci dan arahkan ke "Lupa PIN".
             return if (isPartialLockState()) LockConfig(
                 length = prefs.getInt(KEY_LENGTH, LockPolicy.MIN_PIN_LENGTH),

@@ -130,6 +130,7 @@ class AutofillTest {
     @Test fun httpsItemNotOfferedToHttpTarget() {
         val httpTarget = AutofillTarget("com.android.chrome", "accounts.google.com", "http")
         assertEquals(MatchStrength.None, AutofillMatch.strength(item("https://accounts.google.com"), httpTarget))
+        assertEquals(MatchStrength.None, AutofillMatch.strength(item("accounts.google.com"), httpTarget))
         val httpsTarget = AutofillTarget("com.android.chrome", "accounts.google.com", "https")
         assertEquals(MatchStrength.Exact, AutofillMatch.strength(item("https://accounts.google.com"), httpsTarget))
         // Skema tidak diketahui (framework tidak memberinya): perilaku lama dipertahankan.
@@ -137,6 +138,15 @@ class AutofillTest {
         assertEquals(MatchStrength.Exact, AutofillMatch.strength(item("https://accounts.google.com"), unknownTarget))
         // Item http ke target http tetap Exact (bukan downgrade).
         assertEquals(MatchStrength.Exact, AutofillMatch.strength(item("http://accounts.google.com"), httpTarget))
+    }
+
+    @Test fun nonBrowserCannotSpoofWebDomain() {
+        val evil = AutofillTarget(packageName = "com.evil.phish", webDomain = "accounts.google.com", scheme = "https")
+        assertEquals(MatchStrength.None, AutofillMatch.strength(item("https://accounts.google.com"), evil))
+        assertEquals("com.evil.phish", evil.label)
+        assertEquals("androidapp://com.evil.phish", AutofillMatch.urlFor(evil))
+        // Ikatan eksplisit androidapp:// tetap cocok untuk paket tersebut.
+        assertEquals(MatchStrength.Exact, AutofillMatch.strength(item("androidapp://com.evil.phish"), evil))
     }
 
     @Test fun packageOfRejectsAtSign() {
