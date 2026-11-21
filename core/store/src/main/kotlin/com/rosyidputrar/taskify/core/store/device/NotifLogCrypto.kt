@@ -1,6 +1,5 @@
 package com.rosyidputrar.taskify.core.store.device
 
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
@@ -30,12 +29,17 @@ object PlainNotifLogCrypto : NotifLogCrypto {
  * ciphertext+tag). Baris lama tanpa awalan `v1:` dianggap plaintext dan dikembalikan apa adanya,
  * jadi migrasi berjalan bertahap sampai baris lama ter-prune (retensi 7 hari).
  */
-class AesGcmNotifLogCrypto(private val key: SecretKey) : NotifLogCrypto {
+class AesGcmNotifLogCrypto(
+    private val key: SecretKey,
+    private val cipherFactory: () -> Cipher = { Cipher.getInstance(TRANSFORMATION) },
+) : NotifLogCrypto {
     override fun encrypt(plain: String): String {
-        val iv = ByteArray(IV_BYTES).also { SecureRandom().nextBytes(it) }
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
+        // Biarkan Cipher/AndroidKeyStore menghasilkan IV acak sendiri (randomizedEncryptionRequired = true).
+        val cipher = cipherFactory().apply {
+            init(Cipher.ENCRYPT_MODE, key)
         }
+        val iv = cipher.iv
+        require(iv != null && iv.size == IV_BYTES) { "IV AES-GCM tidak valid." }
         val out = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
         return PREFIX + Base64.getEncoder().encodeToString(iv + out)
     }
@@ -44,7 +48,7 @@ class AesGcmNotifLogCrypto(private val key: SecretKey) : NotifLogCrypto {
         if (!cipher.startsWith(PREFIX)) return cipher // baris lama plaintext
         val combined = Base64.getDecoder().decode(cipher.removePrefix(PREFIX))
         require(combined.size > IV_BYTES) { "Data log notifikasi rusak." }
-        val c = Cipher.getInstance(TRANSFORMATION).apply {
+        val c = cipherFactory().apply {
             init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, combined, 0, IV_BYTES))
         }
         return c.doFinal(combined, IV_BYTES, combined.size - IV_BYTES).toString(Charsets.UTF_8)

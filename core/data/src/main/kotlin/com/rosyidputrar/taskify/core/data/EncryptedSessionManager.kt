@@ -9,7 +9,6 @@ import io.github.jan.supabase.auth.exception.NoSessionFoundException
 import io.github.jan.supabase.auth.user.UserSession
 import kotlinx.serialization.json.Json
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -112,20 +111,29 @@ interface SessionCrypto {
  * AES-256-GCM murni (javax.crypto). Format: `v1:` + Base64(iv 12 byte || ciphertext+tag).
  * Menerima [SecretKey] apa pun — di produksi dari AndroidKeyStore, di tes dari SecretKeySpec.
  */
-class AesGcmSessionCrypto(private val key: SecretKey) : SessionCrypto {
+class AesGcmSessionCrypto(
+    private val key: SecretKey,
+    private val cipherFactory: () -> Cipher = { Cipher.getInstance(TRANSFORMATION) },
+) : SessionCrypto {
     override fun encrypt(plain: String): String {
-        val iv = ByteArray(IV_BYTES).also { SecureRandom().nextBytes(it) }
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
+        // Jangan kirim IV sendiri (GCMParameterSpec) saat ENCRYPT_MODE: kunci AndroidKeyStore
+        // memakai randomizedEncryptionRequired = true secara bawaan dan selalu menolak
+        // caller-provided IV dengan InvalidAlgorithmParameterException. Biarkan Cipher
+        // menghasilkan IV acak 12 byte sendiri lalu baca cipher.iv.
+        val cipher = cipherFactory().apply {
+            init(Cipher.ENCRYPT_MODE, key)
         }
-        return PREFIX + Base64.getEncoder().encodeToString(iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8)))
+        val iv = cipher.iv
+        require(iv != null && iv.size == IV_BYTES) { "IV AES-GCM tidak valid." }
+        val ciphertext = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        return PREFIX + Base64.getEncoder().encodeToString(iv + ciphertext)
     }
 
     override fun decrypt(cipher: String): String {
         require(cipher.startsWith(PREFIX)) { "Sesi terenkripsi rusak." }
         val combined = Base64.getDecoder().decode(cipher.removePrefix(PREFIX))
         require(combined.size > IV_BYTES) { "Sesi terenkripsi rusak." }
-        val c = Cipher.getInstance(TRANSFORMATION).apply {
+        val c = cipherFactory().apply {
             init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, combined, 0, IV_BYTES))
         }
         return c.doFinal(combined, IV_BYTES, combined.size - IV_BYTES).toString(Charsets.UTF_8)

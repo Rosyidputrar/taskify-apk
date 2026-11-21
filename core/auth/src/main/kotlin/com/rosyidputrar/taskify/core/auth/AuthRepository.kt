@@ -16,6 +16,10 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.exceptions.HttpRequestException
 import io.github.jan.supabase.exceptions.RestException
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
@@ -25,8 +29,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.IOException
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 sealed interface AuthState {
     data object Loading : AuthState
@@ -141,8 +149,30 @@ class AuthRepository(
         guard { auth.passkeys.verifyAuthentication(challengeId, credentialJson) }
     }
 
+    /**
+     * Workaround bug `supabase-kt` 3.9.0: `PasskeyRegistrationResponse` memakai `InstantSerializer`
+     * (string ISO-8601) untuk `expires_at`, padahal Supabase Auth mengembalikan Unix timestamp
+     * integer (seperti `PasskeyAuthenticationOptionsResponse` yang memakai `UnixTimestampSerializer`).
+     * Panggil endpoint `/auth/v1/passkeys/registration/options` langsung lalu parse `challenge_id`
+     * dan `options` tanpa bergantung pada tipe `expires_at`.
+     */
     override suspend fun passkeyRegistrationChallenge(): PasskeyChallenge = guard {
-        auth.passkeys.startRegistration().let { PasskeyChallenge(it.challengeId, it.options.toString()) }
+        val token = freshAccessToken()
+            ?: throw AuthError(AuthFailure(network = false, status = 401, code = "no_session", message = "Sesi masuk tidak ditemukan."))
+        val response = supabase.httpClient.post(auth.resolveUrl("passkeys/registration/options")) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        if (!response.status.isSuccess()) throw auth.parseErrorResponse(response)
+        parsePasskeyChallengeResponse(response.bodyAsText())
+    }
+
+    private suspend fun freshAccessToken(): String? {
+        val session = auth.currentSessionOrNull() ?: return auth.currentAccessTokenOrNull()
+        if (session.expiresAt <= Clock.System.now() + 30.seconds) {
+            runCatching { auth.refreshCurrentSession() }
+                .onFailure { if (it is CancellationException) throw it }
+        }
+        return auth.currentAccessTokenOrNull()
     }
 
     override suspend fun passkeyRegister(challengeId: String, credentialJson: String): Passkey = guard {
@@ -273,4 +303,21 @@ class AuthRepository(
     companion object {
         const val SIGN_IN_TIMEOUT_MS = 30_000L
     }
+}
+
+/**
+ * Parse respons JSON dari `/auth/v1/passkeys/registration/options` (dan endpoint challenge serupa)
+ * tanpa bergantung pada format `expires_at` (Unix timestamp angka maupun string ISO-8601).
+ */
+internal fun parsePasskeyChallengeResponse(rawJson: String): PasskeyChallenge {
+    val root = Json.parseToJsonElement(rawJson) as? JsonObject
+        ?: throw IllegalStateException("Respons tantangan passkey bukan objek JSON.")
+    val challengeId = (root["challenge_id"] as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.content
+        ?.takeIf { it.isNotBlank() }
+        ?: throw IllegalStateException("Respons tantangan passkey tidak memiliki challenge_id.")
+    val options = root["options"] as? JsonObject
+        ?: throw IllegalStateException("Respons tantangan passkey tidak memiliki options.")
+    return PasskeyChallenge(challengeId, options.toString())
 }
