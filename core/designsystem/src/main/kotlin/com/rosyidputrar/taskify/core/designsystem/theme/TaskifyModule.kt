@@ -5,6 +5,7 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChecklistRtl
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Insights
@@ -51,6 +52,7 @@ enum class TaskifyModule(
     Notifications("Notifikasi", "Semua yang masuk hari ini", Icons.Outlined.NotificationsActive, Color(0xFF8C4A00), Color(0xFFFFB86B)),
     Wellbeing("Kesehatan Digital", "Waktu layar & kebiasaan HP", Icons.Outlined.Timelapse, Color(0xFF00639B), Color(0xFF94CCFF)),
     Assistant("Asisten AI", "Tanya, ringkas, catat cepat", TaskifyLogo.Assistant, Color(0xFF5546A8), Color(0xFFC7BDFF)),
+    Tools("Tools", "Latihan ketik chat & utilitas", Icons.Outlined.Construction, Color(0xFF0F6B5B), Color(0xFF7ED9C6)),
     ;
 
     companion object {
@@ -61,6 +63,6 @@ enum class TaskifyModule(
         val main = listOf(Home, Tasks, Calendar, Journal, Notes, Finance, Vault, Sandi, Files, Review, Notifications, Wellbeing, Assistant, Settings)
 
         /** Fitur lintas modul yang juga punya halaman sendiri. */
-        val extras = listOf(Tags, Trash, Music, TikTok)
+        val extras = listOf(Tools, Tags, Trash, Music, TikTok)
     }
 }
