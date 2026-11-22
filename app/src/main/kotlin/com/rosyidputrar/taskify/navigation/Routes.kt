@@ -97,6 +97,9 @@ import kotlinx.serialization.Serializable
 /** Pengunduh TikTok; [input] = link yang langsung diambil (dari Bagikan). */
 @Serializable data class TikTokRoute(val input: String? = null)
 
+/** Modul Tools (Latihan Ketik Chat & utilitas); [storyId] = langsung buka satu skenario cerita. */
+@Serializable data class ToolsRoute(val storyId: String? = null)
+
 /** Modul yang layarnya belum dibangun memakai rute generik ini sampai tahapnya tiba. */
 @Serializable data class ModuleRoute(val moduleName: String) {
     /**
@@ -126,5 +129,6 @@ fun TaskifyModule.route(): Any = when (this) {
     TaskifyModule.Notifications -> NotificationsRoute()
     TaskifyModule.Wellbeing -> WellbeingRoute
     TaskifyModule.Assistant -> AiRoute
+    TaskifyModule.Tools -> ToolsRoute()
     else -> ModuleRoute(name)
 }

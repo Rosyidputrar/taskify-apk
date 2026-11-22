@@ -461,6 +461,7 @@ internal fun moduleForDestination(destination: NavDestination?, backStackEntry: 
     destination.hasRoute<TrashRoute>() -> TaskifyModule.Trash
     destination.hasRoute<MusicRoute>() -> TaskifyModule.Music
     destination.hasRoute<TikTokRoute>() -> TaskifyModule.TikTok
+    destination.hasRoute<com.rosyidputrar.taskify.navigation.ToolsRoute>() -> TaskifyModule.Tools
     destination.hasRoute<ModuleRoute>() -> backStackEntry?.toRoute<ModuleRoute>()?.module
     else -> null
 }
@@ -809,6 +810,18 @@ private fun TaskifyNavHost(
                     pinnedModule = preferences.pinnedModule,
                     onOpenModule = onOpenModule,
                     onPinnedModuleChange = onPinnedModuleChange,
+                )
+            }
+        }
+        composable<com.rosyidputrar.taskify.navigation.ToolsRoute> { entry ->
+            Screen {
+                val route = entry.toRoute<com.rosyidputrar.taskify.navigation.ToolsRoute>()
+                com.rosyidputrar.taskify.ui.tools.ToolsScreen(
+                    initialStoryId = route.storyId,
+                    contentPadding = contentPadding,
+                    backButton = { BackButton(it) },
+                    onBack = navController.backIfPossible(),
+                    onOpenAiSettings = { navController.navigate(com.rosyidputrar.taskify.navigation.AiSettingsRoute) },
                 )
             }
         }

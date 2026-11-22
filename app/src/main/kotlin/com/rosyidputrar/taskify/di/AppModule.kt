@@ -168,6 +168,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.store.cross.ExportRepository(get()) }
     single { ShareInbox(androidContext()) }
     single { com.rosyidputrar.taskify.ui.capture.CaptureDraft(androidContext()) }
+    single { com.rosyidputrar.taskify.ui.tools.ChatTypeStore(androidContext()) }
     single { com.rosyidputrar.taskify.autofill.AutofillVault(get()) }
     single { FocusRepository(get()) }
     single {
@@ -207,6 +208,7 @@ private val deviceModule = module {
             aiWipe = {
                 get<com.rosyidputrar.taskify.feature.ai.ChatEngine>().cancelAll()
                 get<com.rosyidputrar.taskify.core.ai.AiSettingsStore>().wipe()
+                get<com.rosyidputrar.taskify.ui.tools.ChatTypeStore>().clear()
             },
         )
     }
@@ -293,6 +295,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
     viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get(), get(), get()) }
+    viewModel { params -> com.rosyidputrar.taskify.ui.tools.ChatTypeViewModel(params.getOrNull(), get(), getOrNull()) }
     viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull(), get(), getOrNull()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
