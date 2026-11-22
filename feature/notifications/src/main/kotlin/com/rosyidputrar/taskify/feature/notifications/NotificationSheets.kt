@@ -19,6 +19,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,6 +60,7 @@ import com.rosyidputrar.taskify.core.device.DeviceAccess
 import com.rosyidputrar.taskify.core.device.NotifSettings
 import com.rosyidputrar.taskify.core.device.ui.AppIcon
 import com.rosyidputrar.taskify.core.domain.device.formatClockTime
+import com.rosyidputrar.taskify.core.domain.finance.DebtDirection
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.time.Dates
 import com.rosyidputrar.taskify.core.store.device.NotifEntry
@@ -98,7 +101,7 @@ internal fun DraftsSheet(state: NotificationsUiState, actions: NotificationsActi
 }
 
 @Composable
-private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: NotificationsActions) {
+fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: NotificationsActions) {
     val money = d.money ?: return
     val haptics = rememberHaptics()
     var amount by rememberSaveable(d.id) { mutableStateOf(money.amount.toString()) }
@@ -123,7 +126,12 @@ private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: Notif
         Spacer(Modifier.height(10.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf(TxKind.Expense to "Keluar", TxKind.Income to "Masuk").forEachIndexed { i, (k, label) ->
-                SegmentedButton(selected = kind == k, onClick = { kind = k; category = null }, shape = SegmentedButtonDefaults.itemShape(i, 2), label = { Text(label) })
+                SegmentedButton(
+                    selected = kind == k,
+                    onClick = { kind = k; category = state.learnedCategoryFor(d, k) },
+                    shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    label = { Text(label) },
+                )
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -161,6 +169,45 @@ private fun DraftCard(d: NotifEntry, state: NotificationsUiState, actions: Notif
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = category == null, onClick = { category = null }, label = { Text("Tanpa") })
                 pool.forEach { c -> FilterChip(selected = category == c.id, onClick = { haptics.tick(); category = c.id }, label = { Text(c.name) }) }
+            }
+            if (category != null && state.learnedCategoryFor(d, kind) == category) {
+                Text("Kategori dipilih otomatis dari kebiasaanmu.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        val matchedDebt = remember(state.openDebts, kind, parsed, d.id) {
+            parsed?.takeIf { it > 0 }?.let { state.matchedDebt(d, kind, it) }
+        }
+        if (matchedDebt != null) {
+            val isLent = matchedDebt.direction == DebtDirection.Lent
+            val debtLabel = if (isLent) "piutang dari" else "hutang ke"
+            val accentColor = if (isLent) namedColor("emerald") else MaterialTheme.colorScheme.error
+            Surface(
+                color = accentColor.copy(alpha = 0.12f),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Cocok dengan $debtLabel ${matchedDebt.counterparty}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = accentColor,
+                        )
+                        Text(
+                            "${Rupiah.format(matchedDebt.amount)} · catat transaksi sekaligus tandai lunas",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalButton(
+                        onClick = { haptics.success(); actions.settleDraftDebt(d, matchedDebt, wallet!!) },
+                        enabled = wallet != null,
+                    ) { Text("Lunasi") }
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
@@ -244,6 +291,20 @@ internal fun NotifSettingsSheet(state: NotificationsUiState, actions: Notificati
                         Spacer(Modifier.width(10.dp))
                         Text("$label → ${state.wallets.firstOrNull { it.id == walletId }?.name ?: "dompet terhapus"}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         TextButton(onClick = { actions.forgetWallet(pkg) }) { Text("Lupakan") }
+                    }
+                }
+            }
+            if (s.merchantCategories.isNotEmpty()) {
+                item { HorizontalDivider() }
+                item {
+                    Label("KATEGORI OTOMATIS")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${s.merchantCategories.size} pola merchant diingat untuk draf transaksi.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { actions.resetLearnedCategories() }) { Text("Reset") }
                     }
                 }
             }

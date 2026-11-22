@@ -118,6 +118,10 @@ class NotificationLogRepository(private val db: PowerSyncDatabase, private val c
     fun watchDay(day: String): Flow<List<NotifEntry>> =
         db.watch("SELECT $COLUMNS FROM notif_log WHERE day = ? AND hidden = 0 ORDER BY posted_ms DESC", listOf(day)) { it.toEntry() }
 
+    /** Notifikasi sejak timestamp tertentu (untuk ringkasan pasca-sesi Mode Fokus). */
+    fun watchSince(sinceMs: Long, limit: Int = 80): Flow<List<NotifEntry>> =
+        db.watch("SELECT $COLUMNS FROM notif_log WHERE posted_ms >= ? AND hidden = 0 ORDER BY posted_ms DESC LIMIT ?", listOf(sinceMs, limit)) { it.toEntry() }
+
     /** Hari yang punya catatan notifikasi (untuk pita hari), terbaru dulu. */
     fun watchDays(): Flow<List<String>> = db.watch("SELECT DISTINCT day FROM notif_daily ORDER BY day DESC LIMIT 60") { it.getString(0)!! }
 

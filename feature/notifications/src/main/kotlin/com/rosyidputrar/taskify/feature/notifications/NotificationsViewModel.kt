@@ -14,6 +14,9 @@ import com.rosyidputrar.taskify.core.domain.device.NotifStorageLevel
 import com.rosyidputrar.taskify.core.domain.device.TaskHint
 import com.rosyidputrar.taskify.core.domain.device.formatClockTime
 import com.rosyidputrar.taskify.core.domain.finance.Category
+import com.rosyidputrar.taskify.core.domain.finance.Debt
+import com.rosyidputrar.taskify.core.domain.finance.DebtDirection
+import com.rosyidputrar.taskify.core.domain.finance.DraftIntelligence
 import com.rosyidputrar.taskify.core.domain.finance.TxInput
 import com.rosyidputrar.taskify.core.domain.finance.TxKind
 import com.rosyidputrar.taskify.core.domain.finance.Wallet
@@ -88,6 +91,7 @@ data class NotificationsUiState(
     val drafts: List<NotifEntry> = emptyList(),
     val wallets: List<Wallet> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val openDebts: List<Debt> = emptyList(),
     val parcels: List<Parcel> = emptyList(),
     /** Aplikasi yang pernah mengirim notifikasi dalam masa simpan (untuk daftar pengecualian). */
     val knownApps: List<AppCount> = emptyList(),
@@ -136,13 +140,27 @@ data class NotificationsUiState(
         return wallets.singleOrNull()?.id
     }
 
-    /** Tebakan kategori dari nama merchant/pengirim. */
+    /** Kategori yang pernah dipelajari lokal untuk merchant/pengirim ini (bila masih ada & cocok jenisnya). */
+    fun learnedCategoryFor(d: NotifEntry, kind: TxKind = d.money?.kind ?: TxKind.Expense): String? {
+        val key = DraftIntelligence.normalizeMerchantKey(d.money?.counterparty)
+            ?: DraftIntelligence.normalizeMerchantKey(d.title)
+            ?: return null
+        val learnedId = settings.merchantCategories[key] ?: return null
+        return categories.firstOrNull { it.id == learnedId && it.kind.value == kind.value }?.id
+    }
+
+    /** Tebakan kategori: utamakan memori kebiasaan pengguna, baru fallback ke kata kunci. */
     fun guessCategory(d: NotifEntry): String? {
         val money = d.money ?: return null
+        learnedCategoryFor(d, money.kind)?.let { return it }
         val title = money.counterparty ?: d.title.orEmpty()
         val hint = CATEGORY_KEYWORDS.firstOrNull { it.first.containsMatchIn(title) }?.second
         return matchCategory(categories, { it.kind.value }, { it.name }, money.kind.value, hint, title)?.id
     }
+
+    /** Cocokkan draf notifikasi dengan catatan hutang/piutang terbuka (1 ketukan tandai lunas). */
+    fun matchedDebt(d: NotifEntry, kind: TxKind = d.money?.kind ?: TxKind.Expense, amount: Long = d.money?.amount ?: 0L): Debt? =
+        DraftIntelligence.matchOpenDebt(openDebts, kind, amount, d.money?.counterparty, d.title, d.text)
 }
 
 fun hourOf(millis: Long): Int = Instant.ofEpochMilli(millis).atOffset(Dates.WIB).hour
@@ -159,6 +177,7 @@ interface NotificationsActions {
     fun makeTask(entry: NotifEntry) {}
     fun makeNote(entry: NotifEntry) {}
     fun saveDraft(entry: NotifEntry, edit: DraftEdit) {}
+    fun settleDraftDebt(entry: NotifEntry, debt: Debt, walletId: String) {}
     fun dismissDraft(entry: NotifEntry) {}
     fun saveAllDrafts() {}
     fun setLevel(level: NotifStorageLevel) {}
@@ -167,6 +186,7 @@ interface NotificationsActions {
     fun setIgnoreOngoing(on: Boolean) {}
     fun setDraftAlerts(on: Boolean) {}
     fun forgetWallet(pkg: String) {}
+    fun resetLearnedCategories() {}
     fun clearAll() {}
 
     companion object {
@@ -201,15 +221,27 @@ class NotificationsViewModel(
         ) { entries, totals, apps -> Triple(entries, totals, apps) }
     }
 
-    private val side = combine(
-        repo.watchDrafts(),
+    private val financeMeta = combine(
         finance.watchWallets(includeArchived = false),
         finance.watchCategories(),
+        finance.watchDebts(),
+    ) { wallets, categories, debts -> Triple(wallets, categories, debts.filterNot { it.settled }) }
+
+    private val side = combine(
+        repo.watchDrafts(),
+        financeMeta,
         repo.watchParcels(System.currentTimeMillis() - PARCEL_WINDOW_MS),
         repo.watchAppCounts(Dates.addDays(today, -30), today),
-    ) { drafts, wallets, categories, parcels, known -> Side(drafts, wallets, categories, parcels, known) }
+    ) { drafts, (wallets, categories, openDebts), parcels, known -> Side(drafts, wallets, categories, openDebts, parcels, known) }
 
-    private data class Side(val drafts: List<NotifEntry>, val wallets: List<Wallet>, val categories: List<Category>, val parcels: List<Parcel>, val known: List<AppCount>)
+    private data class Side(
+        val drafts: List<NotifEntry>,
+        val wallets: List<Wallet>,
+        val categories: List<Category>,
+        val openDebts: List<Debt>,
+        val parcels: List<Parcel>,
+        val known: List<AppCount>,
+    )
 
     val state: StateFlow<NotificationsUiState> = combine(
         selection,
@@ -234,6 +266,7 @@ class NotificationsViewModel(
             drafts = side.drafts,
             wallets = side.wallets,
             categories = side.categories,
+            openDebts = side.openDebts,
             parcels = side.parcels,
             knownApps = side.known,
             loaded = true,
@@ -339,8 +372,36 @@ class NotificationsViewModel(
         )
         repo.setDraft(entry.id, DraftState.Saved)
         repo.markHandled(entry.id, NotifAction.Transaction)
-        if (prefs.notif.value.wallets[entry.pkg] != edit.walletId) prefs.updateNotif { it.copy(wallets = it.wallets + (entry.pkg to edit.walletId)) }
+        val merchantKey = DraftIntelligence.normalizeMerchantKey(entry.money?.counterparty)
+            ?: DraftIntelligence.normalizeMerchantKey(edit.title)
+        val needWallet = prefs.notif.value.wallets[entry.pkg] != edit.walletId
+        val needCat = merchantKey != null && edit.categoryId != null && prefs.notif.value.merchantCategories[merchantKey] != edit.categoryId
+        if (needWallet || needCat) {
+            prefs.updateNotif { cur ->
+                cur.copy(
+                    wallets = if (needWallet) cur.wallets + (entry.pkg to edit.walletId) else cur.wallets,
+                    merchantCategories = if (needCat) cur.merchantCategories + (merchantKey!! to edit.categoryId!!) else cur.merchantCategories,
+                )
+            }
+        }
         return id
+    }
+
+    override fun settleDraftDebt(entry: NotifEntry, debt: Debt, walletId: String) {
+        launchSafe {
+            finance.settleDebt(debt, walletId, entry.day)
+            repo.setDraft(entry.id, DraftState.Saved)
+            repo.markHandled(entry.id, NotifAction.Transaction)
+            if (prefs.notif.value.wallets[entry.pkg] != walletId) {
+                prefs.updateNotif { it.copy(wallets = it.wallets + (entry.pkg to walletId)) }
+            }
+            val label = if (debt.direction == DebtDirection.Lent) "Piutang" else "Hutang"
+            messenger.undoable("$label ${debt.counterparty} ditandai lunas") {
+                finance.unsettleDebt(debt)
+                repo.setDraft(entry.id, DraftState.Pending)
+                repo.markHandled(entry.id, null)
+            }
+        }
     }
 
     override fun dismissDraft(entry: NotifEntry) {
@@ -379,6 +440,10 @@ class NotificationsViewModel(
     override fun setIgnoreOngoing(on: Boolean) = prefs.updateNotif { it.copy(ignoreOngoing = on) }
     override fun setDraftAlerts(on: Boolean) = prefs.updateNotif { it.copy(draftAlerts = on) }
     override fun forgetWallet(pkg: String) = prefs.updateNotif { it.copy(wallets = it.wallets - pkg) }
+    override fun resetLearnedCategories() {
+        prefs.updateNotif { it.copy(merchantCategories = emptyMap()) }
+        messenger.show("Memori kategori otomatis direset")
+    }
 
     override fun clearAll() {
         launchSafe {

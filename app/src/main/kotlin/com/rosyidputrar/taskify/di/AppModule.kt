@@ -177,6 +177,23 @@ private val deviceModule = module {
             androidContext(),
             record = { r -> history.record(r.taskId, r.taskTitle, r.day, r.startedAt, r.endedAt, r.minutes) },
             hideContent = { reminderPrefs.hideContent },
+            onAutoMusicStart = { stationId ->
+                val station = com.rosyidputrar.taskify.core.media.LocalRadioStations.FALLBACK.firstOrNull { it.id == stationId }
+                if (station != null) {
+                    val mp = get<MusicPlayer>()
+                    val cur = mp.state.value
+                    if (cur.current?.videoId != "live:${station.id}" || cur.status != com.rosyidputrar.taskify.core.domain.media.YtStatus.Playing) {
+                        mp.playStation(station)
+                    }
+                }
+            },
+            onAutoMusicPause = {
+                val mp = get<MusicPlayer>()
+                val cur = mp.state.value
+                if (cur.status == com.rosyidputrar.taskify.core.domain.media.YtStatus.Playing && cur.current?.live == true) {
+                    mp.togglePlay()
+                }
+            },
         )
     }
     single {
@@ -275,7 +292,7 @@ private val deviceModule = module {
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderPrefs(get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextNotifier(androidContext(), get()) }
     single { com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler(androidContext(), get()) }
-    viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get()) }
+    viewModel { params -> FocusViewModel(params.getOrNull(), get(), get(), get(), get(), get()) }
     viewModel { HomeViewModel(get(), get(), get(), get(), get<TaskifyDatabase>().watchUploadErrorCount(), get(), get(), getOrNull(), get(), getOrNull()) }
     viewModel { CaptureViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
