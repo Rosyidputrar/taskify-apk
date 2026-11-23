@@ -15,6 +15,7 @@ val deviceDataModule = module {
     single { AppInfo(androidContext()) }
     single { UsageCollector(androidContext(), get(), get(), get(), get()) }
     single { DeviceScheduler(androidContext()) }
+    single { ListenerWatchdog(androidContext(), get()) }
     single { DeviceSummary(get(), get(), get()) }
     single<AccessProbe> { AndroidAccessProbe(androidContext()) }
 }

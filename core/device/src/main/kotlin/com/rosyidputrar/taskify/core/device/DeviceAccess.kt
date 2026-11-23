@@ -66,9 +66,26 @@ object DeviceAccess {
             .recoverCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(flags)) }
     }
 
-    /** Minta sistem menyambungkan ulang pendengar (mis. setelah dimatikan penghemat baterai). */
+    /**
+     * Batalkan requestUnbind sebelumnya. Sistem MENGABAIKAN panggilan ini bila pendengar tidak
+     * sedang dilepas lewat requestUnbind — untuk pendengar yang mati, pakai [reconnectListener].
+     */
     fun rebindListener(context: Context) {
         runCatching { NotificationListenerService.requestRebind(listenerComponent(context)) }
+    }
+
+    /**
+     * Sambung ulang paksa (mis. setelah proses dimatikan penghemat baterai): lepas dulu, baru
+     * sambungkan, supaya sistem benar-benar mengikat ulang. Jangan dipanggil dari
+     * onListenerDisconnected — pelepasan memicu callback itu lagi (berputar tanpa henti).
+     * Sengaja TIDAK mematikan-menyalakan komponen: sistem mencabut Akses notifikasi dari komponen
+     * yang sedang nonaktif. Di bawah Android 14 pelepasan lewat komponen belum ada, jadi hanya
+     * requestRebind.
+     */
+    fun reconnectListener(context: Context) {
+        val component = listenerComponent(context)
+        if (Build.VERSION.SDK_INT >= 34) runCatching { NotificationListenerService.requestUnbind(component) }
+        runCatching { NotificationListenerService.requestRebind(component) }
     }
 
     /** Merek HP yang dikenal agresif mematikan aplikasi di latar → tampilkan tips Autostart. */

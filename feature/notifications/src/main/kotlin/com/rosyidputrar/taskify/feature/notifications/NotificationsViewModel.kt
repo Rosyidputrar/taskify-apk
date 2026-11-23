@@ -206,7 +206,7 @@ class NotificationsViewModel(
     private val finance: FinanceRepository,
     private val messenger: Messenger,
     initialApp: String? = null,
-    /** Minta sistem menyambungkan ulang pencatat (DeviceAccess.rebindListener). */
+    /** Minta sistem menyambungkan ulang pencatat (DeviceAccess.reconnectListener). */
     private val rebind: () -> Unit = {},
 ) : ViewModel(), NotificationsActions {
     private val today = Dates.today()

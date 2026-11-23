@@ -46,6 +46,11 @@ class TaskifyApplication : Application() {
         get<com.rosyidputrar.taskify.core.reminders.ContextReminderScheduler>().schedule()
         // Notifikasi & Kesehatan Digital: salin data pemakaian tiap jam + buang riwayat lewat masa simpan.
         get<com.rosyidputrar.taskify.core.device.DeviceScheduler>().schedule()
+        // Pencatat notifikasi: bila proses sebelumnya dimatikan paksa, status "tersambung" basi dan
+        // sistem belum tentu menyambungkannya lagi — periksa & sambungkan ulang tiap proses mulai.
+        get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {
+            get<com.rosyidputrar.taskify.core.device.ListenerWatchdog>().check()
+        }
         // Mode Fokus: alarm hilang bila proses mati paksa / "Paksa berhenti" — pasang ulang dari
         // sesi tersimpan, dan pulihkan "Jangan Ganggu" bila macet menyala tanpa sesi aktif.
         get<kotlinx.coroutines.CoroutineScope>(APP_SCOPE_QUALIFIER).launch {

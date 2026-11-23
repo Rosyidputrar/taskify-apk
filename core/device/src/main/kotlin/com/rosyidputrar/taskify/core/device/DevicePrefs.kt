@@ -49,8 +49,18 @@ class DeviceModulePrefs(context: Context) {
     val usage: StateFlow<UsageSettings> = _usage.asStateFlow()
 
     private val _listenerConnected = MutableStateFlow(prefs.getBoolean(K_CONNECTED, false))
-    /** Pendengar notifikasi sedang tersambung ke sistem. */
+    /**
+     * Pendengar notifikasi tersambung ke sistem. Nilai awalnya dibaca dari penyimpanan, jadi bisa
+     * basi bila proses sebelumnya dimatikan paksa — lihat [listenerLive] & [expireStaleConnection].
+     */
     val listenerConnected: StateFlow<Boolean> = _listenerConnected.asStateFlow()
+
+    /** Pendengar benar-benar tersambung di proses INI (bukan nilai tersimpan dari proses sebelumnya). */
+    @Volatile
+    var listenerLive: Boolean = false
+        private set
+
+    @Volatile private var lastSeen = prefs.getLong(K_LAST_SEEN, 0)
 
     var listenerConnectedAt: Long
         get() = prefs.getLong(K_CONNECTED_AT, 0)
@@ -61,10 +71,30 @@ class DeviceModulePrefs(context: Context) {
         get() = prefs.getLong(K_DISCONNECTED_AT, 0)
         private set(v) = prefs.edit { putLong(K_DISCONNECTED_AT, v) }
 
+    @Synchronized
     fun setListenerConnected(connected: Boolean, now: Long = System.currentTimeMillis()) {
         prefs.edit { putBoolean(K_CONNECTED, connected) }
         if (connected) listenerConnectedAt = now else listenerDisconnectedAt = now
+        listenerLive = connected
         _listenerConnected.value = connected
+    }
+
+    /** Pendengar masih menerima notifikasi pada [now] (ditulis paling sering semenit sekali). */
+    fun noteListenerAlive(now: Long = System.currentTimeMillis()) {
+        if (now in lastSeen until lastSeen + LAST_SEEN_STEP_MS) return
+        lastSeen = now
+        prefs.edit { putLong(K_LAST_SEEN, now) }
+    }
+
+    /**
+     * Proses yang dimatikan paksa tidak sempat menjalankan onListenerDisconnected, jadi "tersambung"
+     * tetap tersimpan true. Bila pendengar tidak tersambung di proses ini, tandai terputus sejak
+     * terakhir kali ia diketahui hidup supaya spanduk "Pencatatan berhenti sejak …" muncul.
+     */
+    @Synchronized
+    fun expireStaleConnection() {
+        if (listenerLive || !_listenerConnected.value) return
+        setListenerConnected(false, now = maxOf(lastSeen, listenerConnectedAt))
     }
 
     fun updateNotif(block: (NotifSettings) -> NotifSettings) {
@@ -103,6 +133,7 @@ class DeviceModulePrefs(context: Context) {
         _notif.value = NotifSettings()
         _usage.value = UsageSettings()
         _listenerConnected.value = false
+        lastSeen = 0
     }
 
     private fun readNotif() = NotifSettings(
@@ -136,6 +167,8 @@ class DeviceModulePrefs(context: Context) {
         const val K_CONNECTED = "listener_connected"
         const val K_CONNECTED_AT = "listener_connected_at"
         const val K_DISCONNECTED_AT = "listener_disconnected_at"
+        const val K_LAST_SEEN = "listener_last_seen"
+        const val LAST_SEEN_STEP_MS = 60_000L
         const val K_DAY_START = "usage_day_start"
         const val K_USAGE_EXCLUDED = "usage_excluded"
         const val K_SESSION_RETENTION = "usage_session_retention"

@@ -8,8 +8,10 @@ import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import com.rosyidputrar.taskify.core.store.UserIdProvider
 import com.rosyidputrar.taskify.core.store.device.NotificationLogRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +55,7 @@ class TaskifyNotificationListener : NotificationListenerService(), KoinComponent
     }
 
     private fun handle(sbn: StatusBarNotification) {
+        prefs.noteListenerAlive()
         sbn.notification.contentIntent?.let { ActiveNotifications.put(sbn.key, it) }
         if (users.currentUserId() == null) return
         val raw = read(sbn)
@@ -68,6 +71,9 @@ class TaskifyNotificationListener : NotificationListenerService(), KoinComponent
                         if (id != null && money != null && prefs.notif.value.draftAlerts) alerts.show(id, money)
                     }
                 }
+            }.onFailure {
+                // Tanpa ini notifikasi yang gagal disimpan hilang tanpa jejak. Isi notifikasi tidak ikut dicatat.
+                if (it !is CancellationException) Log.w("Taskify", "Notifikasi dari ${raw.pkg} gagal dicatat", it)
             }
         }
     }
