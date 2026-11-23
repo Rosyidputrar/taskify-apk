@@ -8,6 +8,6 @@ import org.koin.dsl.module
 val notificationsFeatureModule = module {
     viewModel { params ->
         val context = androidContext()
-        NotificationsViewModel(get(), get(), get(), get(), get(), get(), get(), params.getOrNull(), rebind = { DeviceAccess.rebindListener(context) })
+        NotificationsViewModel(get(), get(), get(), get(), get(), get(), get(), params.getOrNull(), rebind = { DeviceAccess.reconnectListener(context) })
     }
 }

@@ -13,13 +13,15 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.util.concurrent.TimeUnit
 
-/** Tiap jam: salin data pemakaian & buang riwayat notifikasi yang lewat masa simpan. */
+/** Tiap jam: periksa pencatat notifikasi, salin data pemakaian & buang riwayat notifikasi yang lewat masa simpan. */
 class DeviceSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params), KoinComponent {
     private val collector: UsageCollector by inject()
     private val users: UserIdProvider by inject()
+    private val watchdog: ListenerWatchdog by inject()
 
     override suspend fun doWork(): Result {
         if (users.currentUserId() == null) return Result.success()
+        watchdog.check()
         return runCatching { collector.sync() }.fold({ Result.success() }, { Result.retry() })
     }
 }
