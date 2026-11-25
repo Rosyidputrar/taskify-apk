@@ -47,6 +47,18 @@ class NotificationsTest {
         assertEquals(75_000L, money("ovo.id", "OVO", "Transaksi berhasil. IDR 75,000.00 telah didebet")?.amount)
     }
 
+    @Test fun myBcaFinancialNotes() {
+        // Format "Catatan Finansial" myBCA: arah dari kata Pemasukan/Pengeluaran, tanpa kata "berhasil".
+        assertEquals(
+            MoneyNotif(21_896_100, TxKind.Expense, null, "myBCA"),
+            money("com.bca.mybca.omni.android", "Catatan Finansial", "Pengeluaran sebesar IDR 21,896,100.00 di kategori Belanja."),
+        )
+        assertEquals(
+            MoneyNotif(22_096_000, TxKind.Income, null, "myBCA"),
+            money("com.bca.mybca.omni.android", "Catatan Finansial", "Pemasukan sebesar IDR 22,096,000.00 dari **LNA **RI ***ATI di kategori Transfer Rekening."),
+        )
+    }
+
     @Test fun qrisWithoutRpPrefixAndUntukMerchant() {
         assertEquals(
             MoneyNotif(13_500, TxKind.Expense, "MyTelkomsel Apps", "wondr by BNI"),

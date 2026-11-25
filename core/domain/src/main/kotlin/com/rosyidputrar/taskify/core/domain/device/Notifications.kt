@@ -265,11 +265,11 @@ object MoneyNotifParser {
     )
     private val FAILED = Regex("gagal|dibatalkan|ditolak|tidak berhasil|failed|unsuccessful|declined|rejected|cancell?ed|pending|kadaluarsa|kedaluwarsa|expired", RegexOption.IGNORE_CASE)
     private val INCOME = Regex(
-        "dana masuk|uang masuk|transfer masuk|menerima|diterima dari|kamu terima|anda terima|terima (?:dana|uang|transfer|pembayaran|bayaran)|telah masuk|\\bmasuk\\b|dikredit(?:kan)?|mutasi kredit|kredit|\\bcr\\b|refund|pengembalian dana|cashback (?:sebesar|rp|idr)|top ?up (?:berhasil|sebesar|rp|idr|\\d)|isi saldo (?:berhasil|sebesar|rp|idr|\\d)|saldo bertambah|\\bpay ?roll\\b|\\bpay ?out\\b|\\bgaji\\b|\\bsalary\\b|\\bupah\\b|\\binsentif\\b|\\bthr\\b|pencairan(?: dana)?|dicairkan|\\bdisbursement\\b|setoran(?: tunai)?|setor tunai|\\bdeposited\\b|incoming transfer|transfer received|payment received|funds? received|money received|you received|\\breceived\\s+(?:rp|idr|\\d)|\\bcredited\\b",
+        "\\bpemasukan\\b|dana masuk|uang masuk|transfer masuk|menerima|diterima dari|kamu terima|anda terima|terima (?:dana|uang|transfer|pembayaran|bayaran)|telah masuk|\\bmasuk\\b|dikredit(?:kan)?|mutasi kredit|kredit|\\bcr\\b|refund|pengembalian dana|cashback (?:sebesar|rp|idr)|top ?up (?:berhasil|sebesar|rp|idr|\\d)|isi saldo (?:berhasil|sebesar|rp|idr|\\d)|saldo bertambah|\\bpay ?roll\\b|\\bpay ?out\\b|\\bgaji\\b|\\bsalary\\b|\\bupah\\b|\\binsentif\\b|\\bthr\\b|pencairan(?: dana)?|dicairkan|\\bdisbursement\\b|setoran(?: tunai)?|setor tunai|\\bdeposited\\b|incoming transfer|transfer received|payment received|funds? received|money received|you received|\\breceived\\s+(?:rp|idr|\\d)|\\bcredited\\b",
         RegexOption.IGNORE_CASE,
     )
     private val EXPENSE = Regex(
-        "pembayaran|bayar|dibayar|transfer ke|transfer keluar|kirim (?:uang|dana)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|mutasi debet|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|qris|belanja|telah didebet|terdebet|didebet|didebit|terdebit|auto ?deb[ei]t|potong saldo|\\bpaid\\b|payment (?:to|at|for|of)|\\bsent\\s+(?:rp|idr|\\d)|\\bdebited\\b|\\bpurchase\\b|\\bwithdraw(?:al|n)?\\b|outgoing transfer|transfer to",
+        "\\bpengeluaran\\b|pembayaran|bayar|dibayar|transfer ke|transfer keluar|kirim (?:uang|dana)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|mutasi debet|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|qris|belanja|telah didebet|terdebet|didebet|didebit|terdebit|auto ?deb[ei]t|potong saldo|\\bpaid\\b|payment (?:to|at|for|of)|\\bsent\\s+(?:rp|idr|\\d)|\\bdebited\\b|\\bpurchase\\b|\\bwithdraw(?:al|n)?\\b|outgoing transfer|transfer to",
         RegexOption.IGNORE_CASE,
     )
     /** "Transaksi berhasil ... dari X": uang masuk dari X walau tanpa kata "diterima". */
@@ -278,7 +278,7 @@ object MoneyNotifParser {
         RegexOption.IGNORE_CASE,
     )
     private val SUCCESS = Regex(
-        "berhasil|sukses|telah|sudah|diterima|masuk|success(?:ful)?|completed|settled|selesai|transaksi|terdebet|didebet|didebit|terdebit|dikredit(?:kan)?|kredit|credited|debited|received|paid|sent|dicairkan|\\bpay ?roll\\b|\\bpay ?out\\b",
+        "berhasil|sukses|telah|sudah|diterima|masuk|(?:pemasukan|pengeluaran)\\s+sebesar|success(?:ful)?|completed|settled|selesai|transaksi|terdebet|didebet|didebit|terdebit|dikredit(?:kan)?|kredit|credited|debited|received|paid|sent|dicairkan|\\bpay ?roll\\b|\\bpay ?out\\b",
         RegexOption.IGNORE_CASE,
     )
     private val PARTY = Regex(
@@ -286,7 +286,7 @@ object MoneyNotifParser {
         RegexOption.IGNORE_CASE,
     )
     private val IGNORED_PARTIES = setOf(
-        "rekening", "akun", "anda", "kamu", "saldo", "transaksi", "pembayaran", "pembelian", "qris", "tagihan", "nominal", "account", "your",
+        "rekening", "akun", "anda", "kamu", "saldo", "transaksi", "pembayaran", "pembelian", "qris", "tagihan", "nominal", "account", "your", "kategori",
     )
 
     /**
@@ -316,7 +316,10 @@ object MoneyNotifParser {
         }
         if (!SUCCESS.containsMatchIn(all)) return null
         val party = PARTY.findAll(all).map { it.groupValues[1].trim() }
-            .firstOrNull { p -> p.isNotEmpty() && !p.lowercase().startsWith("rp") && p.any(Char::isLetter) && p.lowercase() !in IGNORED_PARTIES }
+            .firstOrNull { p ->
+                val firstWord = p.lowercase().split(' ').firstOrNull()
+                p.isNotEmpty() && !p.lowercase().startsWith("rp") && p.any(Char::isLetter) && firstWord !in IGNORED_PARTIES
+            }
         return MoneyNotif(amount, kind, party?.let(::tidy), source)
     }
 
