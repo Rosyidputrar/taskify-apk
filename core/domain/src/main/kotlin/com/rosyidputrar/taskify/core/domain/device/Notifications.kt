@@ -265,11 +265,16 @@ object MoneyNotifParser {
     )
     private val FAILED = Regex("gagal|dibatalkan|ditolak|tidak berhasil|failed|unsuccessful|declined|rejected|cancell?ed|pending|kadaluarsa|kedaluwarsa|expired", RegexOption.IGNORE_CASE)
     private val INCOME = Regex(
-        "\\bpemasukan\\b|dana masuk|uang masuk|transfer masuk|menerima|diterima dari|kamu terima|anda terima|terima (?:dana|uang|transfer|pembayaran|bayaran)|telah masuk|\\bmasuk\\b|dikredit(?:kan)?|mutasi kredit|kredit|\\bcr\\b|refund|pengembalian dana|cashback (?:sebesar|rp|idr)|top ?up (?:berhasil|sebesar|rp|idr|\\d)|isi saldo (?:berhasil|sebesar|rp|idr|\\d)|saldo bertambah|\\bpay ?roll\\b|\\bpay ?out\\b|\\bgaji\\b|\\bsalary\\b|\\bupah\\b|\\binsentif\\b|\\bthr\\b|pencairan(?: dana)?|dicairkan|\\bdisbursement\\b|setoran(?: tunai)?|setor tunai|\\bdeposited\\b|incoming transfer|transfer received|payment received|funds? received|money received|you received|\\breceived\\s+(?:rp|idr|\\d)|\\bcredited\\b",
+        "\\bpemasukan\\b|dana masuk|uang masuk|transfer masuk|menerima|diterima dari|diterima\\s+(?:sebesar|senilai|rp|idr|\\d)|kamu terima|anda terima|terima (?:dana|uang|transfer|pembayaran|bayaran)|terima\\s+(?:rp|idr|\\d)|telah masuk|\\bmasuk\\b|dikredit(?:kan)?|mutasi kredit|kredit|\\bcr\\b|refund|pengembalian dana|cashback (?:sebesar|rp|idr)|top ?up (?:berhasil|sebesar|rp|idr|\\d)|isi saldo (?:berhasil|sebesar|rp|idr|\\d)|saldo bertambah|\\bpay ?roll\\b|\\bpay ?out\\b|\\bgaji\\b|\\bsalary\\b|\\bupah\\b|\\binsentif\\b|\\bthr\\b|pencairan(?: dana)?|dicairkan|(?:dana|uang|pinjaman)\\s+cair|\\bcair\\s+(?:sebesar|rp|idr|\\d)|\\bbonus\\b|\\bkomisi\\b|\\bdividen\\b|\\bbunga\\b|\\bhadiah\\b|hasil penjualan|penjualan\\s+(?:sebesar|rp|idr)|reimburse(?:ment)?|klaim\\s+(?:sebesar|rp|idr|berhasil)|\\bdisbursement\\b|setoran(?: tunai)?|setor tunai|\\bdeposited\\b|incoming transfer|transfer received|payment received|funds? received|money received|you received|\\breceived\\s+(?:rp|idr|\\d)|\\bcredited\\b",
         RegexOption.IGNORE_CASE,
     )
     private val EXPENSE = Regex(
-        "\\bpengeluaran\\b|pembayaran|bayar|dibayar|transfer ke|transfer keluar|kirim (?:uang|dana)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|mutasi debet|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|qris|belanja|telah didebet|terdebet|didebet|didebit|terdebit|auto ?deb[ei]t|potong saldo|\\bpaid\\b|payment (?:to|at|for|of)|\\bsent\\s+(?:rp|idr|\\d)|\\bdebited\\b|\\bpurchase\\b|\\bwithdraw(?:al|n)?\\b|outgoing transfer|transfer to",
+        "\\bpengeluaran\\b|pembayaran|bayar|dibayar|transfer ke|transfer keluar|transfer\\b.{0,60}?\\bke\\b|ditransfer|terkirim|kirim (?:uang|dana)|kirim\\s+(?:rp|idr|\\d|sebesar)|berhasil dikirim|pembelian|\\bdebit\\b|\\bdb\\b|mutasi debet|tarik tunai|penarikan|uang keluar|dana keluar|\\bkeluar\\b|saldo berkurang|berkurang\\s+(?:sebesar|rp|idr)|terpotong|dipotong|potongan|biaya admin(?:istrasi)?|angsuran|cicilan|iuran|denda|\\bpajak\\b|bunga (?:pinjaman|kredit|angsuran)|qris|belanja|telah didebet|terdebet|didebet|didebit|terdebit|auto ?deb[ei]t|potong saldo|\\bpaid\\b|payment (?:to|at|for|of)|\\bsent\\s+(?:rp|idr|\\d)|\\bdebited\\b|\\bpurchase\\b|\\bwithdraw(?:al|n)?\\b|outgoing transfer|transfer to",
+        RegexOption.IGNORE_CASE,
+    )
+    /** QRIS/pembayaran yang diterima merchant = uang masuk, walau ada kata "pembayaran"/"qris". */
+    private val RECEIVED_PAYMENT = Regex(
+        "(?:pembayaran\\s+)?qris\\s+diterima|pembayaran\\s+diterima|diterima\\s+(?:via|melalui)\\s+qris",
         RegexOption.IGNORE_CASE,
     )
     /** "Transaksi berhasil ... dari X": uang masuk dari X walau tanpa kata "diterima". */
@@ -278,16 +283,45 @@ object MoneyNotifParser {
         RegexOption.IGNORE_CASE,
     )
     private val SUCCESS = Regex(
-        "berhasil|sukses|telah|sudah|diterima|masuk|(?:pemasukan|pengeluaran)\\s+sebesar|success(?:ful)?|completed|settled|selesai|transaksi|terdebet|didebet|didebit|terdebit|dikredit(?:kan)?|kredit|credited|debited|received|paid|sent|dicairkan|\\bpay ?roll\\b|\\bpay ?out\\b",
+        "berhasil|sukses|telah|sudah|diterima|masuk|mutasi|(?:pemasukan|pengeluaran)\\s+sebesar|success(?:ful)?|completed|settled|selesai|transaksi|terdebet|didebet|didebit|terdebit|dikredit(?:kan)?|kredit|credited|debited|received|paid|sent|dicairkan|cair|ditransfer|terkirim|terpotong|dipotong|berkurang|\\bpay ?roll\\b|\\bpay ?out\\b",
         RegexOption.IGNORE_CASE,
     )
     private val PARTY = Regex(
-        "\\b(?:ke|kepada|dari|di|untuk|merchant|penerima|pengirim|to|from|at)\\s*:?\\s+([A-Za-z0-9&'.\\- ]{2,40}?)(?=\\s*(?:[,.;:!]|\\s(?:sebesar|senilai|nominal|sejumlah|rp|idr|pada|tgl|tanggal|jam|via|dengan|pakai|menggunakan|melalui|lewat|untuk|berhasil|telah|sudah|successfully|success|completed)\\b|$))",
+        "\\b(?:ke|kepada|dari|di|untuk|merchant|penerima|pengirim|to|from|at|a/n|atas nama)\\s*:?\\s+([A-Za-z0-9&'.\\- ]{2,40}?)(?=\\s*(?:[,.;:!]|\\s(?:sebesar|senilai|nominal|sejumlah|rp|idr|pada|tgl|tanggal|jam|via|dengan|pakai|menggunakan|melalui|lewat|untuk|ke|dari|berhasil|telah|sudah|successfully|success|completed)\\b|$))",
         RegexOption.IGNORE_CASE,
     )
     private val IGNORED_PARTIES = setOf(
-        "rekening", "akun", "anda", "kamu", "saldo", "transaksi", "pembayaran", "pembelian", "qris", "tagihan", "nominal", "account", "your", "kategori",
+        "rekening", "akun", "anda", "kamu", "saldo", "transaksi", "pembayaran", "pembelian", "qris", "tagihan", "nominal", "account", "your", "kategori", "cek", "klik",
     )
+
+    /** Nominal singkatan: "Rp500rb", "Rp50k", "Rp1,5 juta". */
+    private val SUFFIX_AMOUNT = Regex(
+        "(?:rp|idr)\\.?\\s?(\\d+(?:[.,]\\d+)?)\\s*(rb|ribu|k|jt|juta)\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val SMS_PACKAGES = setOf(
+        "com.google.android.apps.messaging", "com.samsung.android.messaging", "com.android.mms", "com.android.messaging",
+    )
+    private val SMS_BANK_SENDERS = listOf(
+        "BCA" to "BCA", "BNI" to "BNI", "BRI" to "BRI", "MANDIRI" to "Mandiri", "DANA" to "DANA",
+        "OVO" to "OVO", "GOPAY" to "GoPay", "SHOPEEPAY" to "ShopeePay", "BSI" to "BSI", "BTN" to "BTN",
+    )
+
+    private fun smsBankSource(pkg: String, title: String?): String? {
+        if (pkg !in SMS_PACKAGES) return null
+        val sender = title?.uppercase() ?: return null
+        return SMS_BANK_SENDERS.firstOrNull { (key, _) -> sender.contains(key) }?.second
+    }
+
+    private fun suffixAmount(all: String): Long? {
+        val m = SUFFIX_AMOUNT.find(all) ?: return null
+        val number = m.groupValues[1].replace(",", ".").toDoubleOrNull() ?: return null
+        val multiplier = when (m.groupValues[2].lowercase()) {
+            "jt", "juta" -> 1_000_000.0
+            else -> 1_000.0
+        }
+        return (number * multiplier).toLong().takeIf { it > 0 }
+    }
 
     /**
      * null = bukan transaksi (promo, OTP, gagal, tagihan yang belum dibayar, tanpa nominal).
@@ -298,10 +332,12 @@ object MoneyNotifParser {
         val all = listOfNotNull(title, text).joinToString(" · ").replace('\n', ' ')
         if (all.isBlank()) return null
         val source = NotifApps.moneyName(pkg, appLabel)
-            ?: if (pkg == "com.shopee.id" && all.contains("shopeepay", ignoreCase = true)) "ShopeePay" else return null
+            ?: if (pkg == "com.shopee.id" && all.contains("shopeepay", ignoreCase = true)) "ShopeePay" else smsBankSource(pkg, title) ?: return null
         if (PROMO.containsMatchIn(all) || FAILED.containsMatchIn(all)) return null
-        val m = AMOUNT.find(all) ?: CONTEXT_AMOUNT.find(all) ?: return null
-        val amount = m.groupValues[1].replace(".", "").replace(",", "").toLongOrNull()?.takeIf { it > 0 } ?: return null
+        val amount = suffixAmount(all) ?: run {
+            val m = AMOUNT.find(all) ?: CONTEXT_AMOUNT.find(all) ?: return null
+            m.groupValues[1].replace(".", "").replace(",", "").toLongOrNull()?.takeIf { it > 0 } ?: return null
+        }
         // "dari X" hanya dihitung sebagai sinyal masuk bila sesudah frasa sukses (INCOME_FROM),
         // supaya "Transfer ... dari BCA/rekening ke Y" tidak salah dibaca sebagai uang masuk.
         // Frasa "transaksi berhasil" saja bukan arah: tanpa sinyal arah, lebih baik tidak ada
@@ -309,7 +345,13 @@ object MoneyNotifParser {
         val income = listOfNotNull(INCOME.find(all), INCOME_FROM.find(all)).minByOrNull { it.range.first }
         val expense = EXPENSE.find(all)
         val kind = when {
-            income != null && expense != null -> if (income.range.first < expense.range.first) TxKind.Income else TxKind.Expense
+            RECEIVED_PAYMENT.containsMatchIn(all) -> TxKind.Income
+            income != null && expense != null -> when {
+                income.range.first < expense.range.first -> TxKind.Income
+                expense.range.first < income.range.first -> TxKind.Expense
+                income.value.contains("masuk", ignoreCase = true) || income.value.contains("diterima", ignoreCase = true) -> TxKind.Income
+                else -> TxKind.Expense
+            }
             income != null -> TxKind.Income
             expense != null -> TxKind.Expense
             else -> return null

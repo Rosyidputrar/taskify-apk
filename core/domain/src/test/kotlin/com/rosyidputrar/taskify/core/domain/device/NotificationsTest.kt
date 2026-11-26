@@ -59,6 +59,44 @@ class NotificationsTest {
         )
     }
 
+    @Test fun wondrReceivedTransaction() {
+        // Format wondr by BNI: "Kamu baru aja terima Rp..." = uang masuk.
+        assertEquals(
+            MoneyNotif(21_421_000, TxKind.Income, null, "wondr by BNI"),
+            money("id.bni.wondr", "Transaksi diterima!", "Kamu baru aja terima Rp21.421.000. Klik untuk cek detailnya."),
+        )
+        // "Transaksi Berhasil" generik tanpa kata arah tetap tidak dibuatkan draf.
+        assertNull(money("id.bni.wondr", "Transaksi Berhasil!", "Kamu baru aja transaksi sebesar Rp21.238.100. Klik untuk cek detailnya."))
+    }
+
+    @Test fun extendedDirectionPatterns() {
+        // diterima + nominal tanpa "dari" = income.
+        assertEquals(TxKind.Income, money("com.bca", "Dana Diterima", "Dana diterima Rp250.000")?.kind)
+        assertEquals(TxKind.Income, money("id.bmri.livin", "Bonus", "Bonus sebesar Rp500.000 telah masuk")?.kind)
+        assertEquals(TxKind.Income, money("id.dana", "DANA", "Dana cair sebesar Rp1.000.000")?.kind)
+        // QRIS diterima merchant = income, bukan expense.
+        assertEquals(TxKind.Income, money("id.dana", "QRIS", "Pembayaran QRIS diterima Rp75.000")?.kind)
+        // transfer ... ke (tidak berdempetan) = expense, pihak lawan terbaca.
+        assertEquals(
+            MoneyNotif(50_000, TxKind.Expense, "Budi", "BCA"),
+            money("com.bca", "Transfer Berhasil", "Transfer berhasil Rp50.000 ke BUDI"),
+        )
+        assertEquals(TxKind.Expense, money("com.bca", "Info", "Dana ditransfer sebesar Rp100.000")?.kind)
+        assertEquals(TxKind.Expense, money("ovo.id", "OVO", "Saldo berkurang Rp15.000 untuk pembayaran")?.kind)
+        assertEquals(TxKind.Expense, money("com.bca", "Biaya Admin", "Biaya admin Rp6.500 telah terpotong")?.kind)
+        assertEquals(TxKind.Expense, money("id.co.bri.brimo", "Mutasi", "Mutasi DB Rp200.000")?.kind)
+        // Nominal singkatan.
+        assertEquals(500_000L, money("id.dana", "DANA", "Top up berhasil Rp500rb")?.amount)
+        assertEquals(1_500_000L, money("com.bca", "Transfer Masuk", "Transfer masuk Rp1,5 juta dari BUDI")?.amount)
+        // Pihak lawan format a/n.
+        assertEquals("Budi Santoso", money("com.bca", "Transfer Berhasil", "Transfer berhasil Rp50.000 ke rekening a/n BUDI SANTOSO")?.counterparty)
+        // SMS bank dari aplikasi pesan.
+        assertEquals(
+            MoneyNotif(100_000, TxKind.Income, null, "BCA"),
+            money("com.google.android.apps.messaging", "BCA", "Dana masuk Rp100.000 ke rekening Anda"),
+        )
+    }
+
     @Test fun qrisWithoutRpPrefixAndUntukMerchant() {
         assertEquals(
             MoneyNotif(13_500, TxKind.Expense, "MyTelkomsel Apps", "wondr by BNI"),
@@ -121,8 +159,11 @@ class NotificationsTest {
         )
         // Tanpa arah sama sekali: lebih baik tidak ada draf daripada draf berarah salah.
         assertNull(money("com.bca", "Transaksi Berhasil", "Transaksi berhasil Rp50.000"))
-        // "dari rekening" = rekening sumber, bukan pengirim: bukan uang masuk.
-        assertNull(money("com.bca", "Transfer", "Transfer Rp100.000 dari rekening BCA ke Budi berhasil"))
+        // "dari rekening" = rekening sumber, bukan pengirim: ini uang keluar ke Budi, bukan masuk.
+        assertEquals(
+            MoneyNotif(100_000, TxKind.Expense, "Budi", "BCA"),
+            money("com.bca", "Transfer", "Transfer Rp100.000 dari rekening BCA ke Budi berhasil"),
+        )
     }
 
     @Test fun ignoresPromosFailuresBillsAndOtherApps() {
