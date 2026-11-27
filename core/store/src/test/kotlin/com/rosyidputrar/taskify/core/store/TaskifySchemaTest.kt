@@ -33,7 +33,7 @@ class TaskifySchemaTest {
         "pw_totp_log" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "enc" to "TEXT", "v" to "INTEGER"),
         "config_files" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "deleted_at" to "TEXT", "project_id" to "TEXT", "name" to "TEXT", "format" to "TEXT", "environment" to "TEXT"),
         "config_versions" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "file_id" to "TEXT", "enc" to "TEXT", "v" to "INTEGER"),
-        "temp_files" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "deleted_at" to "TEXT", "file_name" to "TEXT", "mime_type" to "TEXT", "size_bytes" to "INTEGER", "storage_key" to "TEXT", "status" to "TEXT", "etag" to "TEXT", "share_token" to "TEXT", "is_public" to "INTEGER", "expires_at" to "TEXT", "download_count" to "INTEGER", "last_download_at" to "TEXT"),
+        "temp_files" to mapOf("user_id" to "TEXT", "created_at" to "TEXT", "updated_at" to "TEXT", "deleted_at" to "TEXT", "file_name" to "TEXT", "mime_type" to "TEXT", "size_bytes" to "INTEGER", "storage_key" to "TEXT", "status" to "TEXT", "etag" to "TEXT", "share_token" to "TEXT", "slug" to "TEXT", "is_public" to "INTEGER", "expires_at" to "TEXT", "download_count" to "INTEGER", "last_download_at" to "TEXT"),
         "upload_errors" to mapOf("op" to "TEXT", "table_name" to "TEXT", "row_id" to "TEXT", "payload" to "TEXT", "error_code" to "TEXT", "error_message" to "TEXT", "created_at" to "TEXT"),
         // Lokal saja (Mode Fokus) — bukan bagian schema.ts webapp.
         "notif_log" to mapOf(

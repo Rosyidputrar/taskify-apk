@@ -64,6 +64,9 @@ object SampleFiles {
         override fun regenerate(file: TempFile) = Unit
         override fun applyExpiry(file: TempFile, expiry: ExpiryOption) = Unit
         override fun rename(file: TempFile, name: String) = Unit
+        override fun saveSlug(file: TempFile, slug: String, onTaken: (String) -> Unit) = Unit
+        override fun applySlug(file: TempFile, slug: String?) = Unit
+        override fun slugError(slug: String): String? = null
         override fun delete(file: TempFile, onDone: () -> Unit) = Unit
         override fun download(file: TempFile, target: Uri) = Unit
         override fun retry() = Unit
