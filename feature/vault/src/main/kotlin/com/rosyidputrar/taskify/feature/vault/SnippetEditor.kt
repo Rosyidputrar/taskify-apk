@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.remember
@@ -98,6 +99,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -141,14 +143,22 @@ fun SnippetDraft.toShare() = ShareCode(title.trim().ifEmpty { "snippet" }, langu
 private const val TRUNCATED = "Kode terlalu panjang — gambar dipotong. Bagikan sebagai berkas untuk versi lengkap."
 
 /** Editor snippet dengan simpan eksplisit (sama dengan webapp) + peringatan perubahan belum disimpan. */
+/** Origin web publik untuk tautan /snippet/<slug> (diisi dari PUBLIC_WEB_ORIGIN saat build). */
+data class VaultConfig(val publicOrigin: String)
+
 class SnippetEditorViewModel(
     private val id: String?,
     private val repo: VaultRepository,
     private val messenger: Messenger,
     private val sharer: ShareService,
+    private val snippetsApi: com.rosyidputrar.taskify.core.files.SnippetsApi,
+    private val config: VaultConfig,
 ) : ViewModel() {
     private val _draft = MutableStateFlow(SnippetDraft())
     val draft: StateFlow<SnippetDraft> = _draft
+    /** Slug tautan publik saat ini; null = tidak publik. */
+    private val _publicSlug = MutableStateFlow<String?>(null)
+    val publicSlug: StateFlow<String?> = _publicSlug
 
     init {
         launchSafe {
@@ -159,6 +169,55 @@ class SnippetEditorViewModel(
                 // Catatan/Jurnal), JANGAN buka draf kosong yang bisa tersimpan sebagai baru.
                 repo.getSnippet(id)?.let { SnippetDraft(true, it.id, it.title, it.language, it.description.orEmpty(), it.code, favorite = it.favorite) }
                     ?: SnippetDraft(loaded = true, missing = true)
+            }
+        }
+        if (id != null) launchSafe { runCatching { snippetsApi.getPublic(id) }.getOrNull()?.let { _publicSlug.value = it } }
+    }
+
+    fun publicLink(): String? = _publicSlug.value?.let { slug ->
+        if (config.publicOrigin.isNotBlank()) com.rosyidputrar.taskify.core.domain.files.TempFiles.snippetShareUrl(config.publicOrigin, slug) else "/snippet/$slug"
+    }
+
+    fun slugError(slug: String): String? = com.rosyidputrar.taskify.core.domain.files.TempFiles.slugFormatError(slug)
+
+    /** Simpan nama custom; [onTaken] dipanggil dengan saran pengganti bila nama sudah dipakai. */
+    fun savePublicSlug(slug: String, onTaken: (String) -> Unit) {
+        val sid = _draft.value.id ?: return
+        launchSafe {
+            try {
+                val check = snippetsApi.checkSlug(slug)
+                when {
+                    check.available -> { _publicSlug.value = snippetsApi.setPublic(sid, slug); messenger.show("Tautan publik disimpan") }
+                    check.error != null -> messenger.show(check.error)
+                    else -> onTaken(check.suggestion ?: "$slug-2")
+                }
+            } catch (e: Exception) {
+                messenger.show(e.message ?: "Gagal menyimpan tautan.")
+            }
+        }
+    }
+
+    fun applyPublicSlug(slug: String) {
+        val sid = _draft.value.id ?: return
+        launchSafe {
+            try {
+                _publicSlug.value = snippetsApi.setPublic(sid, slug)
+                messenger.show("Tautan publik disimpan")
+            } catch (e: Exception) {
+                messenger.show(e.message ?: "Gagal menyimpan tautan.")
+            }
+        }
+    }
+
+    fun revokePublic() {
+        val sid = _draft.value.id ?: return
+        launchSafe {
+            try {
+                snippetsApi.revokePublic(sid)
+                _publicSlug.value = null
+                messenger.show("Tautan publik dicabut")
+            } catch (e: Exception) {
+                messenger.show(e.message ?: "Gagal mencabut tautan.")
             }
         }
     }
@@ -224,12 +283,18 @@ interface SnippetEditorActions {
     /** [format] null = kirim sebagai teks. */
     fun share(format: SnippetFormat?) {}
     fun copyImage() {}
+    fun publicLink(): String? = null
+    fun slugError(slug: String): String? = null
+    fun savePublicSlug(slug: String, onTaken: (String) -> Unit) {}
+    fun applyPublicSlug(slug: String) {}
+    fun revokePublic() {}
 }
 
 @Composable
 fun SnippetEditorScreen(id: String?, onBack: () -> Unit) {
     val vm: SnippetEditorViewModel = koinViewModel(key = "snippet-$id") { parametersOf(id) }
     val d by vm.draft.collectAsStateWithLifecycle()
+    val publicSlug by vm.publicSlug.collectAsStateWithLifecycle()
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     val back = { if (d.dirty) confirmLeave = true else onBack() }
     BackHandler(onBack = back)
@@ -243,7 +308,13 @@ fun SnippetEditorScreen(id: String?, onBack: () -> Unit) {
             override fun toggleFavorite() = vm.toggleFavorite()
             override fun share(format: SnippetFormat?) = vm.share(format)
             override fun copyImage() = vm.copyImage()
+            override fun publicLink(): String? = vm.publicLink()
+            override fun slugError(slug: String): String? = vm.slugError(slug)
+            override fun savePublicSlug(slug: String, onTaken: (String) -> Unit) = vm.savePublicSlug(slug, onTaken)
+            override fun applyPublicSlug(slug: String) = vm.applyPublicSlug(slug)
+            override fun revokePublic() = vm.revokePublic()
         },
+        publicSlug = publicSlug,
     )
     if (confirmLeave) {
         DiscardChangesDialog(
@@ -273,7 +344,7 @@ fun snippetShareSections(language: String): List<ShareSection<SnippetFormat?>> =
  * tombol "Ubah"; snippet baru langsung di mode Tulis. [initialPreview] null = otomatis.
  */
 @Composable
-fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initialPreview: Boolean? = null) {
+fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initialPreview: Boolean? = null, publicSlug: String? = null) {
     if (!d.loaded) {
         LoadingScreen(module = TaskifyModule.Vault)
         return
@@ -399,6 +470,7 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
                     if (vars.isNotEmpty()) Text("Variabel template: " + vars.joinToString { "{{$it}}" }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     OutlinedTextField(d.description, { v -> actions.edit { it.copy(description = v) } }, label = { Text("Deskripsi (opsional)") }, modifier = Modifier.fillMaxWidth())
                 }
+                if (d.id != null) PublicLinkSection(publicSlug, actions)
                 // Ruang untuk tombol mengambang "Ubah" di mode Lihat.
                 Spacer(Modifier.height(if (preview) 88.dp else 12.dp))
             }
@@ -441,6 +513,68 @@ fun SnippetEditorContent(d: SnippetDraft, actions: SnippetEditorActions, initial
             dismissButton = { TextButton(onClick = { pendingSecret = null }) { Text("Batal") } },
         )
     }
+}
+
+/** Tautan publik snippet: /snippet/<nama-custom>, bisa dicabut seketika. */
+@Composable
+private fun PublicLinkSection(publicSlug: String?, actions: SnippetEditorActions) {
+    val context = LocalContext.current
+    var input by rememberSaveable(publicSlug) { mutableStateOf(publicSlug ?: "") }
+    var taken by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmRevoke by rememberSaveable { mutableStateOf(false) }
+    val candidate = input.trim().lowercase()
+    val error = if (candidate.isEmpty()) null else actions.slugError(candidate)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalDivider()
+        Text("Tautan publik", style = MaterialTheme.typography.labelLarge)
+        actions.publicLink()?.let { url ->
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SelectionContainer(Modifier.weight(1f)) {
+                        Text(url, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), maxLines = 2)
+                    }
+                    IconButton(onClick = {
+                        val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("Tautan snippet", url))
+                    }) { Icon(Icons.Outlined.ContentCopy, contentDescription = "Salin tautan") }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("/snippet/", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(
+                input, { if (it.length <= 60) input = it },
+                placeholder = { Text("mis. fetch-timeout") }, singleLine = true,
+                isError = error != null,
+                supportingText = { Text(error ?: "Siapa pun yang punya tautan bisa membaca snippet ini tanpa login.") },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            FilledTonalButton(
+                onClick = { actions.savePublicSlug(candidate) { taken = it } },
+                enabled = error == null && candidate.isNotEmpty() && candidate != (publicSlug ?: ""),
+            ) { Text(if (publicSlug == null) "Buat tautan" else "Ganti") }
+        }
+        if (publicSlug != null) TextButton(onClick = { confirmRevoke = true }) { Text("Cabut tautan publik") }
+    }
+    taken?.let { suggestion ->
+        AlertDialog(
+            onDismissRequest = { taken = null },
+            title = { Text("Nama sudah dipakai") },
+            text = { Text("Nama “$candidate” sudah digunakan snippet lain. Pakai “$suggestion” sekarang, atau edit lagi namanya.") },
+            confirmButton = {
+                TextButton(onClick = { taken = null; input = suggestion; actions.applyPublicSlug(suggestion) }) { Text("Pakai $suggestion") }
+            },
+            dismissButton = { TextButton(onClick = { taken = null }) { Text("Edit lagi") } },
+        )
+    }
+    if (confirmRevoke) AlertDialog(
+        onDismissRequest = { confirmRevoke = false },
+        title = { Text("Cabut tautan publik?") },
+        text = { Text("Tautan langsung berhenti bekerja untuk siapa pun yang sudah menerimanya.") },
+        confirmButton = { TextButton(onClick = { confirmRevoke = false; actions.revokePublic() }) { Text("Cabut tautan") } },
+        dismissButton = { TextButton(onClick = { confirmRevoke = false }) { Text("Batal") } },
+    )
 }
 
 /** Tampilan Lihat: judul, info bahasa & ukuran, deskripsi, kode berwarna bernomor baris. */

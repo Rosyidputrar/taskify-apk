@@ -65,6 +65,10 @@ interface FilesActions {
     fun regenerate(file: TempFile)
     fun applyExpiry(file: TempFile, expiry: ExpiryOption)
     fun rename(file: TempFile, name: String)
+    /** Simpan nama custom; [onTaken] dipanggil dengan saran pengganti bila nama sudah dipakai. */
+    fun saveSlug(file: TempFile, slug: String, onTaken: (String) -> Unit)
+    fun applySlug(file: TempFile, slug: String?)
+    fun slugError(slug: String): String?
     fun delete(file: TempFile, onDone: () -> Unit)
     fun download(file: TempFile, target: Uri)
 }
@@ -112,7 +116,22 @@ class FilesViewModel(
     override fun dismiss(key: String) = uploader.dismiss(key)
 
     override fun link(file: TempFile): String =
-        if (config.publicOrigin.isNotBlank()) TempFiles.shareUrl(config.publicOrigin, file.shareToken) else api.directDownloadUrl(file.shareToken)
+        if (config.publicOrigin.isNotBlank()) TempFiles.shareUrl(config.publicOrigin, TempFiles.shareKey(file)) else api.directDownloadUrl(TempFiles.shareKey(file))
+
+    override fun slugError(slug: String): String? = TempFiles.slugFormatError(slug)
+
+    override fun saveSlug(file: TempFile, slug: String, onTaken: (String) -> Unit) =
+        run("slug", null) {
+            val check = api.checkSlug(slug)
+            when {
+                check.available -> { uploader.setSlug(file.id, slug); messenger.show("Nama tautan disimpan") }
+                check.error != null -> messenger.show(check.error)
+                else -> onTaken(check.suggestion ?: "$slug-2")
+            }
+        }
+
+    override fun applySlug(file: TempFile, slug: String?) =
+        run("slug", if (slug == null) "Nama custom dilepas" else "Nama tautan disimpan") { uploader.setSlug(file.id, slug) }
 
     override fun copied() = messenger.show("Tautan disalin")
 

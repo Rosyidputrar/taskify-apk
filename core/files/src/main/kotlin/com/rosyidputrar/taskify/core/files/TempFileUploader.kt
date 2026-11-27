@@ -196,6 +196,8 @@ class TempFileUploader(private val context: Context, private val api: TempFilesA
 
     suspend fun change(id: String, patch: TempFilePatch): TempFile = api.update(id, patch).also { setOverlay(id, it) }
 
+    suspend fun setSlug(id: String, slug: String?): TempFile = api.setSlug(id, slug).also { setOverlay(id, it) }
+
     suspend fun remove(id: String) {
         api.delete(id)
         setOverlay(id, null)

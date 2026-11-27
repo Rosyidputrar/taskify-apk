@@ -83,6 +83,8 @@ fun FileDetail(file: TempFile, state: FilesUiState, actions: FilesActions, onDel
     val editable = fileState != TempFileState.Expired && state.online && state.busy == null
     var name by rememberSaveable(file.id) { mutableStateOf(file.fileName) }
     var expiry by rememberSaveable(file.id) { mutableStateOf(ExpiryOption.DEFAULT) }
+    var slugInput by rememberSaveable(file.id) { mutableStateOf(file.slug ?: "") }
+    var slugTaken by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmToken by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file.mimeType.ifBlank { "application/octet-stream" })) { uri ->
@@ -143,6 +145,26 @@ fun FileDetail(file: TempFile, state: FilesUiState, actions: FilesActions, onDel
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Text("Nama custom tautan", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("/unduh/", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        slugInput, { if (it.length <= 60) slugInput = it },
+                        placeholder = { Text("mis. laporan-november") }, singleLine = true,
+                        isError = slugInput.isNotBlank() && actions.slugError(slugInput.trim().lowercase()) != null,
+                        supportingText = {
+                            val err = if (slugInput.isBlank()) null else actions.slugError(slugInput.trim().lowercase())
+                            Text(err ?: "Huruf kecil, angka, dan tanda hubung. Tautan token lama tetap bekerja.")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalButton(
+                        onClick = { actions.saveSlug(file, slugInput.trim().lowercase()) { slugTaken = it } },
+                        enabled = editable && slugInput.trim().lowercase() != (file.slug ?: "") && actions.slugError(slugInput.trim().lowercase()) == null,
+                    ) { Text("Simpan") }
+                }
+                if (file.slug != null) TextButton(onClick = { actions.applySlug(file, null) }, enabled = editable) { Text("Lepas nama custom") }
                 TextButton(onClick = { confirmToken = true }, enabled = editable) {
                     Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Buat tautan baru (cabut yang lama)")
                 }
@@ -172,6 +194,17 @@ fun FileDetail(file: TempFile, state: FilesUiState, actions: FilesActions, onDel
             }
         }
         if (!state.online) Text("Offline: perubahan butuh koneksi internet.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    slugTaken?.let { suggestion ->
+        AlertDialog(
+            onDismissRequest = { slugTaken = null },
+            title = { Text("Nama sudah dipakai") },
+            text = { Text("Nama “${slugInput.trim().lowercase()}” sudah digunakan tautan lain. Pakai “$suggestion” sekarang, atau edit lagi namanya.") },
+            confirmButton = {
+                TextButton(onClick = { slugTaken = null; slugInput = suggestion; actions.applySlug(file, suggestion) }) { Text("Pakai $suggestion") }
+            },
+            dismissButton = { TextButton(onClick = { slugTaken = null }) { Text("Edit lagi") } },
+        )
     }
     if (confirmToken) AlertDialog(
         onDismissRequest = { confirmToken = false },

@@ -19,8 +19,8 @@ class TempFilesTest {
     private fun row(
         id: String = "f1", size: Long = 10 * mb, status: TempFileStatus = TempFileStatus.Ready, isPublic: Boolean = true,
         expiresAt: String? = null, createdAt: String = "2026-11-01 11:00:00Z", updatedAt: String = "2026-11-01 11:00:00Z",
-        deletedAt: String? = null, name: String = "a.pdf",
-    ) = TempFile(id, name, "application/pdf", size, status, "x".repeat(43), isPublic, expiresAt, 0, null, createdAt, updatedAt, deletedAt)
+        deletedAt: String? = null, name: String = "a.pdf", slug: String? = null,
+    ) = TempFile(id, name, "application/pdf", size, status, "x".repeat(43), isPublic, expiresAt, 0, null, createdAt, updatedAt, deletedAt, slug)
 
     private fun at(ms: Long) = Instant.ofEpochMilli(now + ms).toString()
 
@@ -60,6 +60,21 @@ class TempFilesTest {
         assertFalse(TempFiles.isPublicDownloadPath("/unduhan"))
         assertNull(TempFiles.shareTokenFromPath("/unduh/pendek"))
         assertEquals("https://p.supabase.co/functions/v1/tempfiles/d/$t", TempFiles.directDownloadUrl("https://p.supabase.co/", t))
+    }
+
+    @Test fun slugs() {
+        assertNull(TempFiles.slugFormatError("laporan-november"))
+        assertTrue(TempFiles.slugFormatError("ab")!!.contains("minimal 3"))
+        assertTrue(TempFiles.slugFormatError("Nama Besar")!!.contains("huruf kecil"))
+        assertTrue(TempFiles.slugFormatError("unduh")!!.contains("dicadangkan"))
+        assertEquals("laporan-november", TempFiles.shareKey(row(slug = "laporan-november")))
+        assertEquals("x".repeat(43), TempFiles.shareKey(row()))
+        assertEquals("laporan-november", TempFiles.shareKeyFromPath("/unduh/laporan-november"))
+        assertEquals("x".repeat(43), TempFiles.shareKeyFromPath("/unduh/" + "x".repeat(43)))
+        assertNull(TempFiles.shareKeyFromPath("/unduh/AB"))
+        assertEquals("fetch-timeout", TempFiles.snippetSlugFromPath("/snippet/fetch-timeout"))
+        assertNull(TempFiles.snippetSlugFromPath("/snippet/AB"))
+        assertEquals("https://app.example/snippet/fetch-timeout", TempFiles.snippetShareUrl("https://app.example/", "fetch-timeout"))
     }
 
     @Test fun expiryLabels() {

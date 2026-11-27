@@ -283,8 +283,10 @@ private val deviceModule = module {
     single { TempFileRepository(get()) }
     // Tanpa SupabaseClient (konfigurasi belum lengkap) halaman unduh publik tetap bisa memakai URL-nya.
     single { TempFilesApi(getOrNull<SupabaseClient>(), AppConfig.supabaseUrl) }
+    single { com.rosyidputrar.taskify.core.files.SnippetsApi(getOrNull<SupabaseClient>(), AppConfig.supabaseUrl) }
     single { TempFileUploader(androidContext(), get(), get(), get(APP_SCOPE)) }
     single { FilesConfig(AppConfig.publicWebOrigin) }
+    single { com.rosyidputrar.taskify.feature.vault.VaultConfig(AppConfig.publicWebOrigin) }
     single { OnlineStatus { get<NetworkMonitor>().online } }
     single { FileStore(androidContext()) }
     single { Transfers() }

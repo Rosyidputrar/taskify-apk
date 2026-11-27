@@ -123,7 +123,7 @@ object TaskifySchema {
     val tempFiles = table(
         "temp_files",
         listOf(
-            t("file_name"), t("mime_type"), i("size_bytes"), t("storage_key"), t("status"), t("etag"), t("share_token"),
+            t("file_name"), t("mime_type"), i("size_bytes"), t("storage_key"), t("status"), t("etag"), t("share_token"), t("slug"),
             i("is_public"), t("expires_at"), i("download_count"), t("last_download_at"),
         ),
     )

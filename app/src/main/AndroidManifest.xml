@@ -93,6 +93,24 @@
                 <data android:pathPrefix="/unduh" />
             </intent-filter>
         </activity>
+        <!-- Halaman snippet publik Vault (/snippet/<slug>), pola sama dengan halaman unduh. -->
+        <activity
+            android:name=".PublicSnippetActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:label="Snippet"
+            android:theme="@style/Theme.Taskify"
+            android:taskAffinity="com.rosyidputrar.taskify.snippet"
+            android:excludeFromRecents="false">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="${publicWebHost}" />
+                <data android:pathPrefix="/snippet" />
+            </intent-filter>
+        </activity>
         <!-- Tile Quick Settings "Tangkap". -->
         <service
             android:name=".widget.CaptureTileService"

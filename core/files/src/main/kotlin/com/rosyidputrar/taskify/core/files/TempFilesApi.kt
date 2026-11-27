@@ -30,6 +30,9 @@ import kotlinx.serialization.json.put
 /** Galat Edge Function `tempfiles` dengan kode TFxxx (bila ada) dan pesan siap tampil. */
 class TempFileException(message: String, val code: String? = null, cause: Throwable? = null) : Exception(message, cause)
 
+/** Hasil cek nama custom tautan publik. */
+data class SlugCheck(val available: Boolean, val suggestion: String? = null, val error: String? = null)
+
 /** Info berkas untuk penerima tautan (tanpa id, key, atau pemilik). */
 data class PublicFileInfo(val fileName: String, val mimeType: String, val sizeBytes: Long, val expiresAt: String?, val createdAt: String)
 
@@ -55,6 +58,7 @@ internal fun JsonObject.toTempFile() = TempFile(
     createdAt = str("created_at") ?: "",
     updatedAt = str("updated_at") ?: "",
     deletedAt = str("deleted_at"),
+    slug = str("slug"),
 )
 
 /**
@@ -111,6 +115,22 @@ class TempFilesApi(private val supabase: SupabaseClient?, private val supabaseUr
     suspend fun delete(id: String) {
         call(buildJsonObject { put("action", "delete"); put("id", id) })
     }
+
+    /** Cek ketersediaan nama custom; suggestion terisi bila nama sudah dipakai. */
+    suspend fun checkSlug(slug: String): SlugCheck {
+        val res = call(buildJsonObject { put("action", "checkSlug"); put("slug", slug) })
+        return SlugCheck(
+            available = (res["available"] as? JsonPrimitive)?.booleanOrNull ?: false,
+            suggestion = res.str("suggestion"),
+            error = res.str("error"),
+        )
+    }
+
+    /** Pasang/ganti nama custom (null = lepas; token tetap berlaku). */
+    suspend fun setSlug(id: String, slug: String?): TempFile = call(buildJsonObject {
+        put("action", "setSlug"); put("id", id)
+        if (slug == null) put("slug", JsonNull) else put("slug", slug)
+    }).file()
 
     /** Presigned GET untuk pemilik (Content-Disposition: attachment). */
     suspend fun ownerDownloadUrl(id: String): String =

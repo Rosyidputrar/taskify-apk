@@ -50,6 +50,8 @@ data class TempFile(
     val createdAt: String,
     val updatedAt: String,
     val deletedAt: String? = null,
+    /** Nama custom tautan publik (/unduh/<slug>); null = pakai token. */
+    val slug: String? = null,
 )
 
 enum class TempFileState { Ready, Pending, Expired }
@@ -78,8 +80,14 @@ object TempFiles {
     /** Tautan bisa dibagikan sekarang? */
     fun isShareable(f: TempFile, nowMs: Long) = f.isPublic && state(f, nowMs) == TempFileState.Ready
 
-    /** Halaman publik webapp: `/unduh/<token>` (juga dibuka aplikasi ini lewat App Link). */
+    /** Halaman publik webapp: `/unduh/<slug|token>` (juga dibuka aplikasi ini lewat App Link). */
     fun shareUrl(origin: String, token: String) = "${origin.trimEnd('/')}/unduh/$token"
+
+    /** Kunci tautan yang ditampilkan: nama custom bila ada, selain itu token. */
+    fun shareKey(f: TempFile) = f.slug ?: f.shareToken
+
+    /** Halaman publik snippet: `/snippet/<slug>`. */
+    fun snippetShareUrl(origin: String, slug: String) = "${origin.trimEnd('/')}/snippet/$slug"
 
     /** URL unduhan langsung (Edge Function, tanpa login). */
     fun directDownloadUrl(supabaseUrl: String, token: String) = "${supabaseUrl.trimEnd('/')}/functions/v1/tempfiles/d/$token"
@@ -88,6 +96,36 @@ object TempFiles {
 
     /** Token dari path; null bila bukan halaman unduh / token terpotong. */
     fun shareTokenFromPath(path: String): String? = TOKEN_PATH.find(path)?.groupValues?.get(1)
+
+    // --- Nama custom (slug) tautan publik: sama persis dengan webapp & migrasi …_public_slugs.sql
+    private val SLUG_RE = Regex("^[a-z0-9]+(-[a-z0-9]+)*$")
+    private val RESERVED_SLUGS = setOf(
+        "unduh", "snippet", "berkas", "bagikan", "vault", "masuk", "login", "admin", "api",
+        "taskify", "tasklfy", "www", "baru", "edit", "hapus", "pengaturan", "sandi", "jurnal",
+        "keuangan", "catatan", "tugas", "kalender", "sampah", "review", "musik", "tiktok",
+    )
+
+    fun isSlug(v: String?) = v != null && v.length in 3..60 && SLUG_RE.matches(v)
+
+    /** Alasan slug ditolak (pesan untuk pengguna), atau null bila formatnya sah. */
+    fun slugFormatError(v: String?): String? = when {
+        v.isNullOrEmpty() -> "Nama tautan wajib diisi"
+        v.length < 3 -> "Nama tautan minimal 3 karakter"
+        v.length > 60 -> "Nama tautan maksimal 60 karakter"
+        !SLUG_RE.matches(v) -> "Nama tautan hanya boleh huruf kecil, angka, dan tanda hubung di tengah"
+        v in RESERVED_SLUGS -> "Nama tautan itu dicadangkan, pilih nama lain"
+        else -> null
+    }
+
+    /** Slug atau token dari path `/unduh/<slug|token>`; null bila tidak sah. */
+    fun shareKeyFromPath(path: String): String? {
+        val v = Regex("^/unduh/([A-Za-z0-9_-]{1,60})/?$").find(path)?.groupValues?.get(1) ?: return null
+        return if (Regex("^[A-Za-z0-9_-]{43}$").matches(v) || isSlug(v)) v else null
+    }
+
+    /** Slug dari path `/snippet/<slug>`; null bila tidak sah. */
+    fun snippetSlugFromPath(path: String): String? =
+        Regex("^/snippet/([a-z0-9-]{1,60})/?$").find(path)?.groupValues?.get(1)?.takeIf { isSlug(it) }
 
     /** Semua path di bawah `/unduh` adalah halaman publik — termasuk tautan yang rusak saat disalin. */
     fun isPublicDownloadPath(path: String) = Regex("^/unduh(/|$)").containsMatchIn(path)
@@ -157,6 +195,8 @@ object TempFiles {
         "TF003" to "Berkas sudah kedaluwarsa.",
         "TF004" to "Unggahan tidak lengkap. Coba unggah ulang.",
         "TF005" to "Permintaan tidak valid.",
+        "TF006" to "Nama tautan sudah dipakai.",
+        "TF007" to "Nama tautan tidak valid.",
     )
 
     fun errorMessage(code: String?, fallback: String) = code?.let { ERROR_MESSAGE[it] } ?: fallback

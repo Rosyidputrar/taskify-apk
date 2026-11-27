@@ -46,6 +46,6 @@ class PublicFileActivity : ComponentActivity() {
 
     companion object {
         /** Tautan terpotong/rusak → null → "Berkas tidak tersedia" (tanpa bertanya ke server). */
-        fun tokenOf(intent: Intent?): String? = intent?.data?.let { uri: Uri -> uri.path?.let(TempFiles::shareTokenFromPath) }
+        fun tokenOf(intent: Intent?): String? = intent?.data?.let { uri: Uri -> uri.path?.let(TempFiles::shareKeyFromPath) }
     }
 }
