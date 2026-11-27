@@ -186,9 +186,10 @@ class SnippetEditorViewModel(
         launchSafe {
             try {
                 val check = snippetsApi.checkSlug(slug)
+                val err = check.error
                 when {
                     check.available -> { _publicSlug.value = snippetsApi.setPublic(sid, slug); messenger.show("Tautan publik disimpan") }
-                    check.error != null -> messenger.show(check.error)
+                    err != null -> messenger.show(err)
                     else -> onTaken(check.suggestion ?: "$slug-2")
                 }
             } catch (e: Exception) {

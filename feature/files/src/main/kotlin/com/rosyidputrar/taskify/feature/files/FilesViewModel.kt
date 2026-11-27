@@ -123,9 +123,10 @@ class FilesViewModel(
     override fun saveSlug(file: TempFile, slug: String, onTaken: (String) -> Unit) =
         run("slug", null) {
             val check = api.checkSlug(slug)
+            val err = check.error
             when {
                 check.available -> { uploader.setSlug(file.id, slug); messenger.show("Nama tautan disimpan") }
-                check.error != null -> messenger.show(check.error)
+                err != null -> messenger.show(err)
                 else -> onTaken(check.suggestion ?: "$slug-2")
             }
         }
